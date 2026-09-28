@@ -1,0 +1,6 @@
+{
+  "name": "Markdown Studio Pro",
+  "description": "خواننده و ویرایشگر پیشرفته مارک‌دان با پیش‌نمایش زنده، هایلایت متون و کدها، جداول، فرمول‌های ریاضی و خروجی‌های متنوع",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

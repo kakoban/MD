@@ -1,0 +1,1241 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Vazirmatn', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-serif: 'Lora', Georgia, serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    background-color: var(--bg-primary, #f8fafc);
+    color: var(--text-primary, #0f172a);
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(150, 150, 150, 0.25);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(150, 150, 150, 0.4);
+}
+
+/* Theme definitions */
+.theme-light {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --bg-card: #ffffff;
+  --border-color: #e2e8f0;
+  --border-subtle: #edf2f7;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --accent-color: #f59e0b;
+  --table-border: #e2e8f0;
+  --table-header-bg: #f1f5f9;
+  --table-row-even: #f8fafc;
+  --table-row-odd: #ffffff;
+  --table-row-hover: #f1f5f9;
+  --code-bg: #f8fafc;
+  --code-border: #e2e8f0;
+  --gutter-bg: #f8fafc;
+  --gutter-text: #94a3b8;
+}
+
+.theme-dark {
+  --bg-primary: #121214;
+  --bg-secondary: #18181b;
+  --bg-tertiary: #24242a;
+  --bg-card: #1c1c20;
+  --border-color: #2e2e36;
+  --border-subtle: #27272a;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent-color: #f59e0b;
+  --table-border: #2e2e36;
+  --table-header-bg: #1f1f23;
+  --table-row-even: rgba(255, 255, 255, 0.02);
+  --table-row-hover: rgba(245, 158, 11, 0.07);
+  --code-bg: #141416;
+  --code-border: #27272a;
+  --gutter-bg: #141417;
+  --gutter-text: #52525b;
+}
+
+.theme-sepia {
+  --bg-primary: #fbf6ec;
+  --bg-secondary: #f4ecdc;
+  --bg-tertiary: #ece1cc;
+  --bg-card: #f9f2e4;
+  --border-color: #ded0b7;
+  --border-subtle: #e8dcbf;
+  --text-primary: #433422;
+  --text-secondary: #6e583c;
+  --text-muted: #9c8360;
+  --accent-color: #b45309;
+  --table-border: #ded0b7;
+  --table-header-bg: #ede0c7;
+  --table-row-even: #f7f0e0;
+  --table-row-hover: #faebd3;
+  --code-bg: #f3ebd9;
+  --code-border: #ded0b7;
+  --gutter-bg: #f4ecdc;
+  --gutter-text: #a89477;
+}
+
+.theme-nord {
+  --bg-primary: #242933;
+  --bg-secondary: #2e3440;
+  --bg-tertiary: #3b4252;
+  --bg-card: #2e3440;
+  --border-color: #434c5e;
+  --border-subtle: #3b4252;
+  --text-primary: #eceff4;
+  --text-secondary: #d8dee9;
+  --text-muted: #88c0d0;
+  --accent-color: #88c0d0;
+  --table-border: #434c5e;
+  --table-header-bg: #353b49;
+  --table-row-even: rgba(255, 255, 255, 0.02);
+  --table-row-hover: rgba(136, 192, 208, 0.09);
+  --code-bg: #272c37;
+  --code-border: #434c5e;
+  --gutter-bg: #282e3a;
+  --gutter-text: #616e88;
+}
+
+.theme-cyber {
+  --bg-primary: #0a0e14;
+  --bg-secondary: #101720;
+  --bg-tertiary: #192433;
+  --bg-card: #131c27;
+  --border-color: #243447;
+  --border-subtle: #1a2736;
+  --text-primary: #00ffcc;
+  --text-secondary: #70b0d0;
+  --text-muted: #436380;
+  --accent-color: #00ffcc;
+  --table-border: #243447;
+  --table-header-bg: #15202e;
+  --table-row-even: rgba(0, 255, 204, 0.03);
+  --table-row-hover: rgba(0, 255, 204, 0.08);
+  --code-bg: #0f1621;
+  --code-border: #243447;
+  --gutter-bg: #0d131c;
+  --gutter-text: #37536d;
+}
+
+.theme-academic {
+  --bg-primary: #f8fbff;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f0f9ff;
+  --bg-card: #ffffff;
+  --border-color: #bae6fd;
+  --border-subtle: #e0f2fe;
+  --text-primary: #0f172a;
+  --text-secondary: #1e293b;
+  --text-muted: #0284c7;
+  --accent-color: #0284c7;
+  --table-border: #7dd3fc;
+  --table-header-bg: #e0f2fe;
+  --table-row-even: #f8fbff;
+  --table-row-odd: #ffffff;
+  --table-row-hover: #e0f2fe;
+  --code-bg: #f0f9ff;
+  --code-border: #bae6fd;
+  --gutter-bg: #f0f9ff;
+  --gutter-text: #0284c7;
+}
+
+.theme-editorial {
+  --bg-primary: #fffafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #fdf2f8;
+  --bg-card: #fdf2f8;
+  --border-color: #fbcfe8;
+  --border-subtle: #fce7f3;
+  --text-primary: #1f1418;
+  --text-secondary: #4c1d2e;
+  --text-muted: #db2777;
+  --accent-color: #db2777;
+  --table-border: #f472b6;
+  --table-header-bg: #fdf2f8;
+  --table-row-even: #fff5f9;
+  --table-row-odd: #ffffff;
+  --table-row-hover: #fce7f3;
+  --code-bg: #fdf2f8;
+  --code-border: #fbcfe8;
+  --gutter-bg: #fdf2f8;
+  --gutter-text: #db2777;
+}
+
+/* ========================================================
+   HIGH QUALITY EXECUTIVES TABLES (Responsive & Crisp)
+   ======================================================== */
+.table-responsive-wrapper {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid var(--table-border);
+  background-color: var(--bg-secondary);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.06), 0 1px 3px -1px rgba(0, 0, 0, 0.04);
+}
+
+.custom-markdown-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+  text-align: start;
+}
+
+.custom-markdown-table thead th.table-cell {
+  background-color: var(--table-header-bg);
+  color: var(--text-primary);
+  font-weight: 700;
+  padding: 0.85rem 1rem;
+  border-bottom: 2px solid var(--table-border);
+  border-inline-end: 1px solid var(--table-border);
+  white-space: nowrap;
+  letter-spacing: 0.015em;
+  font-size: 0.88rem;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  position: relative;
+}
+
+.theme-dark .custom-markdown-table thead th.table-cell,
+.theme-cyber .custom-markdown-table thead th.table-cell,
+.theme-nord .custom-markdown-table thead th.table-cell {
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Ensure consistent border radius on top corners */
+.custom-markdown-table thead tr:first-child > th.table-cell:first-child {
+  border-start-start-radius: 0.7rem;
+}
+
+.custom-markdown-table thead tr:first-child > th.table-cell:last-child {
+  border-start-end-radius: 0.7rem;
+  border-inline-end: none;
+}
+
+/* Ensure consistent border radius on bottom corners if last row */
+.custom-markdown-table tbody tr:last-child > td.table-cell:first-child {
+  border-end-start-radius: 0.7rem;
+}
+
+.custom-markdown-table tbody tr:last-child > td.table-cell:last-child {
+  border-end-end-radius: 0.7rem;
+  border-inline-end: none;
+}
+
+.custom-markdown-table tbody tr {
+  border-bottom: 1px solid var(--table-border);
+  transition: background-color 0.15s ease-in-out;
+  background-color: var(--table-row-odd, var(--bg-secondary));
+}
+
+.custom-markdown-table tbody tr:nth-child(even) {
+  background-color: var(--table-row-even, var(--bg-tertiary));
+}
+
+.custom-markdown-table tbody tr:hover {
+  background-color: var(--table-row-hover, var(--bg-tertiary));
+}
+
+.custom-markdown-table tbody tr:last-child td.table-cell {
+  border-bottom: none;
+}
+
+.custom-markdown-table td.table-cell {
+  padding: 0.8rem 1rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--table-border);
+  border-inline-end: 1px solid var(--table-border);
+  line-height: 1.65;
+  vertical-align: top;
+}
+
+.custom-markdown-table td.table-cell:last-child {
+  border-inline-end: none;
+}
+
+/* Alignments */
+.custom-markdown-table .text-start {
+  text-align: start;
+}
+.custom-markdown-table .text-center {
+  text-align: center;
+}
+.custom-markdown-table .text-end {
+  text-align: end;
+}
+
+/* Text Highlighting Classes */
+mark.md-highlight {
+  border-radius: 4px;
+  padding: 0.15em 0.35em;
+  margin: 0 0.1em;
+  font-weight: 500;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+mark.md-highlight-yellow {
+  background-color: #fef08a;
+  color: #713f12;
+}
+
+mark.md-highlight-green {
+  background-color: #bbf7d0;
+  color: #14532d;
+}
+
+mark.md-highlight-blue {
+  background-color: #bae6fd;
+  color: #0c4a6e;
+}
+
+mark.md-highlight-pink {
+  background-color: #fbcfe8;
+  color: #831843;
+}
+
+mark.md-highlight-purple {
+  background-color: #e9d5ff;
+  color: #581c87;
+}
+
+mark.md-highlight-orange {
+  background-color: #fed7aa;
+  color: #7c2d12;
+}
+
+/* In dark themes, soften the highlight text slightly for optimal contrast */
+.theme-dark mark.md-highlight-yellow,
+.theme-cyber mark.md-highlight-yellow,
+.theme-nord mark.md-highlight-yellow {
+  background-color: rgba(234, 179, 8, 0.3);
+  color: #fef08a;
+  border-bottom: 2px solid #eab308;
+}
+
+.theme-dark mark.md-highlight-green,
+.theme-cyber mark.md-highlight-green,
+.theme-nord mark.md-highlight-green {
+  background-color: rgba(34, 197, 94, 0.3);
+  color: #bbf7d0;
+  border-bottom: 2px solid #22c55e;
+}
+
+.theme-dark mark.md-highlight-blue,
+.theme-cyber mark.md-highlight-blue,
+.theme-nord mark.md-highlight-blue {
+  background-color: rgba(56, 189, 248, 0.3);
+  color: #bae6fd;
+  border-bottom: 2px solid #38bdf8;
+}
+
+.theme-dark mark.md-highlight-pink,
+.theme-cyber mark.md-highlight-pink,
+.theme-nord mark.md-highlight-pink {
+  background-color: rgba(236, 72, 153, 0.3);
+  color: #fbcfe8;
+  border-bottom: 2px solid #ec4899;
+}
+
+.theme-dark mark.md-highlight-purple,
+.theme-cyber mark.md-highlight-purple,
+.theme-nord mark.md-highlight-purple {
+  background-color: rgba(168, 85, 247, 0.3);
+  color: #e9d5ff;
+  border-bottom: 2px solid #a855f7;
+}
+
+.theme-dark mark.md-highlight-orange,
+.theme-cyber mark.md-highlight-orange,
+.theme-nord mark.md-highlight-orange {
+  background-color: rgba(249, 115, 22, 0.3);
+  color: #fed7aa;
+  border-bottom: 2px solid #f97316;
+}
+
+/* Prism Syntax Highlighting Tokens */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: #64748b;
+  font-style: italic;
+}
+
+.token.punctuation {
+  color: #94a3b8;
+}
+
+.token.namespace {
+  opacity: 0.7;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted {
+  color: #f43f5e;
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted {
+  color: #10b981;
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+  color: #38bdf8;
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  color: #a855f7;
+  font-weight: 500;
+}
+
+.token.function,
+.token.class-name {
+  color: #0284c7;
+  font-weight: 500;
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+  color: #d97706;
+}
+
+/* Markdown typography in preview - Relaxed, Airy & Uncompressed */
+.markdown-body {
+  font-family: inherit;
+  line-height: 2.1;
+  word-break: break-word;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+}
+
+.markdown-body h1 {
+  font-size: 2.2rem;
+  line-height: 1.6;
+  margin-top: 3.5rem;
+  margin-bottom: 1.4rem;
+  font-weight: 800;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.85rem;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.markdown-body h2 {
+  font-size: 1.7rem;
+  line-height: 1.55;
+  margin-top: 3rem;
+  margin-bottom: 1.25rem;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.65rem;
+  color: var(--text-primary);
+}
+
+.markdown-body h3 {
+  font-size: 1.38rem;
+  line-height: 1.55;
+  margin-top: 2.4rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.markdown-body h4 {
+  font-size: 1.15rem;
+  line-height: 1.6;
+  margin-top: 1.9rem;
+  margin-bottom: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-body p {
+  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
+  line-height: 2.15;
+  color: var(--text-secondary);
+}
+
+.markdown-body ul:not(.task-list) {
+  list-style-type: disc;
+  padding-inline-start: 2rem;
+  margin-top: 1.1rem;
+  margin-bottom: 1.35rem;
+  color: var(--text-secondary);
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-inline-start: 2rem;
+  margin-top: 1.1rem;
+  margin-bottom: 1.35rem;
+  color: var(--text-secondary);
+}
+
+.markdown-body li {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  line-height: 2.1;
+}
+
+.markdown-body hr {
+  margin-top: 3.5rem;
+  margin-bottom: 3.5rem;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  opacity: 0.8;
+}
+
+.markdown-body a {
+  color: #0284c7;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s;
+}
+
+.theme-dark .markdown-body a,
+.theme-cyber .markdown-body a,
+.theme-nord .markdown-body a {
+  color: #38bdf8;
+}
+
+.markdown-body a:hover {
+  color: #0369a1;
+}
+
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 0.75rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.markdown-body code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.2em 0.4em;
+  border-radius: 0.35rem;
+  background-color: var(--code-bg);
+  border: 1px solid var(--code-border);
+  color: var(--text-primary);
+}
+
+/* Light Theme Code Block Enhancements */
+.theme-light .code-block-container {
+  background-color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+
+.theme-light .code-block-header {
+  background-color: #1e293b;
+  border-bottom: 1px solid #334155;
+  color: #94a3b8;
+}
+
+.theme-light .code-block-header button.code-copy-btn {
+  background-color: #334155;
+  color: #e2e8f0;
+}
+
+.theme-light .code-block-header button.code-copy-btn:hover {
+  background-color: #475569;
+  color: #ffffff;
+}
+
+/* Admonitions in Light theme */
+.theme-light .admonition-note {
+  background-color: #eff6ff !important;
+  color: #1e40af !important;
+  border-color: #3b82f6 !important;
+}
+.theme-light .admonition-tip {
+  background-color: #f0fdf4 !important;
+  color: #166534 !important;
+  border-color: #22c55e !important;
+}
+.theme-light .admonition-important {
+  background-color: #faf5ff !important;
+  color: #6b21a8 !important;
+  border-color: #a855f7 !important;
+}
+.theme-light .admonition-warning {
+  background-color: #fffbeb !important;
+  color: #92400e !important;
+  border-color: #f59e0b !important;
+}
+.theme-light .admonition-caution {
+  background-color: #fff1f2 !important;
+  color: #9f1239 !important;
+  border-color: #f43f5e !important;
+}
+
+/* ========================================================
+   ACADEMIC / EXAM BOOKLET THEME STYLING
+   ======================================================== */
+.theme-academic .markdown-body h1 {
+  color: #0369a1;
+  border-bottom: 2px solid #7dd3fc;
+  padding-bottom: 0.5rem;
+}
+
+.theme-academic .markdown-body h2 {
+  color: #0284c7;
+  border-bottom: 1.5px solid #bae6fd;
+  padding-bottom: 0.4rem;
+}
+
+/* Rounded Pill Badge for H3 (Like 'چالش شماره ۱: سؤالات غلط' in booklet) */
+.theme-academic .markdown-body h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+  border-radius: 9999px;
+  padding: 0.35rem 1.25rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 800;
+  font-size: 0.95rem;
+  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.12);
+}
+
+/* Flanking Divider Line for H4 (Like '━━━━ بررسی یک سؤال ━━━━' in booklet) */
+.theme-academic .markdown-body h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: #0284c7;
+  font-weight: 700;
+  font-size: 0.92rem;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+.theme-academic .markdown-body h4::before,
+.theme-academic .markdown-body h4::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background-color: #38bdf8;
+  border-radius: 2px;
+}
+
+/* Exam Question Box (Blockquote) */
+.theme-academic .markdown-body blockquote {
+  background-color: #e0f2fe;
+  border-inline-start: 4px solid #0284c7;
+  border-top: 1px solid #bae6fd;
+  border-inline-end: 1px solid #bae6fd;
+  border-bottom: 1px solid #bae6fd;
+  border-radius: 0.75rem;
+  color: #0f172a;
+  padding: 1.25rem 1.5rem;
+  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 4px 14px -3px rgba(2, 132, 199, 0.1);
+}
+
+.theme-academic .markdown-body blockquote strong {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+/* Bold colored terms (e.g. سؤالات تیپ ۲: , تذکر مهم:) */
+.theme-academic .markdown-body p > strong:first-child {
+  color: #0284c7;
+  font-weight: 800;
+}
+
+/* Horizontal Divider in Academic Theme */
+.theme-academic .markdown-body hr {
+  height: 2px;
+  border: none;
+  background: linear-gradient(90deg, transparent, #38bdf8, transparent);
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+
+/* Admonitions in Academic Theme */
+.theme-academic .admonition-note {
+  background-color: #e0f2fe !important;
+  color: #0369a1 !important;
+  border-color: #0284c7 !important;
+}
+
+.theme-academic .admonition-tip {
+  background-color: #f0fdf4 !important;
+  color: #166534 !important;
+  border-color: #22c55e !important;
+}
+
+.theme-academic .admonition-important {
+  background-color: #e0f2fe !important;
+  color: #0284c7 !important;
+  border-color: #0ea5e9 !important;
+}
+
+.theme-academic .admonition-warning {
+  background-color: #fffbeb !important;
+  color: #92400e !important;
+  border-color: #f59e0b !important;
+}
+
+.theme-academic .admonition-caution {
+  background-color: #fff1f2 !important;
+  color: #9f1239 !important;
+  border-color: #f43f5e !important;
+}
+
+/* Code block in Academic theme */
+.theme-academic .code-block-container {
+  background-color: #0f172a;
+  border: 1px solid #bae6fd;
+}
+
+.theme-academic .code-block-header {
+  background-color: #1e293b;
+  border-bottom: 1px solid #334155;
+  color: #38bdf8;
+}
+
+/* Custom Table in Academic theme */
+.theme-academic .custom-markdown-table thead th.table-cell {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border-bottom: 2px solid #7dd3fc;
+  border-inline-end: 1px solid #bae6fd;
+}
+
+.theme-academic .custom-markdown-table td.table-cell {
+  border-bottom: 1px solid #e0f2fe;
+  border-inline-end: 1px solid #e0f2fe;
+  color: #1e293b;
+}
+
+/* Slide Card in Academic Presentation mode */
+.theme-academic .slide-card-light {
+  background-color: #ffffff !important;
+  border: 2px solid #7dd3fc !important;
+  box-shadow: 0 25px 60px -15px rgba(2, 132, 199, 0.22) !important;
+}
+
+/* ========================================================
+   EDITORIAL ROSE / BOOK PUBLISHING THEME STYLING
+   (نشر کتاب، رمان و مجله ادبی)
+   ======================================================== */
+.theme-editorial .markdown-body h1 {
+  color: #9d174d;
+  border-bottom: 2px solid #f472b6;
+  padding-bottom: 0.6rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.theme-editorial .markdown-body h2 {
+  color: #be185d;
+  border-bottom: 1.5px solid #fbcfe8;
+  padding-bottom: 0.45rem;
+  font-weight: 800;
+}
+
+/* Organic Pill Badge for H3 (Inspired by liquid blob book cover) */
+.theme-editorial .markdown-body h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: linear-gradient(135deg, #fdf2f8 0%, #fae8ff 100%);
+  color: #be185d;
+  border: 1px solid #f472b6;
+  border-radius: 9999px;
+  padding: 0.4rem 1.4rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 800;
+  font-size: 0.95rem;
+  box-shadow: 0 2px 8px rgba(219, 39, 119, 0.12);
+}
+
+/* Flanking Divider Line for H4 (Editorial Chapter Divider) */
+.theme-editorial .markdown-body h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: #db2777;
+  font-weight: 700;
+  font-size: 0.92rem;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+.theme-editorial .markdown-body h4::before,
+.theme-editorial .markdown-body h4::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, #fbcfe8, #db2777, #fbcfe8);
+  border-radius: 2px;
+}
+
+/* Book Cover / Colophon Box (Blockquote) */
+.theme-editorial .markdown-body blockquote {
+  background: linear-gradient(135deg, #fff5f9 0%, #faf5ff 100%);
+  border-inline-start: 4px solid #db2777;
+  border-top: 1px solid #fbcfe8;
+  border-inline-end: 1px solid #fbcfe8;
+  border-bottom: 1px solid #fbcfe8;
+  border-radius: 1.25rem;
+  color: #1f1418;
+  padding: 1.5rem 1.75rem;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 8px 24px -6px rgba(219, 39, 119, 0.1);
+}
+
+.theme-editorial .markdown-body blockquote strong {
+  color: #9d174d;
+  font-weight: 800;
+}
+
+/* Book Colophon Labels (پدیدآورنده: ناشر: طراح جلد: شمارگان:) */
+.theme-editorial .markdown-body p > strong:first-child,
+.theme-editorial .markdown-body li > strong:first-child {
+  color: #e11d48;
+  font-weight: 800;
+}
+
+/* Divider with Rose/Magenta flourish */
+.theme-editorial .markdown-body hr {
+  height: 2px;
+  border: none;
+  background: linear-gradient(90deg, transparent, #db2777, #9333ea, transparent);
+  margin-top: 2.25rem;
+  margin-bottom: 2.25rem;
+}
+
+/* Admonitions in Editorial Theme */
+.theme-editorial .admonition-note {
+  background-color: #fdf2f8 !important;
+  color: #9d174d !important;
+  border-color: #db2777 !important;
+}
+
+.theme-editorial .admonition-tip {
+  background-color: #fdf4ff !important;
+  color: #86198f !important;
+  border-color: #c026d3 !important;
+}
+
+.theme-editorial .admonition-important {
+  background-color: #fff1f2 !important;
+  color: #9f1239 !important;
+  border-color: #e11d48 !important;
+}
+
+.theme-editorial .admonition-warning {
+  background-color: #fffbeb !important;
+  color: #92400e !important;
+  border-color: #f59e0b !important;
+}
+
+.theme-editorial .admonition-caution {
+  background-color: #fff1f2 !important;
+  color: #9f1239 !important;
+  border-color: #f43f5e !important;
+}
+
+/* Code block in Editorial theme */
+.theme-editorial .code-block-container {
+  background-color: #1e131d;
+  border: 1px solid #fbcfe8;
+}
+
+.theme-editorial .code-block-header {
+  background-color: #2b1929;
+  border-bottom: 1px solid #4a2846;
+  color: #f472b6;
+}
+
+/* Custom Table in Editorial theme */
+.theme-editorial .custom-markdown-table thead th.table-cell {
+  background-color: #fdf2f8;
+  color: #9d174d;
+  border-bottom: 2px solid #f472b6;
+  border-inline-end: 1px solid #fbcfe8;
+}
+
+.theme-editorial .custom-markdown-table td.table-cell {
+  border-bottom: 1px solid #fce7f3;
+  border-inline-end: 1px solid #fce7f3;
+  color: #4c1d2e;
+}
+
+/* Slide Card in Editorial Presentation mode */
+.theme-editorial .slide-card-light {
+  background-color: #ffffff !important;
+  border: 2px solid #f472b6 !important;
+  box-shadow: 0 25px 60px -15px rgba(219, 39, 119, 0.22) !important;
+}
+
+/* Print styles for clean export/save-as-PDF */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .no-print,
+  nav,
+  aside,
+  header,
+  .toolbar-container,
+  .status-bar,
+  .editor-pane {
+    display: none !important;
+  }
+
+  .preview-pane,
+  .markdown-body {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    color: #111 !important;
+  }
+
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3 {
+    color: #111 !important;
+    page-break-after: avoid;
+  }
+
+  .code-block-container {
+    border: 1px solid #ccc !important;
+    background: #f8f9fa !important;
+    page-break-inside: avoid;
+  }
+
+  .code-block-header {
+    background: #eee !important;
+    color: #333 !important;
+  }
+
+  .code-copy-btn {
+    display: none !important;
+  }
+
+  pre code {
+    color: #222 !important;
+  }
+
+  .custom-markdown-table {
+    border: 1px solid #ddd !important;
+  }
+
+  .custom-markdown-table th,
+  .custom-markdown-table td {
+    border: 1px solid #ddd !important;
+    color: #000 !important;
+  }
+
+  /* Booklet Cover Page Print Styling */
+  .booklet-cover-page {
+    display: flex !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    height: 94vh !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    padding: 3rem !important;
+    text-align: center !important;
+    border: 2px solid #333 !important;
+    border-radius: 16px !important;
+    margin-bottom: 2rem !important;
+  }
+
+  .booklet-watermark-overlay {
+    display: block !important;
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) rotate(-35deg) !important;
+    font-size: 5rem !important;
+    font-weight: 800 !important;
+    color: rgba(0, 0, 0, 0.05) !important;
+    pointer-events: none !important;
+    z-index: 9999 !important;
+    white-space: nowrap !important;
+  }
+}
+
+/* ==============================================================
+   PRESENTATION / SLIDE MODE STYLING (SCREEN)
+   ============================================================== */
+.presentation-slide-card {
+  transition: all 0.2s ease-in-out;
+}
+
+/* LIGHT SLIDE THEME (Crisp Keynote Style - White Card, Deep Text) */
+.slide-card-light {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45) !important;
+}
+
+.slide-card-light .presentation-slide-body {
+  color: #0f172a !important;
+}
+
+.slide-card-light .presentation-slide-body h1 {
+  color: #0f172a !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+}
+
+.slide-card-light .presentation-slide-body h2 {
+  color: #1e293b !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.slide-card-light .presentation-slide-body h3,
+.slide-card-light .presentation-slide-body h4 {
+  color: #1e293b !important;
+}
+
+.slide-card-light .presentation-slide-body p,
+.slide-card-light .presentation-slide-body li {
+  color: #1e293b !important;
+}
+
+.slide-card-light .presentation-slide-body hr {
+  border-top: 1px solid #cbd5e1 !important;
+}
+
+.slide-card-light .presentation-slide-body blockquote {
+  background-color: #f8fafc !important;
+  color: #334155 !important;
+  border-inline-start-color: #f59e0b !important;
+}
+
+.slide-card-light .presentation-slide-body table th {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.slide-card-light .presentation-slide-body table td {
+  color: #1e293b !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* DARK SLIDE THEME (Cinema Style - Charcoal Card, Bright White Text) */
+.slide-card-dark {
+  background-color: #18181b !important;
+  color: #f8fafc !important;
+  border-color: #3f3f46 !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8) !important;
+}
+
+.slide-card-dark .presentation-slide-body {
+  color: #f8fafc !important;
+}
+
+.slide-card-dark .presentation-slide-body h1 {
+  color: #ffffff !important;
+  border-bottom: 2px solid #3f3f46 !important;
+}
+
+.slide-card-dark .presentation-slide-body h2 {
+  color: #f1f5f9 !important;
+  border-bottom: 1px solid #3f3f46 !important;
+}
+
+.slide-card-dark .presentation-slide-body h3,
+.slide-card-dark .presentation-slide-body h4 {
+  color: #e2e8f0 !important;
+}
+
+.slide-card-dark .presentation-slide-body p,
+.slide-card-dark .presentation-slide-body li {
+  color: #f1f5f9 !important;
+}
+
+.slide-card-dark .presentation-slide-body hr {
+  border-top: 1px solid #3f3f46 !important;
+}
+
+.slide-card-dark .presentation-slide-body blockquote {
+  background-color: #27272a !important;
+  color: #e4e4e7 !important;
+  border-inline-start-color: #f59e0b !important;
+}
+
+.slide-card-dark .presentation-slide-body table th {
+  background-color: #27272a !important;
+  color: #f8fafc !important;
+}
+
+.slide-card-dark .presentation-slide-body table td {
+  color: #f1f5f9 !important;
+  border-color: #3f3f46 !important;
+}
+
+/* Common Presentation Slide Body Rules */
+.presentation-slide-body {
+  font-size: 1.3rem !important;
+  line-height: 2 !important;
+}
+
+.presentation-slide-body h1 {
+  font-size: 2.3rem !important;
+  line-height: 1.35 !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 1.2rem !important;
+  padding-bottom: 0.5rem !important;
+  font-weight: 800 !important;
+  text-align: center;
+}
+
+.presentation-slide-body h2 {
+  font-size: 1.85rem !important;
+  line-height: 1.4 !important;
+  margin-top: 1rem !important;
+  margin-bottom: 1rem !important;
+  padding-bottom: 0.4rem !important;
+  font-weight: 700 !important;
+}
+
+.presentation-slide-body h3 {
+  font-size: 1.45rem !important;
+  line-height: 1.45 !important;
+  margin-top: 0.8rem !important;
+  margin-bottom: 0.8rem !important;
+  font-weight: 700 !important;
+}
+
+.presentation-slide-body p {
+  font-size: 1.25rem !important;
+  line-height: 2.1 !important;
+  margin: 1rem 0 !important;
+}
+
+.presentation-slide-body li {
+  font-size: 1.2rem !important;
+  line-height: 2 !important;
+  margin: 0.7rem 0 !important;
+}
+
+.presentation-slide-body hr {
+  margin: 1.75rem 0 !important;
+  opacity: 0.6 !important;
+}
+
+.presentation-slide-body blockquote {
+  font-size: 1.2rem !important;
+  line-height: 2 !important;
+  margin: 1.5rem 0 !important;
+}
+
+/* Hide booklet cover on screen */
+.booklet-cover-page,
+.booklet-watermark-overlay {
+  display: none;
+}
+
+/* ========================================================
+   SUBTLE PULSE ANIMATIONS FOR .status-bar ON AUTO-SAVE
+   ======================================================== */
+@keyframes statusBarPulseSaving {
+  0% {
+    background-color: var(--bg-secondary);
+    border-top-color: var(--border-color);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+  50% {
+    background-color: rgba(245, 158, 11, 0.08);
+    border-top-color: rgba(245, 158, 11, 0.55);
+    box-shadow: 0 -3px 14px -1px rgba(245, 158, 11, 0.28), inset 0 1px 0 0 rgba(245, 158, 11, 0.2);
+  }
+  100% {
+    background-color: var(--bg-secondary);
+    border-top-color: var(--border-color);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+@keyframes statusBarPulsePending {
+  0% {
+    background-color: var(--bg-secondary);
+    border-top-color: var(--border-color);
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
+  }
+  50% {
+    background-color: rgba(56, 189, 248, 0.06);
+    border-top-color: rgba(56, 189, 248, 0.45);
+    box-shadow: 0 -2px 10px -1px rgba(56, 189, 248, 0.2), inset 0 1px 0 0 rgba(56, 189, 248, 0.15);
+  }
+  100% {
+    background-color: var(--bg-secondary);
+    border-top-color: var(--border-color);
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
+  }
+}
+
+.status-bar.is-saving,
+.status-bar.status-bar-saving,
+.status-bar[data-sync-status="saving"] {
+  animation: statusBarPulseSaving 1.5s ease-in-out infinite !important;
+  will-change: background-color, border-color, box-shadow;
+}
+
+.status-bar.is-pending,
+.status-bar.status-bar-pending,
+.status-bar[data-sync-status="pending"] {
+  animation: statusBarPulsePending 2s ease-in-out infinite !important;
+  will-change: background-color, border-color, box-shadow;
+}
+
