@@ -153,6 +153,11 @@ async function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_doc_access_owner ON document_access_requests(owner_id, status);
         CREATE INDEX IF NOT EXISTS idx_doc_access_requester ON document_access_requests(requester_id, file_id);
 
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT true;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR(255);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token_expires_at TIMESTAMPTZ;
+        CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(verification_token);
+
         -- Ensure all documents authored by registered users display their chosen registration display_name
         UPDATE shared_markdown_files f
         SET author_name = u.display_name
@@ -276,6 +281,56 @@ const getMailTransporter = () => {
   }
   return null;
 };
+
+// Helper to send Hugging Face style email verification
+async function sendVerificationEmail(email: string, username: string, token: string, req: Request): Promise<boolean> {
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    console.warn('[AUTH] SMTP not configured. Cannot dispatch verification email.');
+    return false;
+  }
+
+  const hostHeader = req.get('x-forwarded-host') || req.get('host') || 'localhost:3000';
+  const protocol = req.get('x-forwarded-proto') || req.protocol || 'http';
+  const baseUrl = process.env.APP_URL || `${protocol}://${hostHeader}`;
+  const verifyUrl = `${baseUrl}/?verify_token=${token}`;
+
+  try {
+    await transporter.sendMail({
+      from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
+      to: email,
+      subject: 'تأیید نشانی ایمیل و فعال‌سازی حساب کاربری در Markdown Studio Pro',
+      html: `
+        <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f8fafc; padding: 40px 20px; color: #1e293b;">
+          <div style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 20px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h2 style="color: #d97706; margin: 0; font-size: 24px;">خوش آمدید! 🎉</h2>
+              <p style="color: #64748b; font-size: 13px; margin-top: 6px;">استودیو مارک‌دان پرو</p>
+            </div>
+            <p style="font-size: 14px; line-height: 1.8; color: #475569;">
+              سلام <strong>@${username}</strong> گرامی،<br/>
+              از ثبت‌نام شما در پلتفرم Markdown Studio Pro سپاسگزاریم. برای تأیید ایمیل و فعال‌سازی حساب خود، روی دکمه زیر کلیک نمایید:
+            </p>
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${verifyUrl}" style="background-color: #f59e0b; color: #000000; font-weight: bold; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 14px; display: inline-block;">
+                تأیید و فعال‌سازی حساب کاربری
+              </a>
+            </div>
+            <p style="font-size: 12px; color: #64748b; line-height: 1.7; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px;">
+              این پیوند به مدت ۲۴ ساعت معتبر خواهد بود. اگر دکمه بالا عمل نکرد، این نشانی را در مرورگر وارد کنید:<br/>
+              <span style="font-family: monospace; font-size: 11px; color: #0284c7; word-break: break-all;" dir="ltr">${verifyUrl}</span>
+            </p>
+          </div>
+        </div>
+      `,
+    });
+    console.log(`[AUTH] Verification email dispatched to ${email}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[AUTH] Failed to dispatch verification email to ${email}:`, err.message);
+    return false;
+  }
+}
 
 // 1. Send Email Verification Code for Email-First Authorization (OTP)
 app.post('/api/auth/send-email-code', async (req: Request, res: Response) => {
@@ -444,9 +499,16 @@ app.post('/api/auth/verify-email-code', async (req: Request, res: Response) => {
 // Register new user account (Fast signup with username + password, optional email)
 app.post('/api/auth/register', async (req: Request, res: Response) => {
   try {
-    const { email, password, displayName, username } = req.body;
+    const { email, username, password, displayName } = req.body;
     if (!email || !email.trim() || !email.includes('@')) {
       return res.status(400).json({ error: 'لطفاً یک آدرس ایمیل معتبر وارد کنید.' });
+    }
+    if (!username || username.trim().length < 3) {
+      return res.status(400).json({ error: 'نام کاربری باید حداقل ۳ کاراکتر انگلیسی باشد.' });
+    }
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (cleanUsername.length < 3) {
+      return res.status(400).json({ error: 'نام کاربری فقط می‌تواند شامل حروف کوچک انگلیسی، اعداد، _ و - باشد.' });
     }
     if (!password || password.length < 6) {
       return res.status(400).json({ error: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' });
@@ -454,40 +516,91 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Check if email already registered
+    // Check existing email
     const existingEmail = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
     if (existingEmail.rows.length > 0) {
-      return res.status(400).json({ error: 'این ایمیل قبلاً در سیستم ثبت شده است. لطفاً وارد حساب خود شوید.' });
+      return res.status(400).json({ error: 'این ایمیل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.' });
     }
 
-    // Generate or clean username
-    let cleanUsername = username ? username.trim().toLowerCase().replace(/[^\w-]/g, '') : '';
-    if (!cleanUsername || cleanUsername.length < 3) {
-      const emailPrefix = cleanEmail.split('@')[0].replace(/[^\w-]/g, '').slice(0, 15) || 'user';
-      cleanUsername = `${emailPrefix}_${Math.random().toString(36).substring(2, 6)}`;
-    }
-
-    // Ensure unique username
+    // Check existing username
     const existingUser = await pool.query('SELECT id FROM users WHERE LOWER(username) = $1', [cleanUsername]);
     if (existingUser.rows.length > 0) {
-      cleanUsername = `${cleanUsername}_${Math.random().toString(36).substring(2, 5)}`;
+      return res.status(400).json({ error: 'این نام کاربری قبلاً انتخاب شده است. لطفاً نام دیگری برگزینید.' });
     }
 
-    const name = displayName?.trim() || cleanEmail.split('@')[0];
+    const name = displayName?.trim() || cleanUsername;
     const passwordHash = await bcrypt.hash(password, 10);
     const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
+    // Generate secure verification token
+    const cryptoMod = await import('crypto');
+    const verificationToken = cryptoMod.randomBytes(32).toString('hex');
+    const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
     const insertRes = await pool.query(
       `
-      INSERT INTO users (id, email, username, display_name, password_hash, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-      RETURNING id, email, username, display_name, avatar_url, bio, created_at
+      INSERT INTO users (id, email, username, display_name, password_hash, is_verified, verification_token, verification_token_expires_at, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, false, $6, $7, NOW(), NOW())
+      RETURNING id, email, username, display_name, avatar_url, bio, created_at, is_verified
       `,
-      [userId, cleanEmail, cleanUsername, name, passwordHash]
+      [userId, cleanEmail, cleanUsername, name, passwordHash, verificationToken, tokenExpiresAt]
     );
 
     const user = insertRes.rows[0];
-    const token = jwt.sign(
+
+    // Dispatch verification email
+    const emailSent = await sendVerificationEmail(cleanEmail, cleanUsername, verificationToken, req);
+
+    res.status(201).json({
+      success: true,
+      requiresVerification: true,
+      emailSent,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        displayName: user.display_name,
+      },
+      message: `ایمیل فعال‌سازی برای شما به نشانی ${cleanEmail} ارسال گردید. لطفاً برای فعال‌سازی نهایی حساب کاربری، روی پیوند داخل ایمیل کلیک فرمایید.`,
+    });
+  } catch (error: any) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'خطا در ثبت‌نام کاربر', details: error.message });
+  }
+});
+
+// 2. Verify Email Token & Activate User Account (Hugging Face style)
+app.post('/api/auth/verify-email-token', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'توکن فعال‌سازی نامعتبر است.' });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, email, username, display_name, avatar_url, bio, created_at, is_verified
+      FROM users
+      WHERE verification_token = $1 AND verification_token_expires_at > NOW()
+      `,
+      [token.trim()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'پیوند فعال‌سازی نامعتبر است یا منقضی شده است. لطفاً وارد شوید و درخواست ارسال مجدد دهید.' });
+    }
+
+    const user = result.rows[0];
+    await pool.query(
+      `
+      UPDATE users
+      SET is_verified = true, verification_token = NULL, verification_token_expires_at = NULL, updated_at = NOW()
+      WHERE id = $1
+      `,
+      [user.id]
+    );
+
+    const jwtToken = jwt.sign(
       {
         id: user.id,
         email: user.email,
@@ -498,9 +611,9 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
       { expiresIn: '30d' }
     );
 
-    res.status(201).json({
+    res.json({
       success: true,
-      token,
+      token: jwtToken,
       user: {
         id: user.id,
         email: user.email,
@@ -509,12 +622,50 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
         avatarUrl: user.avatar_url,
         bio: user.bio,
         createdAt: user.created_at,
+        isVerified: true,
       },
-      message: 'حساب کاربری با موفقیت ساخته شد.',
+      message: `حساب کاربری شما با موفقیت فعال گردید! خوش آمدید @${user.username}`,
     });
   } catch (error: any) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'خطا در ثبت‌نام کاربر', details: error.message });
+    console.error('Email verification error:', error);
+    res.status(500).json({ error: 'خطا در فعال‌سازی حساب کاربری' });
+  }
+});
+
+// 3. Resend Verification Email
+app.post('/api/auth/resend-verification', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'آدرس ایمیل نامعتبر است.' });
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    const userRes = await pool.query('SELECT id, email, username, is_verified FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'کاربری با این ایمیل یافت نشد.' });
+    }
+    const user = userRes.rows[0];
+    if (user.is_verified) {
+      return res.status(400).json({ error: 'این حساب قبلاً فعال شده است. لطفاً وارد شوید.' });
+    }
+
+    const cryptoMod = await import('crypto');
+    const verificationToken = cryptoMod.randomBytes(32).toString('hex');
+    const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await pool.query(
+      'UPDATE users SET verification_token = $1, verification_token_expires_at = $2, updated_at = NOW() WHERE id = $3',
+      [verificationToken, tokenExpiresAt, user.id]
+    );
+
+    await sendVerificationEmail(user.email, user.username, verificationToken, req);
+
+    res.json({
+      success: true,
+      message: `ایمیل فعال‌سازی مجدد به نشانی ${user.email} ارسال گردید.`,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در ارسال مجدد ایمیل فعال‌سازی' });
   }
 });
 

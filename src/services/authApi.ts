@@ -35,10 +35,10 @@ export const authApi = {
 
   async register(params: {
     email: string;
+    username: string;
     password: string;
     displayName?: string;
-    username?: string;
-  }): Promise<AuthResponse> {
+  }): Promise<AuthResponse & { requiresVerification?: boolean; emailSent?: boolean }> {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -50,6 +50,35 @@ export const authApi = {
     }
     if (data.token) {
       this.setToken(data.token);
+    }
+    return data;
+  },
+
+  async verifyEmailToken(token: string): Promise<AuthResponse> {
+    const res = await fetch('/api/auth/verify-email-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در فعال‌سازی حساب کاربری');
+    }
+    if (data.token) {
+      this.setToken(data.token);
+    }
+    return data;
+  },
+
+  async resendVerification(email: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch('/api/auth/resend-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در ارسال مجدد ایمیل');
     }
     return data;
   },

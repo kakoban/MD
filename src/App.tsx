@@ -259,9 +259,30 @@ export default function App() {
     fetchPendingRequestsCount();
   }, [fetchPendingRequestsCount]);
 
-  // Check URL query parameters for ?share=ID or ?file=ID
+  // Check URL query parameters for ?verify_token or ?share=ID or ?file=ID
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const verifyToken = params.get('verify_token') || params.get('verify');
+    if (verifyToken) {
+      authApi
+        .verifyEmailToken(verifyToken)
+        .then((res) => {
+          if (res.user) {
+            setCurrentUser(res.user);
+            setIsConfettiActive(true);
+            setTimeout(() => setIsConfettiActive(false), 5000);
+            setCloudNotice(`🎉 حساب کاربری شما با موفقیت فعال شد! خوش آمدید @${res.user.username}`);
+            setTimeout(() => setCloudNotice(null), 6000);
+            // Clean url
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+          }
+        })
+        .catch((err) => {
+          alert(err.message || 'خطا در فعال‌سازی حساب کاربری');
+        });
+    }
+
     const shareId = params.get('share') || params.get('file');
 
     if (shareId) {

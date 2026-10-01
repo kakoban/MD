@@ -6,6 +6,7 @@ export interface SharedMarkdownFile {
   content?: string;
   description: string;
   author_name: string;
+  author_username?: string;
   user_id?: string;
   tags: string[];
   is_public: boolean;

@@ -553,8 +553,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
 
                     <div className="flex items-center justify-between pt-1 border-t border-[var(--border-color)]/60 text-[10px] text-[var(--text-muted)]">
-                      <span className="truncate max-w-[120px]">
-                        {file.author_name || 'ناشناس'}
+                      <span className="truncate max-w-[130px] flex items-center gap-1">
+                        <span className="truncate font-medium">{file.author_name || 'ناشناس'}</span>
+                        {file.author_username && (
+                          <span className="text-amber-500/80 font-mono text-[9px]" dir="ltr">
+                            @{file.author_username}
+                          </span>
+                        )}
                       </span>
 
                       <div className="flex items-center gap-1">
