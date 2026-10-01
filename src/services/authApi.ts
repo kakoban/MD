@@ -34,10 +34,10 @@ export const authApi = {
   },
 
   async register(params: {
-    username: string;
+    email: string;
     password: string;
     displayName?: string;
-    email?: string;
+    username?: string;
   }): Promise<AuthResponse> {
     const res = await fetch('/api/auth/register', {
       method: 'POST',

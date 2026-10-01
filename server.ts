@@ -444,27 +444,36 @@ app.post('/api/auth/verify-email-code', async (req: Request, res: Response) => {
 // Register new user account (Fast signup with username + password, optional email)
 app.post('/api/auth/register', async (req: Request, res: Response) => {
   try {
-    const { email, username, password, displayName } = req.body;
-    if (!username || username.trim().length < 3) {
-      return res.status(400).json({ error: 'نام کاربری باید حداقل ۳ کاراکتر انگلیسی باشد.' });
+    const { email, password, displayName, username } = req.body;
+    if (!email || !email.trim() || !email.includes('@')) {
+      return res.status(400).json({ error: 'لطفاً یک آدرس ایمیل معتبر وارد کنید.' });
     }
     if (!password || password.length < 6) {
       return res.status(400).json({ error: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' });
     }
 
-    const cleanUsername = username.trim().toLowerCase().replace(/[^\w-]/g, '');
-    const cleanEmail = email && email.trim() ? email.trim().toLowerCase() : `${cleanUsername}@local.user`;
-    const name = displayName?.trim() || username.trim();
+    const cleanEmail = email.trim().toLowerCase();
 
-    // Check if user already exists
-    const existing = await pool.query(
-      'SELECT id FROM users WHERE LOWER(username) = $1' + (email && email.trim() ? ' OR LOWER(email) = $2' : ''),
-      email && email.trim() ? [cleanUsername, cleanEmail] : [cleanUsername]
-    );
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ error: 'این نام کاربری قبلاً ثبت شده است. لطفاً نام دیگری انتخاب کنید.' });
+    // Check if email already registered
+    const existingEmail = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+    if (existingEmail.rows.length > 0) {
+      return res.status(400).json({ error: 'این ایمیل قبلاً در سیستم ثبت شده است. لطفاً وارد حساب خود شوید.' });
     }
 
+    // Generate or clean username
+    let cleanUsername = username ? username.trim().toLowerCase().replace(/[^\w-]/g, '') : '';
+    if (!cleanUsername || cleanUsername.length < 3) {
+      const emailPrefix = cleanEmail.split('@')[0].replace(/[^\w-]/g, '').slice(0, 15) || 'user';
+      cleanUsername = `${emailPrefix}_${Math.random().toString(36).substring(2, 6)}`;
+    }
+
+    // Ensure unique username
+    const existingUser = await pool.query('SELECT id FROM users WHERE LOWER(username) = $1', [cleanUsername]);
+    if (existingUser.rows.length > 0) {
+      cleanUsername = `${cleanUsername}_${Math.random().toString(36).substring(2, 5)}`;
+    }
+
+    const name = displayName?.trim() || cleanEmail.split('@')[0];
     const passwordHash = await bcrypt.hash(password, 10);
     const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
