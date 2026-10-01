@@ -158,6 +158,10 @@ async function initDatabase() {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token_expires_at TIMESTAMPTZ;
         CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(verification_token);
 
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_password_token VARCHAR(255);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_password_expires_at TIMESTAMPTZ;
+        CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_password_token);
+
         -- Ensure all documents authored by registered users display their chosen registration display_name
         UPDATE shared_markdown_files f
         SET author_name = u.display_name
@@ -335,6 +339,56 @@ async function sendVerificationEmail(email: string, username: string, token: str
     return true;
   } catch (err: any) {
     console.error(`[AUTH] Failed to dispatch verification email to ${email}:`, err.message);
+    return false;
+  }
+}
+
+// Helper to send Password Reset Email
+async function sendPasswordResetEmail(email: string, username: string, token: string, req: Request): Promise<boolean> {
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    console.warn('[AUTH] SMTP not configured. Cannot dispatch reset email.');
+    return false;
+  }
+
+  const hostHeader = req.get('x-forwarded-host') || req.get('host') || 'localhost:3000';
+  const protocol = req.get('x-forwarded-proto') || req.protocol || 'http';
+  const baseUrl = process.env.APP_URL || `${protocol}://${hostHeader}`;
+  const resetUrl = `${baseUrl}/?reset_token=${token}`;
+
+  try {
+    await transporter.sendMail({
+      from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
+      to: email,
+      subject: 'بازیابی کلمه عبور در Markdown Studio Pro',
+      html: `
+        <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f8fafc; padding: 40px 20px; color: #1e293b;">
+          <div style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 20px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h2 style="color: #d97706; margin: 0; font-size: 24px;">بازیابی رمز عبور 🔑</h2>
+              <p style="color: #64748b; font-size: 13px; margin-top: 6px;">استودیو مارک‌دان پرو</p>
+            </div>
+            <p style="font-size: 14px; line-height: 1.8; color: #475569;">
+              سلام <strong>@${username}</strong> گرامی،<br/>
+              درخواستی برای تغییر و بازیابی رمز عبور حساب کاربری شما ثبت گردید. برای تعیین رمز عبور جدید، لطفاً روی پیوند زیر کلیک کنید:
+            </p>
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${resetUrl}" style="background-color: #f59e0b; color: #000000; font-weight: bold; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 14px; display: inline-block;">
+                تعیین رمز عبور جدید
+              </a>
+            </div>
+            <p style="font-size: 12px; color: #64748b; line-height: 1.7; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px;">
+              این پیوند به مدت ۱ ساعت معتبر خواهد بود. اگر این درخواست توسط شما ثبت نشده است، لطفاً این ایمیل را نادیده بگیرید.<br/>
+              <span style="font-family: monospace; font-size: 11px; color: #0284c7; word-break: break-all;" dir="ltr">${resetUrl}</span>
+            </p>
+          </div>
+        </div>
+      `,
+    });
+    console.log(`[AUTH] Password reset email dispatched to ${email}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[AUTH] Failed to dispatch password reset email to ${email}:`, err.message);
     return false;
   }
 }
@@ -637,6 +691,106 @@ app.post('/api/auth/verify-email-token', async (req: Request, res: Response) => 
   } catch (error: any) {
     console.error('Email verification error:', error);
     res.status(500).json({ error: 'خطا در فعال‌سازی حساب کاربری' });
+  }
+});
+
+// 4. Request Password Reset (Forgot Password)
+app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'لطفاً یک آدرس ایمیل معتبر وارد فرمایید.' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const userRes = await pool.query('SELECT id, email, username FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+
+    if (userRes.rows.length === 0) {
+      // Don't reveal user existence
+      return res.json({
+        success: true,
+        message: 'اگر این نشانی ایمیل در سیستم ثبت شده باشد، پیوند بازیابی کلمه عبور ارسال گردید.',
+      });
+    }
+
+    const user = userRes.rows[0];
+    const cryptoMod = await import('crypto');
+    const resetToken = cryptoMod.randomBytes(32).toString('hex');
+    const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await pool.query(
+      'UPDATE users SET reset_password_token = $1, reset_password_expires_at = $2, updated_at = NOW() WHERE id = $3',
+      [resetToken, resetExpiresAt, user.id]
+    );
+
+    // Dispatch reset email in background
+    sendPasswordResetEmail(user.email, user.username, resetToken, req).catch((e) => {
+      console.error('[AUTH] Background reset email error:', e);
+    });
+
+    res.json({
+      success: true,
+      message: 'پیوند بازیابی رمز عبور به ایمیل شما ارسال شد. لطفاً صندوق ورودی خود را بررسی فرمایید.',
+    });
+  } catch (error: any) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'خطا در ثبت درخواست بازیابی رمز عبور' });
+  }
+});
+
+// 5. Complete Password Reset
+app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'توکن بازیابی نامعتبر است.' });
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد.' });
+    }
+
+    const userRes = await pool.query(
+      'SELECT id, email, username, display_name FROM users WHERE reset_password_token = $1 AND reset_password_expires_at > NOW()',
+      [token.trim()]
+    );
+
+    if (userRes.rows.length === 0) {
+      return res.status(400).json({ error: 'پیوند بازیابی رمز عبور نامعتبر است یا منقضی شده است. لطفاً مجدداً درخواست دهید.' });
+    }
+
+    const user = userRes.rows[0];
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await pool.query(
+      'UPDATE users SET password_hash = $1, reset_password_token = NULL, reset_password_expires_at = NULL, is_verified = true, updated_at = NOW() WHERE id = $2',
+      [passwordHash, user.id]
+    );
+
+    const jwtToken = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        displayName: user.display_name,
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      success: true,
+      token: jwtToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        displayName: user.display_name,
+      },
+      message: 'رمز عبور شما با موفقیت تغییر یافت و وارد سیستم شدید.',
+    });
+  } catch (error: any) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'خطا در تغییر رمز عبور' });
   }
 });
 

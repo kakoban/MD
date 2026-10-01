@@ -70,6 +70,35 @@ export const authApi = {
     return data;
   },
 
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در ثبت درخواست بازیابی رمز');
+    }
+    return data;
+  },
+
+  async resetPassword(params: { token: string; newPassword: string }): Promise<AuthResponse> {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در تغییر رمز عبور');
+    }
+    if (data.token) {
+      this.setToken(data.token);
+    }
+    return data;
+  },
+
   async resendVerification(email: string): Promise<{ success: boolean; message: string }> {
     const res = await fetch('/api/auth/resend-verification', {
       method: 'POST',

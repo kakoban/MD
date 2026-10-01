@@ -108,6 +108,7 @@ export default function App() {
   const [isConfettiActive, setIsConfettiActive] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [requestedAccessFile, setRequestedAccessFile] = useState<SharedMarkdownFile | null>(null);
   const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
@@ -259,9 +260,17 @@ export default function App() {
     fetchPendingRequestsCount();
   }, [fetchPendingRequestsCount]);
 
-  // Check URL query parameters for ?verify_token or ?share=ID or ?file=ID
+  // Check URL query parameters for ?verify_token or ?reset_token or ?share=ID or ?file=ID
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const resetToken = params.get('reset_token') || params.get('reset');
+    if (resetToken) {
+      setResetPasswordToken(resetToken);
+      setIsAuthModalOpen(true);
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+
     const verifyToken = params.get('verify_token') || params.get('verify');
     if (verifyToken) {
       authApi
@@ -1260,11 +1269,16 @@ export default function App() {
         onOpenCommunity={() => setIsCommunityOpen(true)}
       />
 
-      {/* User Authentication Modal (Login / Register) */}
+      {/* User Authentication Modal (Login / Register / Password Reset) */}
       <AuthModal
         isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setResetPasswordToken(null);
+        }}
         onSuccess={handleLoginSuccess}
+        initialMode={resetPasswordToken ? 'reset' : 'login'}
+        resetToken={resetPasswordToken}
       />
 
       {/* Access Request Modal (for locked/private files) */}
