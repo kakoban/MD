@@ -259,24 +259,31 @@ const emailVerificationCodes = new Map<string, { code: string; expiresAt: number
 
 // Helper to configure SMTP Transporter for actual email dispatch
 const getMailTransporter = () => {
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    if (process.env.SMTP_USER.endsWith('@gmail.com') || process.env.SMTP_HOST?.includes('gmail')) {
+      return nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 10000,
+      });
+    }
+
     return nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: Number(process.env.SMTP_PORT) || 587,
       secure: Number(process.env.SMTP_PORT) === 465,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
-    });
-  }
-  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    return nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
     });
   }
   return null;
@@ -548,13 +555,14 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
 
     const user = insertRes.rows[0];
 
-    // Dispatch verification email
-    const emailSent = await sendVerificationEmail(cleanEmail, cleanUsername, verificationToken, req);
+    // Dispatch verification email in background without blocking response
+    sendVerificationEmail(cleanEmail, cleanUsername, verificationToken, req).catch((e) => {
+      console.error('[AUTH] Background email send error:', e);
+    });
 
     res.status(201).json({
       success: true,
       requiresVerification: true,
-      emailSent,
       user: {
         id: user.id,
         email: user.email,
