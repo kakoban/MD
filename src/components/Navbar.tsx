@@ -1,3 +1,4 @@
+import { useLanguage } from "../context/LanguageContext";
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Download,
@@ -30,6 +31,7 @@ import {
   LogOut,
   FolderOpen,
   Edit3,
+  Globe,
 } from 'lucide-react';
 import { ViewMode, AppTheme, FontFamily, TextDirection, CloudSyncStatus, UserProfile } from '../types';
 
@@ -105,7 +107,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenProfile,
   onOpenMyDocuments,
   onLogout,
-}) => {
+}: NavbarProps) => {
+  const { language, setLanguage, t } = useLanguage();
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
   const [showFontMenu, setShowFontMenu] = useState(false);
@@ -161,7 +164,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           type="text"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="عنوان سند..."
+          placeholder={t('navbar.docTitlePlaceholder')}
           className="font-bold text-sm bg-transparent border-b border-transparent hover:border-[var(--border-color)] focus:border-amber-500 focus:outline-none px-1.5 py-0.5 text-[var(--text-primary)] truncate flex-1 min-w-[100px] transition-colors"
         />
 
@@ -251,7 +254,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           title="نمایش دو ستونه (ویرایش و پیش‌نمایش همزمان)"
         >
           <Columns2 className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">دو ستونه</span>
+          <span className="hidden sm:inline">{t('navbar.split')}</span>
         </button>
 
         <button
@@ -263,7 +266,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           title="فقط ویرایشگر"
         >
           <FileEdit className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">ویرایش</span>
+          <span className="hidden sm:inline">{t('navbar.editor')}</span>
         </button>
 
         <button
@@ -275,7 +278,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           title="حالت مطالعه و خواندن (بدون حواس‌پرتی)"
         >
           <Eye className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">مطالعه</span>
+          <span className="hidden sm:inline">{t('navbar.preview')}</span>
         </button>
 
         <button
@@ -289,7 +292,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           title="حالت پرزنتیشن و اسلاید تدریس مدرس (کلید میانبر F5)"
         >
           <Presentation className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">ارائه / اسلاید</span>
+          <span className="hidden sm:inline">{t('navbar.presentation')}</span>
           <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500 font-bold border border-amber-500/30">
             PRO
           </span>
@@ -398,6 +401,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
         </div>
+
+        {/* Language Switcher */}
+        <button
+          type="button"
+          onClick={() => setLanguage(language === 'fa' ? 'en' : 'fa')}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[var(--border-color)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-xs font-semibold transition-all shadow-xs"
+          title={language === 'fa' ? 'Switch to English' : 'تغییر به زبان فارسی'}
+        >
+          <Globe className="w-3.5 h-3.5 text-amber-500" />
+          <span className="font-mono text-xs">{language === 'fa' ? 'EN' : 'فا'}</span>
+        </button>
 
         {/* Templates Button */}
         {onOpenTemplates && (

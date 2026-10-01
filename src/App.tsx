@@ -37,6 +37,9 @@ import { ConfettiOverlay } from './components/ConfettiOverlay';
 import { CheatsheetModal } from './components/CheatsheetModal';
 import { SearchReplaceModal } from './components/SearchReplaceModal';
 import { AuthModal } from './components/AuthModal';
+import { AccessRequestModal } from './components/AccessRequestModal';
+import { AccessRequestsManagerModal } from './components/AccessRequestsManagerModal';
+import { SharedMarkdownFile } from './services/cloudApi';
 import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
 import { authApi } from './services/authApi';
@@ -105,6 +108,9 @@ export default function App() {
   const [isConfettiActive, setIsConfettiActive] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [requestedAccessFile, setRequestedAccessFile] = useState<SharedMarkdownFile | null>(null);
+  const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isMyDocumentsModalOpen, setIsMyDocumentsModalOpen] = useState(false);
   const [cloudFilesCount, setCloudFilesCount] = useState<number>(0);
@@ -129,6 +135,7 @@ export default function App() {
   // Search state
   const [searchMatches, setSearchMatches] = useState<number[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [lastSearchLen, setLastSearchLen] = useState(0);
 
   // Rendered HTML & Headings cache
   const [renderedHtml, setRenderedHtml] = useState<string>('');
@@ -233,6 +240,24 @@ export default function App() {
     setCloudNotice(`سند ابری «${file.title}» بارگذاری شد.`);
     setTimeout(() => setCloudNotice(null), 3000);
   };
+
+  const fetchPendingRequestsCount = useCallback(() => {
+    if (!currentUser) {
+      setPendingRequestsCount(0);
+      return;
+    }
+    cloudApi
+      .getIncomingAccessRequests()
+      .then((res) => {
+        const pending = (res.requests || []).filter((r) => r.status === 'pending').length;
+        setPendingRequestsCount(pending);
+      })
+      .catch(() => {});
+  }, [currentUser]);
+
+  useEffect(() => {
+    fetchPendingRequestsCount();
+  }, [fetchPendingRequestsCount]);
 
   // Check URL query parameters for ?share=ID or ?file=ID
   useEffect(() => {
@@ -1019,6 +1044,10 @@ export default function App() {
           onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
           onOpenCloudDoc={handleOpenFileFromCommunity}
           onOpenPublishModal={() => setIsShareModalOpen(true)}
+          currentUser={currentUser}
+          onRequestAccess={(file) => setRequestedAccessFile(file)}
+          onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
+          pendingRequestsCount={pendingRequestsCount}
         />
 
         {/* Central Panes */}
@@ -1215,6 +1244,26 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onSuccess={handleLoginSuccess}
+      />
+
+      {/* Access Request Modal (for locked/private files) */}
+      <AccessRequestModal
+        isOpen={Boolean(requestedAccessFile)}
+        file={requestedAccessFile}
+        currentUser={currentUser}
+        onClose={() => setRequestedAccessFile(null)}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onRequestSent={() => {
+          setCloudNotice("درخواست دسترسی با موفقیت ارسال شد.");
+          setTimeout(() => setCloudNotice(null), 4000);
+        }}
+      />
+
+      {/* Access Requests Manager Modal (for document owners) */}
+      <AccessRequestsManagerModal
+        isOpen={isAccessManagerOpen}
+        onClose={() => setIsAccessManagerOpen(false)}
+        onRequestsUpdated={fetchPendingRequestsCount}
       />
 
       {/* User Profile Modal */}

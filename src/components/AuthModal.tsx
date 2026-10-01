@@ -41,7 +41,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [otpCode, setOtpCode] = useState('');
   const [otpStep, setOtpStep] = useState<'input-email' | 'enter-code'>('input-email');
   const [otpNotice, setOtpNotice] = useState<string | null>(null);
-  const [devReceivedCode, setDevReceivedCode] = useState<string | null>(null);
   const [otpDisplayName, setOtpDisplayName] = useState('');
 
   // Google direct authorization states
@@ -76,9 +75,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setOtpStep('enter-code');
       setOtpNotice(`کد اتورایز ۶ رقمی به نشانی ${emailOtp.trim()} ارسال شد.`);
       setOtpCode(''); // Require user to enter the code!
-      if (res.devCode) {
-        setDevReceivedCode(res.devCode);
-      }
     } catch (err: any) {
       setErrorMessage(err.message || 'خطا در ارسال کد به ایمیل.');
     } finally {
@@ -132,9 +128,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setEmailOtp(targetEmail);
       setOtpDisplayName(googleName.trim() || targetEmail.split('@')[0]);
       setOtpCode(''); // Empty! The user MUST enter the code!
-      if (res.devCode) {
-        setDevReceivedCode(res.devCode);
-      }
       setOtpNotice(`کد ۶ رقمی اتورایز برای جیمیل ${targetEmail} صادر شد. لطفاً کد را در کادر زیر وارد فرمایید.`);
       setOtpStep('enter-code');
       setMode('email-otp');
@@ -489,25 +482,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </p>
                   </div>
                 </div>
-
-                {/* Developer / Demo fallback note */}
-                {devReceivedCode && (
-                  <div className="p-2.5 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[11px] text-[var(--text-muted)] flex items-center justify-between">
-                    <span className="text-[10px]">
-                      کد تأیید تولیدشده روی سرور دمو:{' '}
-                      <code className="font-mono text-amber-500 font-bold px-1.5 py-0.5 rounded bg-[var(--bg-primary)] border border-[var(--border-color)]">
-                        {devReceivedCode}
-                      </code>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setOtpCode(devReceivedCode)}
-                      className="text-[10px] text-amber-500 hover:underline cursor-pointer font-bold shrink-0 ps-2"
-                    >
-                      درج خودکار
-                    </button>
-                  </div>
-                )}
 
                 <div>
                   <div className="flex items-center justify-between mb-1">

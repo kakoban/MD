@@ -14,6 +14,26 @@ export interface SharedMarkdownFile {
   created_at: string;
   updated_at: string;
   content_length?: number;
+  my_access_status?: 'pending' | 'approved' | 'rejected' | null;
+  isLocked?: boolean;
+}
+
+export interface DocumentAccessRequest {
+  id: string;
+  file_id: string;
+  requester_id: string;
+  owner_id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  message?: string;
+  created_at: string;
+  updated_at: string;
+  file_title?: string;
+  file_description?: string;
+  requester_name?: string;
+  requester_username?: string;
+  requester_avatar?: string;
+  requester_email?: string;
+  owner_name?: string;
 }
 
 export interface CommunityTag {
@@ -59,7 +79,9 @@ export const cloudApi = {
     if (params?.limit) searchParams.set('limit', String(params.limit));
     if (params?.offset) searchParams.set('offset', String(params.offset));
 
-    const res = await fetch(`/api/files?${searchParams.toString()}`);
+    const res = await fetch(`/api/files?${searchParams.toString()}`, {
+      headers: authApi.getAuthHeaders(),
+    });
     if (!res.ok) {
       throw new Error('خطا در دریافت لیست فایل‌ها از دیتابیس');
     }
@@ -68,12 +90,23 @@ export const cloudApi = {
 
   // Fetch single file by ID
   async getFileById(id: string): Promise<SharedMarkdownFile> {
-    const res = await fetch(`/api/files/${encodeURIComponent(id)}`);
+    const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
+      headers: authApi.getAuthHeaders(),
+    });
+    const data = await res.json();
     if (!res.ok) {
+      if (res.status === 403 && data.isLocked) {
+        const err: any = new Error(data.error || 'این سند خصوصی است و نیاز به مجوز دارد.');
+        err.isLocked = true;
+        err.requiresAuth = data.requiresAuth;
+        err.accessStatus = data.accessStatus;
+        err.file = data.file;
+        throw err;
+      }
       if (res.status === 404) throw new Error('فایل مورد نظر در دیتابیس یافت نشد.');
-      throw new Error('خطا در بارگذاری فایل از دیتابیس');
+      throw new Error(data.error || 'خطا در بارگذاری فایل از دیتابیس');
     }
-    return res.json();
+    return data;
   },
 
   // Publish / Upload a new markdown file
@@ -130,5 +163,57 @@ export const cloudApi = {
     });
     if (!res.ok) throw new Error('خطا در ثبت امتیاز');
     return res.json();
+  },
+
+  // Request access to a private file
+  async requestFileAccess(fileId: string, message?: string): Promise<{ success: boolean; message: string; request: DocumentAccessRequest }> {
+    const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/request-access`, {
+      method: 'POST',
+      headers: authApi.getAuthHeaders(),
+      body: JSON.stringify({ message }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در ارسال درخواست دسترسی');
+    }
+    return data;
+  },
+
+  // Get incoming requests for current user's documents
+  async getIncomingAccessRequests(): Promise<{ requests: DocumentAccessRequest[] }> {
+    const res = await fetch('/api/access-requests/incoming', {
+      headers: authApi.getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در دریافت درخواست‌های ورودی');
+    }
+    return data;
+  },
+
+  // Respond to access request (approve / reject)
+  async respondToAccessRequest(requestId: string, status: 'approved' | 'rejected'): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`/api/access-requests/${encodeURIComponent(requestId)}/respond`, {
+      method: 'POST',
+      headers: authApi.getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در ثبت پاسخ درخواست');
+    }
+    return data;
+  },
+
+  // Get outgoing requests sent by current user
+  async getOutgoingAccessRequests(): Promise<{ requests: DocumentAccessRequest[] }> {
+    const res = await fetch('/api/access-requests/outgoing', {
+      headers: authApi.getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در دریافت وضعیت درخواست‌ها');
+    }
+    return data;
   },
 };

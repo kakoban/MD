@@ -1,4 +1,10 @@
 import React, { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine, keymap } from '@codemirror/view';
+import { EditorState, Compartment, EditorSelection } from '@codemirror/state';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { markdown } from '@codemirror/lang-markdown';
+import { bracketMatching, defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { closeBrackets } from '@codemirror/autocomplete';
 import { FontFamily } from '../types';
 
 export interface EditorHandle {
@@ -7,6 +13,7 @@ export interface EditorHandle {
   insertTable: (rows: number, cols: number) => void;
   insertCallout: (type: string) => void;
   scrollToLine: (line: number) => void;
+  selectRange: (from: number, to: number) => void;
   focus: () => void;
   getTextarea: () => HTMLTextAreaElement | null;
 }
@@ -34,270 +41,311 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(({
   onOpenSearch,
   onSave,
 }, ref) => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lineNumbersRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const isInternalChange = useRef(false);
 
-  // Expose methods to parent
+  const onOpenSearchRef = useRef(onOpenSearch);
+  onOpenSearchRef.current = onOpenSearch;
+
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const onCursorChangeRef = useRef(onCursorChange);
+  onCursorChangeRef.current = onCursorChange;
+
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
+
+  const lineNumbersComp = useRef(new Compartment());
+  const directionComp = useRef(new Compartment());
+
+  // Helper to wrap selection with prefix and suffix
+  const wrapSelection = (prefix: string, suffix: string = '', defaultText: string = '') => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    const { state, dispatch } = view;
+    const changes = state.changeByRange((range) => {
+      const selected = state.sliceDoc(range.from, range.to);
+      const text = selected || defaultText;
+      const insert = `${prefix}${text}${suffix}`;
+      return {
+        changes: [{ from: range.from, to: range.to, insert }],
+        range: EditorSelection.range(
+          range.from + prefix.length,
+          range.from + prefix.length + text.length
+        ),
+      };
+    });
+
+    dispatch(changes);
+    view.focus();
+  };
+
   useImperativeHandle(ref, () => ({
     insertMarkdown(prefix: string, suffix: string = '', defaultText: string = '') {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const selected = value.substring(start, end);
-      const textToWrap = selected || defaultText;
-      const replacement = `${prefix}${textToWrap}${suffix}`;
-
-      const newValue = value.substring(0, start) + replacement + value.substring(end);
-      onChange(newValue);
-
-      // Re-focus and set selection
-      setTimeout(() => {
-        textarea.focus();
-        if (selected) {
-          textarea.setSelectionRange(start + prefix.length, start + prefix.length + textToWrap.length);
-        } else {
-          const cursorPos = start + prefix.length + textToWrap.length;
-          textarea.setSelectionRange(cursorPos, cursorPos);
-        }
-      }, 0);
+      wrapSelection(prefix, suffix, defaultText);
     },
 
     insertHighlight(color: string) {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const selected = value.substring(start, end);
-      const textToWrap = selected || 'متن هایلایت';
       const prefix = color === 'yellow' ? '==' : `==${color}:`;
       const suffix = '==';
-      const replacement = `${prefix}${textToWrap}${suffix}`;
-
-      const newValue = value.substring(0, start) + replacement + value.substring(end);
-      onChange(newValue);
-
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(start + prefix.length, start + prefix.length + textToWrap.length);
-      }, 0);
+      wrapSelection(prefix, suffix, 'متن هایلایت');
     },
 
     insertTable(rows: number, cols: number) {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
+      const view = viewRef.current;
+      if (!view) return;
 
       let tableMd = '\n\n';
-      // Header
       tableMd += '| ' + Array.from({ length: cols }, (_, i) => `ستون ${i + 1}`).join(' | ') + ' |\n';
-      // Separator
       tableMd += '| ' + Array.from({ length: cols }, () => ':---').join(' | ') + ' |\n';
-      // Rows
       for (let r = 0; r < rows; r++) {
         tableMd += '| ' + Array.from({ length: cols }, (_, c) => `داده ${r + 1}-${c + 1}`).join(' | ') + ' |\n';
       }
       tableMd += '\n';
 
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const newValue = value.substring(0, start) + tableMd + value.substring(end);
-      onChange(newValue);
-
-      setTimeout(() => {
-        textarea.focus();
-        const newPos = start + tableMd.length;
-        textarea.setSelectionRange(newPos, newPos);
-      }, 0);
+      const main = view.state.selection.main;
+      view.dispatch({
+        changes: { from: main.from, to: main.to, insert: tableMd },
+        selection: { anchor: main.from + tableMd.length },
+      });
+      view.focus();
     },
 
     insertCallout(type: string) {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
+      const view = viewRef.current;
+      if (!view) return;
 
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const selected = value.substring(start, end);
+      const { state } = view;
+      const main = state.selection.main;
+      const selected = state.sliceDoc(main.from, main.to);
       const content = selected ? selected.split('\n').map(l => `> ${l}`).join('\n') : '> متن یادداشت خود را اینجا بنویسید.';
       const calloutMd = `\n> [!${type}]\n${content}\n\n`;
 
-      const newValue = value.substring(0, start) + calloutMd + value.substring(end);
-      onChange(newValue);
-
-      setTimeout(() => {
-        textarea.focus();
-      }, 0);
+      view.dispatch({
+        changes: { from: main.from, to: main.to, insert: calloutMd },
+        selection: { anchor: main.from + calloutMd.length },
+      });
+      view.focus();
     },
 
     scrollToLine(line: number) {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      const lines = value.split('\n');
-      const targetLine = Math.min(line, lines.length);
-      const charIndex = lines.slice(0, targetLine - 1).reduce((acc, l) => acc + l.length + 1, 0);
+      const view = viewRef.current;
+      if (!view) return;
+      const doc = view.state.doc;
+      const targetLine = Math.min(Math.max(1, line), doc.lines);
+      const lineInfo = doc.line(targetLine);
+      view.dispatch({
+        selection: { anchor: lineInfo.from },
+        effects: EditorView.scrollIntoView(lineInfo.from, { y: 'center' }),
+      });
+      view.focus();
+    },
 
-      textarea.focus();
-      textarea.setSelectionRange(charIndex, charIndex);
-      // approximate scroll
-      const lineHeight = 24;
-      textarea.scrollTop = (targetLine - 3) * lineHeight;
+    selectRange(from: number, to: number) {
+      const view = viewRef.current;
+      if (!view) return;
+      const docLength = view.state.doc.length;
+      const safeFrom = Math.min(Math.max(0, from), docLength);
+      const safeTo = Math.min(Math.max(safeFrom, to), docLength);
+      view.dispatch({
+        selection: { anchor: safeFrom, head: safeTo },
+        effects: EditorView.scrollIntoView(safeFrom, { y: 'center' }),
+      });
+      view.focus();
     },
 
     focus() {
-      textareaRef.current?.focus();
+      viewRef.current?.focus();
     },
 
     getTextarea() {
-      return textareaRef.current;
-    }
+      return null;
+    },
   }));
 
-  // Handle Tab, Auto-closing, and Shortcuts
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+  // Initialize CodeMirror 6 View
+  useEffect(() => {
+    if (!containerRef.current) return;
 
-    // Shortcuts:
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
-      if (e.key === 'b' || e.key === 'B') {
-        e.preventDefault();
-        wrapSelection('**', '**', 'متن پررنگ');
-        return;
-      }
-      if (e.key === 'i' || e.key === 'I') {
-        e.preventDefault();
-        wrapSelection('*', '*', 'متن مورب');
-        return;
-      }
-      if (e.key === 'h' || e.key === 'H') {
-        e.preventDefault();
-        wrapSelection('==', '==', 'متن هایلایت');
-        return;
-      }
-      if (e.key === 'k' || e.key === 'K') {
-        e.preventDefault();
-        wrapSelection('[', '](https://example.com)', 'عنوان پیوند');
-        return;
-      }
-      if (e.key === 'f' || e.key === 'F') {
-        e.preventDefault();
-        if (onOpenSearch) onOpenSearch();
-        return;
-      }
-      if (e.key === 's' || e.key === 'S') {
-        e.preventDefault();
-        if (onSave) onSave();
-        return;
-      }
-    }
+    const editorTheme = EditorView.theme({
+      '&': {
+        height: '100%',
+        backgroundColor: 'transparent',
+        color: 'var(--text-primary)',
+        fontSize: '15px',
+      },
+      '.cm-scroller': {
+        overflow: 'auto',
+        fontFamily: 'inherit',
+        lineHeight: '1.75',
+      },
+      '.cm-content': {
+        padding: '20px',
+        caretColor: 'var(--text-primary)',
+      },
+      '&.cm-focused .cm-cursor': {
+        borderLeftColor: 'var(--text-primary)',
+        borderLeftWidth: '2px',
+      },
+      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+        backgroundColor: 'rgba(59, 130, 246, 0.28) !important',
+      },
+      '.cm-gutters': {
+        backgroundColor: 'var(--gutter-bg)',
+        color: 'var(--gutter-text)',
+        borderRight: '1px solid var(--border-color)',
+        padding: '0 6px',
+        userSelect: 'none',
+      },
+      '.cm-activeLineGutter': {
+        backgroundColor: 'transparent',
+        color: 'var(--text-primary)',
+        fontWeight: 'bold',
+      },
+      '.cm-activeLine': {
+        backgroundColor: 'rgba(150, 150, 150, 0.05)',
+      },
+    });
 
-    // Tab key indent/outdent
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
+    const customShortcuts = keymap.of([
+      {
+        key: 'Mod-b',
+        run: () => {
+          wrapSelection('**', '**', 'متن پررنگ');
+          return true;
+        },
+      },
+      {
+        key: 'Mod-i',
+        run: () => {
+          wrapSelection('*', '*', 'متن مورب');
+          return true;
+        },
+      },
+      {
+        key: 'Mod-h',
+        run: () => {
+          wrapSelection('==', '==', 'متن هایلایت');
+          return true;
+        },
+      },
+      {
+        key: 'Mod-k',
+        run: () => {
+          wrapSelection('[', '](https://)', 'عنوان پیوند');
+          return true;
+        },
+      },
+      {
+        key: 'Mod-f',
+        run: () => {
+          onOpenSearchRef.current?.();
+          return true;
+        },
+      },
+      {
+        key: 'Mod-s',
+        run: () => {
+          onSaveRef.current?.();
+          return true;
+        },
+      },
+      indentWithTab,
+    ]);
 
-      if (!e.shiftKey) {
-        // Indent 2 spaces
-        const newValue = value.substring(0, start) + '  ' + value.substring(end);
-        onChange(newValue);
-        setTimeout(() => {
-          textarea.setSelectionRange(start + 2, start + 2);
-        }, 0);
-      } else {
-        // Outdent if at line start
-        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-        if (value.substring(lineStart, lineStart + 2) === '  ') {
-          const newValue = value.substring(0, lineStart) + value.substring(lineStart + 2);
-          onChange(newValue);
-          setTimeout(() => {
-            textarea.setSelectionRange(Math.max(lineStart, start - 2), Math.max(lineStart, end - 2));
-          }, 0);
-        }
-      }
+    const state = EditorState.create({
+      doc: value,
+      extensions: [
+        lineNumbersComp.current.of(showLineNumbers ? lineNumbers() : []),
+        directionComp.current.of(EditorView.editorAttributes.of({ dir: direction })),
+        highlightActiveLineGutter(),
+        highlightActiveLine(),
+        history(),
+        bracketMatching(),
+        closeBrackets(),
+        markdown(),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        editorTheme,
+        customShortcuts,
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            isInternalChange.current = true;
+            const newDoc = update.state.doc.toString();
+            onChangeRef.current(newDoc);
+          }
+
+          if (update.selectionSet || update.docChanged) {
+            const main = update.state.selection.main;
+            const line = update.state.doc.lineAt(main.head);
+            onCursorChangeRef.current?.(line.number, main.head - line.from + 1);
+
+            if (!main.empty) {
+              const selected = update.state.sliceDoc(main.from, main.to);
+              const words = (selected.trim().match(/[\w؀-ۿ-]+/g) || []).length;
+              onSelectionChangeRef.current?.({ chars: selected.length, words });
+            } else {
+              onSelectionChangeRef.current?.(null);
+            }
+          }
+        }),
+      ],
+    });
+
+    const view = new EditorView({
+      state,
+      parent: containerRef.current,
+    });
+
+    viewRef.current = view;
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, []);
+
+  // Sync external value changes
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    if (isInternalChange.current) {
+      isInternalChange.current = false;
       return;
     }
 
-    // Auto-close pairs: (), [], {}, "", '', ``
-    const pairs: Record<string, string> = {
-      '(': ')',
-      '[': ']',
-      '{': '}',
-      '`': '`',
-      '"': '"',
-    };
-
-    if (pairs[e.key]) {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const closing = pairs[e.key];
-
-      // If text is selected, wrap it
-      if (start !== end) {
-        e.preventDefault();
-        const selected = value.substring(start, end);
-        const newValue = value.substring(0, start) + e.key + selected + closing + value.substring(end);
-        onChange(newValue);
-        setTimeout(() => {
-          textarea.setSelectionRange(start + 1, end + 1);
-        }, 0);
-      }
+    const currentDoc = view.state.doc.toString();
+    if (currentDoc !== value) {
+      view.dispatch({
+        changes: { from: 0, to: currentDoc.length, insert: value },
+      });
     }
-  };
+  }, [value]);
 
-  const wrapSelection = (prefix: string, suffix: string, defaultText: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selected = value.substring(start, end) || defaultText;
-    const replacement = `${prefix}${selected}${suffix}`;
-    const newValue = value.substring(0, start) + replacement + value.substring(end);
-    onChange(newValue);
-    setTimeout(() => {
-      textarea.setSelectionRange(start + prefix.length, start + prefix.length + selected.length);
-    }, 0);
-  };
+  // Sync direction
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: directionComp.current.reconfigure(EditorView.editorAttributes.of({ dir: direction })),
+    });
+  }, [direction]);
 
-  // Sync scroll with line numbers
-  const handleScroll = () => {
-    if (textareaRef.current && lineNumbersRef.current) {
-      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
-  };
-
-  // Track cursor position and selection
-  const handleSelectOrKeyUp = () => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-
-    // Line & col
-    if (onCursorChange) {
-      const textBefore = value.substring(0, start);
-      const lines = textBefore.split('\n');
-      const line = lines.length;
-      const col = lines[lines.length - 1].length + 1;
-      onCursorChange(line, col);
-    }
-
-    // Selection stats
-    if (onSelectionChange) {
-      if (start !== end) {
-        const selected = value.substring(start, end);
-        const words = (selected.trim().match(/[\w\u0600-\u06FF-]+/g) || []).length;
-        onSelectionChange({ chars: selected.length, words });
-      } else {
-        onSelectionChange(null);
-      }
-    }
-  };
-
-  const lines = value.split('\n');
-  const lineCount = lines.length;
+  // Sync line numbers toggle
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: lineNumbersComp.current.reconfigure(showLineNumbers ? lineNumbers() : []),
+    });
+  }, [showLineNumbers]);
 
   const fontClass =
     fontFamily === 'mono'
@@ -306,42 +354,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(({
       ? 'font-serif'
       : fontFamily === 'sans'
       ? 'font-sans'
-      : 'font-sans'; // default vazirmatn
+      : 'font-sans';
 
   return (
-    <div className="editor-pane relative flex-1 flex h-full overflow-hidden bg-[var(--bg-secondary)]">
-      {/* Line Numbers Gutter */}
-      {showLineNumbers && (
-        <div
-          ref={lineNumbersRef}
-          aria-hidden="true"
-          className="select-none py-5 px-2.5 w-14 text-end font-mono text-xs text-[var(--gutter-text)] bg-[var(--gutter-bg)] border-e border-[var(--border-color)] overflow-hidden shrink-0"
-        >
-          {Array.from({ length: lineCount }).map((_, i) => (
-            <div key={i} className="leading-7 h-7">
-              {i + 1}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Main Textarea */}
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onScroll={handleScroll}
-        onKeyUp={handleSelectOrKeyUp}
-        onClick={handleSelectOrKeyUp}
-        dir={direction}
-        spellCheck="false"
-        placeholder="اینجا متن مارک‌دان خود را بنویسید یا یک فایل .md را در این قسمت بکشید و رها کنید..."
-        className={`w-full h-full p-5 resize-none bg-transparent text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none text-sm md:text-base leading-7 tracking-wide ${fontClass}`}
-        style={{
-          tabSize: 2,
-        }}
-      />
+    <div className={`editor-pane relative flex-1 h-full w-full overflow-hidden bg-[var(--bg-secondary)] ${fontClass}`}>
+      <div ref={containerRef} className="h-full w-full" />
     </div>
   );
 });

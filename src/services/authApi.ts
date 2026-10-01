@@ -76,7 +76,6 @@ export const authApi = {
   async sendEmailCode(email: string): Promise<{
     success: boolean;
     message: string;
-    devCode?: string;
     emailSentToInbox?: boolean;
   }> {
     const res = await fetch('/api/auth/send-email-code', {
@@ -111,25 +110,7 @@ export const authApi = {
     return data;
   },
 
-  async googleAuthorize(params: {
-    email: string;
-    displayName?: string;
-    avatarUrl?: string;
-  }): Promise<AuthResponse> {
-    const res = await fetch('/api/auth/google-authorize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در اتورایز با حساب گوگل');
-    }
-    if (data.token) {
-      this.setToken(data.token);
-    }
-    return data;
-  },
+  
 
   async getMe(): Promise<UserProfile | null> {
     const token = this.getToken();

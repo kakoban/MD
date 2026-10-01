@@ -6,6 +6,8 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
 
 dotenv.config();
 
@@ -14,7 +16,11 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'markdown-studio-neon-secret-jwt-key-2025';
+const JWT_SECRET = process.env.JWT_SECRET as string;
+if (!JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET is not set in environment variables.");
+  process.exit(1);
+}
 
 interface JwtPayload {
   id: string;
@@ -31,20 +37,44 @@ function getAuthUser(req: Request): JwtPayload | null {
   }
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    const decoded = jwt.verify(token, JWT_SECRET) as unknown as JwtPayload;
     return decoded;
   } catch {
     return null;
   }
 }
 
-app.use(express.json({ limit: '10mb' }));
+
+// Simple In-Memory Rate Limiter
+interface RateLimitRecord {
+  count: number;
+  resetAt: number;
+}
+const rateLimitMap = new Map<string, RateLimitRecord>();
+
+function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(key);
+  if (!record || now > record.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (record.count >= limit) {
+    return false;
+  }
+  record.count += 1;
+  return true;
+}
+
+app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Database connection
-const connectionString =
-  process.env.DATABASE_URL ||
-  'postgresql://neondb_owner:npg_oebj56JQfgyw@ep-young-fire-b5r966sk-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error("FATAL: DATABASE_URL is not set in environment variables.");
+  process.exit(1);
+}
 
 const pool = new pg.Pool({
   connectionString,
@@ -107,6 +137,21 @@ async function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_shared_files_created ON shared_markdown_files(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_shared_files_public ON shared_markdown_files(is_public);
         CREATE INDEX IF NOT EXISTS idx_shared_files_user ON shared_markdown_files(user_id);
+
+        CREATE TABLE IF NOT EXISTS document_access_requests (
+          id VARCHAR(100) PRIMARY KEY,
+          file_id VARCHAR(100) NOT NULL REFERENCES shared_markdown_files(id) ON DELETE CASCADE,
+          requester_id VARCHAR(100) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          owner_id VARCHAR(100) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          status VARCHAR(20) DEFAULT 'pending',
+          message VARCHAR(500) DEFAULT '',
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE(file_id, requester_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_doc_access_owner ON document_access_requests(owner_id, status);
+        CREATE INDEX IF NOT EXISTS idx_doc_access_requester ON document_access_requests(requester_id, file_id);
 
         -- Ensure all documents authored by registered users display their chosen registration display_name
         UPDATE shared_markdown_files f
@@ -234,6 +279,10 @@ const getMailTransporter = () => {
 
 // 1. Send Email Verification Code for Email-First Authorization (OTP)
 app.post('/api/auth/send-email-code', async (req: Request, res: Response) => {
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+    if (!checkRateLimit('otp_' + clientIp, 5, 10 * 60 * 1000)) {
+      return res.status(429).json({ error: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً ۱۰ دقیقه دیگر مجدداً تلاش کنید.' });
+    }
   try {
     const { email } = req.body;
     if (!email || !email.includes('@')) {
@@ -241,57 +290,51 @@ app.post('/api/auth/send-email-code', async (req: Request, res: Response) => {
     }
     const cleanEmail = email.trim().toLowerCase();
 
-    // Generate secure 6-digit code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-    emailVerificationCodes.set(cleanEmail, { code, expiresAt });
-    console.log(`[AUTH] Verification code for ${cleanEmail}: ${code}`);
-
-    // Attempt real email dispatch via nodemailer if SMTP configured
     const transporter = getMailTransporter();
-    let emailSentToInbox = false;
-
-    if (transporter) {
-      try {
-        await transporter.sendMail({
-          from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || process.env.GMAIL_USER || 'no-reply@markdown-studio.app'}>`,
-          to: cleanEmail,
-          subject: `کد ۶ رقمی تأیید و اتورایز شما: ${code}`,
-          html: `
-            <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f3f4f6; padding: 32px 16px; color: #1f2937;">
-              <div style="max-width: 480px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e5e7eb; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
-                <h2 style="color: #d97706; margin-top: 0; font-size: 20px;">احراز هویت و ورود به سیستم</h2>
-                <p style="font-size: 14px; line-height: 1.7; color: #374151;">
-                  سلام،<br/>
-                  کد یک‌بار مصرف زیر جهت اتورایز و احراز هویت شما ایجاد شده است:
-                </p>
-                <div style="background: #fffbeb; border: 2px dashed #f59e0b; border-radius: 12px; padding: 16px; text-align: center; margin: 24px 0;">
-                  <span style="font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #b45309;">${code}</span>
-                </div>
-                <p style="font-size: 12px; color: #6b7280; line-height: 1.6; margin-bottom: 0;">
-                  این کد به مدت ۱۰ دقیقه معتبر است. در صورت عدم درخواست، این پیام را نادیده بگیرید.
-                </p>
-              </div>
-            </div>
-          `,
-        });
-        emailSentToInbox = true;
-        console.log(`[AUTH] Successfully dispatched real email to ${cleanEmail}`);
-      } catch (mailErr: any) {
-        console.error('[AUTH] SMTP dispatch failed:', mailErr.message);
-      }
+    if (!transporter) {
+      return res.status(503).json({ error: 'تنظیمات سرور ایمیل (SMTP) در سرور یافت نشد.' });
     }
 
-    res.json({
-      success: true,
-      emailSentToInbox,
-      message: emailSentToInbox
-        ? `کد تأیید ۶ رقمی به صندوق ورودی ایمیل ${cleanEmail} ارسال گردید.`
-        : `کد تأیید ۶ رقمی صادر شد. (در حالت پیش‌نمایش به دلیل عدم تعریف سرور SMTP ایمیل، کد شبیه‌سازی شد)`,
-      // Only include devCode when real email server is not configured
-      devCode: !emailSentToInbox ? code : undefined,
-    });
+    // Generate cryptographically secure 6-digit code
+    const cryptoMod = await import('crypto');
+    const code = cryptoMod.randomInt(100000, 999999).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    try {
+      await transporter.sendMail({
+        from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
+        to: cleanEmail,
+        subject: `کد ۶ رقمی تأیید و اتورایز شما: ${code}`,
+        html: `
+          <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f3f4f6; padding: 32px 16px; color: #1f2937;">
+            <div style="max-width: 480px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e5e7eb; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+              <h2 style="color: #d97706; margin-top: 0; font-size: 20px;">احراز هویت و ورود به سیستم</h2>
+              <p style="font-size: 14px; line-height: 1.7; color: #374151;">
+                سلام،<br/>
+                کد یک‌بار مصرف زیر جهت اتورایز و احراز هویت شما صادر شده است:
+              </p>
+              <div style="background: #fffbeb; border: 2px dashed #f59e0b; border-radius: 12px; padding: 16px; text-align: center; margin: 24px 0;">
+                <span style="font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #b45309;">${code}</span>
+              </div>
+              <p style="font-size: 12px; color: #6b7280; line-height: 1.6; margin-bottom: 0;">
+                این کد به مدت ۱۰ دقیقه معتبر است. در صورت عدم درخواست، این پیام را نادیده بگیرید.
+              </p>
+            </div>
+          </div>
+        `,
+      });
+
+      emailVerificationCodes.set(cleanEmail, { code, expiresAt });
+      console.log(`[AUTH] Real verification email dispatched successfully to ${cleanEmail}`);
+
+      res.json({
+        success: true,
+        message: `کد تأیید ۶ رقمی به صندوق ورودی ایمیل ${cleanEmail} ارسال گردید.`,
+      });
+    } catch (mailErr: any) {
+      console.error('[AUTH] SMTP dispatch failed:', mailErr);
+      return res.status(500).json({ error: 'خطا در ارسال ایمیل تأیید: ' + mailErr.message });
+    }
   } catch (error: any) {
     res.status(500).json({ error: 'خطا در صدور کد تأیید', details: error.message });
   }
@@ -398,71 +441,6 @@ app.post('/api/auth/verify-email-code', async (req: Request, res: Response) => {
   }
 });
 
-// 3. One-Click Google Account Authorization
-app.post('/api/auth/google-authorize', async (req: Request, res: Response) => {
-  try {
-    const { email, displayName, avatarUrl } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'آدرس ایمیل گوگل نامعتبر است.' });
-    }
-    const cleanEmail = email.trim().toLowerCase();
-
-    let userRes = await pool.query(
-      'SELECT id, email, username, display_name, avatar_url, bio, created_at FROM users WHERE LOWER(email) = $1',
-      [cleanEmail]
-    );
-
-    let user;
-    if (userRes.rows.length > 0) {
-      user = userRes.rows[0];
-    } else {
-      const prefix = cleanEmail.split('@')[0].replace(/[^\w-]/g, '').slice(0, 20) || 'google_user';
-      const cleanUsername = `${prefix}_${Math.random().toString(36).substring(2, 6)}`;
-      const name = displayName?.trim() || cleanEmail.split('@')[0];
-      const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-      const dummyPasswordHash = await bcrypt.hash(Math.random().toString(36), 10);
-
-      const insertRes = await pool.query(
-        `
-        INSERT INTO users (id, email, username, display_name, avatar_url, password_hash, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-        RETURNING id, email, username, display_name, avatar_url, bio, created_at
-        `,
-        [userId, cleanEmail, cleanUsername, name, avatarUrl || '', dummyPasswordHash]
-      );
-      user = insertRes.rows[0];
-    }
-
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-      },
-      JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      success: true,
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-        avatarUrl: user.avatar_url,
-        bio: user.bio,
-        createdAt: user.created_at,
-      },
-      message: `اتورایز موفق با حساب گوگل (${cleanEmail})`,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: 'خطا در اتورایز با حساب گوگل', details: error.message });
-  }
-});
-
 // Register new user account (Fast signup with username + password, optional email)
 app.post('/api/auth/register', async (req: Request, res: Response) => {
   try {
@@ -533,6 +511,10 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
 
 // Login existing user
 app.post('/api/auth/login', async (req: Request, res: Response) => {
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+    if (!checkRateLimit('login_' + clientIp, 10, 5 * 60 * 1000)) {
+      return res.status(429).json({ error: 'تعداد دفعات تلاش ناموفق زیاد است. لطفاً ۵ دقیقه دیگر تلاش فرمایید.' });
+    }
   try {
     const { emailOrUsername, password } = req.body;
     if (!emailOrUsername || !password) {
@@ -729,30 +711,34 @@ app.get('/api/auth/my-documents', async (req: Request, res: Response) => {
 app.get('/api/files', async (req: Request, res: Response) => {
   try {
     const { search, tag, sort = 'recent', limit = 50, offset = 0 } = req.query;
+    const authUser = getAuthUser(req);
 
     let query = `
-      SELECT 
-        f.id, f.title, f.description, 
+      SELECT
+        f.id, f.title, f.description,
         COALESCE(NULLIF(u.display_name, ''), f.author_name) as author_name,
         u.username as author_username,
         u.avatar_url as author_avatar,
+        f.user_id,
         f.tags, f.is_public, f.views_count, f.stars_count, f.created_at, f.updated_at,
-        LENGTH(f.content) as content_length
+        LENGTH(f.content) as content_length,
+        ar.status as my_access_status
       FROM shared_markdown_files f
       LEFT JOIN users u ON f.user_id = u.id
-      WHERE f.is_public = true
+      LEFT JOIN document_access_requests ar ON ar.file_id = f.id AND ar.requester_id = $1
+      WHERE 1=1
     `;
-    const params: any[] = [];
-    let paramIndex = 1;
+    const params: any[] = [authUser ? authUser.id : null];
+    let paramIndex = 2;
 
     if (search && typeof search === 'string' && search.trim()) {
-      query += ` AND (f.title ILIKE $${paramIndex} OR f.description ILIKE $${paramIndex} OR f.content ILIKE $${paramIndex} OR COALESCE(u.display_name, f.author_name) ILIKE $${paramIndex})`;
+      query += ` AND (f.title ILIKE ${paramIndex} OR f.description ILIKE ${paramIndex} OR COALESCE(u.display_name, f.author_name) ILIKE ${paramIndex})`;
       params.push(`%${search.trim()}%`);
       paramIndex++;
     }
 
     if (tag && typeof tag === 'string' && tag.trim()) {
-      query += ` AND $${paramIndex} = ANY(f.tags)`;
+      query += ` AND ${paramIndex} = ANY(f.tags)`;
       params.push(tag.trim());
       paramIndex++;
     }
@@ -770,11 +756,10 @@ app.get('/api/files', async (req: Request, res: Response) => {
 
     const result = await pool.query(query, params);
 
-    // Also get all distinct tags for filtering
+    // Get all distinct tags
     const tagsRes = await pool.query(`
       SELECT DISTINCT unnest(tags) as tag, COUNT(*) as count
       FROM shared_markdown_files
-      WHERE is_public = true
       GROUP BY tag
       ORDER BY count DESC
       LIMIT 20
@@ -795,15 +780,9 @@ app.get('/api/files/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Increment view count asynchronously
-    await pool.query(
-      'UPDATE shared_markdown_files SET views_count = views_count + 1 WHERE id = $1',
-      [id]
-    );
-
     const result = await pool.query(
       `
-      SELECT 
+      SELECT
         f.*,
         COALESCE(NULLIF(u.display_name, ''), f.author_name) as author_name,
         u.username as author_username,
@@ -816,10 +795,72 @@ app.get('/api/files/:id', async (req: Request, res: Response) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
+      return res.status(404).json({ error: 'فایل یافت نشد.' });
     }
 
-    res.json(result.rows[0]);
+    const file = result.rows[0];
+
+    // Check private access control
+    if (!file.is_public) {
+      const authUser = getAuthUser(req);
+      if (!authUser) {
+        return res.status(403).json({
+          error: 'این سند خصوصی است. برای مشاهده، لطفاً ابتدا وارد حساب خود شوید.',
+          isLocked: true,
+          requiresAuth: true,
+          accessStatus: 'none',
+          file: {
+            id: file.id,
+            title: file.title,
+            description: file.description,
+            author_name: file.author_name,
+            author_username: file.author_username,
+            user_id: file.user_id,
+            is_public: false,
+          },
+        });
+      }
+
+      // If user is author, allowed
+      if (file.user_id === authUser.id) {
+        pool.query('UPDATE shared_markdown_files SET views_count = views_count + 1 WHERE id = $1', [id]).catch(() => {});
+        return res.json(file);
+      }
+
+      // Check if granted access in document_access_requests
+      const reqRes = await pool.query(
+        'SELECT status FROM document_access_requests WHERE file_id = $1 AND requester_id = $2',
+        [id, authUser.id]
+      );
+
+      const status = reqRes.rows.length > 0 ? reqRes.rows[0].status : 'none';
+
+      if (status !== 'approved') {
+        return res.status(403).json({
+          error: status === 'pending'
+            ? 'درخواست دسترسی شما برای نویسنده سند ارسال شده و در انتظار تایید است.'
+            : status === 'rejected'
+            ? 'درخواست دسترسی شما به این سند توسط نویسنده رد شده است.'
+            : 'این سند خصوصی است و برای مشاهده نیاز به تایید نویسنده دارد.',
+          isLocked: true,
+          requiresAuth: false,
+          accessStatus: status,
+          file: {
+            id: file.id,
+            title: file.title,
+            description: file.description,
+            author_name: file.author_name,
+            author_username: file.author_username,
+            user_id: file.user_id,
+            is_public: false,
+          },
+        });
+      }
+    }
+
+    // Allowed (public or approved)
+    pool.query('UPDATE shared_markdown_files SET views_count = views_count + 1 WHERE id = $1', [id]).catch(() => {});
+    res.json(file);
   } catch (error: any) {
     console.error('Error fetching file:', error);
     res.status(500).json({ error: 'Failed to load file', details: error.message });
@@ -847,7 +888,7 @@ app.post('/api/files', async (req: Request, res: Response) => {
     }
 
     const authUser = getAuthUser(req);
-    const resolvedUserId = authUser ? authUser.id : (req.body.userId || null);
+    const resolvedUserId = authUser ? authUser.id : null;
     let resolvedAuthorName = (author_name && author_name !== 'کاربر ناشناس') ? author_name.trim() : '';
 
     if (authUser) {

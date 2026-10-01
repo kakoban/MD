@@ -21,9 +21,15 @@ import {
   Check,
   Share2,
   Loader2,
+  Lock,
+  Unlock,
+  Key,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react';
-import { MarkdownDoc } from '../types';
+import { MarkdownDoc, UserProfile } from '../types';
 import { cloudApi, SharedMarkdownFile } from '../services/cloudApi';
+import { useLanguage } from '../context/LanguageContext';
 
 interface SidebarProps {
   documents: MarkdownDoc[];
@@ -40,6 +46,10 @@ interface SidebarProps {
   onToggleOpen: () => void;
   onOpenCloudDoc?: (doc: MarkdownDoc) => void;
   onOpenPublishModal?: () => void;
+  currentUser?: UserProfile | null;
+  onRequestAccess?: (file: SharedMarkdownFile) => void;
+  onOpenAccessRequestsManager?: () => void;
+  pendingRequestsCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -57,7 +67,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleOpen,
   onOpenCloudDoc,
   onOpenPublishModal,
-}) => {
+  currentUser,
+  onRequestAccess,
+  onOpenAccessRequestsManager,
+  pendingRequestsCount,
+}: SidebarProps) => {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'local' | 'cloud'>('local');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFavorite, setFilterFavorite] = useState(false);
@@ -131,6 +146,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleOpenCloudDoc = async (file: SharedMarkdownFile) => {
+    const isOwner = currentUser && file.user_id === currentUser.id;
+    const isApproved = file.my_access_status === 'approved';
+    const isLocked = !file.is_public && !isOwner && !isApproved;
+
+    if (isLocked) {
+      onRequestAccess?.(file);
+      return;
+    }
+
     if (!onOpenCloudDoc) return;
     try {
       const fullDoc = await cloudApi.getFileById(file.id);
@@ -202,7 +226,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           type="button"
           onClick={onToggleOpen}
           className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-          title="بستن سایدبار"
+          title={t('sidebar.closeSidebar')}
         >
           <ChevronRight className="w-4 h-4 rtl:rotate-180" />
         </button>
@@ -220,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
-          <span>اسناد من ({documents.length})</span>
+          <span>{t('sidebar.myDocuments')} ({documents.length})</span>
         </button>
         <button
           type="button"
@@ -232,7 +256,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           <Database className="w-3.5 h-3.5" />
-          <span>مخزن ابری</span>
+          <span>{t('sidebar.cloudRepo')}</span>
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
         </button>
       </div>
@@ -249,7 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-semibold text-xs transition-colors shadow-xs"
               >
                 <Plus className="w-4 h-4" />
-                <span>یادداشت جدید</span>
+                <span>{t('sidebar.newNote')}</span>
               </button>
 
               {onOpenTemplates && (
@@ -260,7 +284,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   title="ایجاد سند جدید از الگوهای آماده"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                  <span>الگوهای آماده</span>
+                  <span>{t('sidebar.templates')}</span>
                 </button>
               )}
             </div>
@@ -272,7 +296,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               title="آپلود فایل‌های md. یا txt."
             >
               <Upload className="w-3.5 h-3.5 text-amber-500" />
-              <span>خواندن فایل از سیستم (.md)</span>
+              <span>{t('sidebar.importFile')}</span>
             </button>
           </div>
 
@@ -283,14 +307,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="جستجو در اسناد من..."
+                placeholder={t('sidebar.searchPlaceholder')}
                 className="w-full ps-8 pe-3 py-1.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] focus:border-amber-500 focus:outline-none text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-colors"
               />
               <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute start-2.5 top-2.5" />
             </div>
 
             <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] px-1">
-              <span>{filteredDocs.length} سند محلی</span>
+              <span>{filteredDocs.length} {t('sidebar.localDocs')}</span>
               <button
                 type="button"
                 onClick={() => setFilterFavorite(!filterFavorite)}
@@ -301,7 +325,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }`}
               >
                 <Star className={`w-3 h-3 ${filterFavorite ? 'fill-amber-400 text-amber-400' : ''}`} />
-                <span>ستاره‌دارها</span>
+                <span>{t('sidebar.starred')}</span>
               </button>
             </div>
           </div>
@@ -382,7 +406,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onDuplicateDoc(doc.id);
                           }}
                           className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                          title="تکثیر سند"
+                          title={t('sidebar.duplicateDoc')}
                         >
                           <Copy className="w-3 h-3" />
                         </button>
@@ -396,7 +420,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               }
                             }}
                             className="p-1 rounded hover:bg-rose-500/20 text-[var(--text-muted)] hover:text-rose-500"
-                            title="حذف سند"
+                            title={t('sidebar.deleteDoc')}
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -420,7 +444,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className="w-full py-1 text-center text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center gap-1"
             >
               <RefreshCw className="w-3 h-3" />
-              <span>بارگذاری مجدد اسناد نمونه</span>
+              <span>{t('sidebar.reloadSamples')}</span>
             </button>
           </div>
         </>
@@ -496,6 +520,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </div>
                     </div>
 
+                    {/* Access Status & Badges */}
+                    {!file.is_public && (
+                      <div className="flex items-center gap-1 text-[9px] flex-wrap">
+                        {currentUser && file.user_id === currentUser.id ? (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/25 font-bold flex items-center gap-1">
+                            <Key className="w-2.5 h-2.5" />
+                            سند شما (خصوصی)
+                          </span>
+                        ) : file.my_access_status === 'approved' ? (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 font-bold flex items-center gap-1">
+                            <Unlock className="w-2.5 h-2.5" />
+                            دسترسی تایید شد
+                          </span>
+                        ) : file.my_access_status === 'pending' ? (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25 font-bold flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" />
+                            در انتظار تأیید
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/25 font-bold flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            غیر عمومی (نیاز به مجوز)
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {file.description && (
                       <p className="text-[10px] text-[var(--text-muted)] line-clamp-1">
                         {file.description}
