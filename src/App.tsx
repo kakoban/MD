@@ -1062,30 +1062,29 @@ export default function App() {
 
       {/* Main Workspace: Sidebar + Editor/Preview + Outline */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Dark Navigation Sidebar (always visible in DocSend layout) */}
-        <Sidebar
-          documents={documents}
-          activeDocId={activeDocId}
-          onSelectDoc={setActiveDocId}
-          onCreateDoc={() => {
-            handleCreateDoc();
-            if (viewMode === 'workspace') setViewMode('preview');
-          }}
-          onOpenTemplates={() => setIsTemplatesOpen(true)}
-          onDeleteDoc={handleDeleteDoc}
-          onDuplicateDoc={handleDuplicateDoc}
-          onToggleFavorite={handleToggleFavorite}
-          onImportFiles={handleImportFiles}
-          onRestoreSamples={handleRestoreSamples}
-          isOpen={isSidebarOpen}
-          onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
-          onOpenCloudDoc={handleOpenFileFromCommunity}
-          onOpenPublishModal={() => setIsShareModalOpen(true)}
-          currentUser={currentUser}
-          onRequestAccess={(file) => setRequestedAccessFile(file)}
-          onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
-          pendingRequestsCount={pendingRequestsCount}
-        />
+        {/* Dark Navigation Sidebar (only shown in editing/preview modes, hidden in DocSend Workspace) */}
+        {viewMode !== 'workspace' && (
+          <Sidebar
+            documents={documents}
+            activeDocId={activeDocId}
+            onSelectDoc={setActiveDocId}
+            onCreateDoc={handleCreateDoc}
+            onOpenTemplates={() => setIsTemplatesOpen(true)}
+            onDeleteDoc={handleDeleteDoc}
+            onDuplicateDoc={handleDuplicateDoc}
+            onToggleFavorite={handleToggleFavorite}
+            onImportFiles={handleImportFiles}
+            onRestoreSamples={handleRestoreSamples}
+            isOpen={isSidebarOpen}
+            onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
+            onOpenCloudDoc={handleOpenFileFromCommunity}
+            onOpenPublishModal={() => setIsShareModalOpen(true)}
+            currentUser={currentUser}
+            onRequestAccess={(file) => setRequestedAccessFile(file)}
+            onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
+            pendingRequestsCount={pendingRequestsCount}
+          />
+        )}
 
         {/* Central Panes */}
         {viewMode === 'workspace' ? (
