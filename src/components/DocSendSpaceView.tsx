@@ -147,21 +147,20 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
         onChange={(e) => e.target.files && onImportFiles(e.target.files)}
       />
 
-      {/* Top Global DocSend Header Bar */}
+      {/* Top Global Header Bar */}
       <header className="h-12 border-b border-[#e5e7eb] px-4 flex items-center justify-between bg-white shrink-0 z-30 select-none">
         <div className="flex items-center gap-3">
-          {/* DocSend Logo */}
-          <div className="flex items-center gap-1.5 cursor-pointer">
-            <svg className="w-5 h-5 text-[#0061ff]" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
-            </svg>
-            <span className="font-bold text-sm tracking-tight text-[#0061ff]">Dropbox</span>
-            <span className="font-extrabold text-sm tracking-tight text-[#111827]">DocSend</span>
+          {/* Brand Logo */}
+          <div className="flex items-center gap-2 cursor-pointer">
+            <div className="w-7 h-7 rounded-lg bg-[#0061ff] flex items-center justify-center text-white font-black text-xs shadow-xs">
+              M
+            </div>
+            <span className="font-extrabold text-sm tracking-tight text-[#111827]">Markdown Studio</span>
           </div>
 
           <span className="text-[#d1d5db] font-light">|</span>
 
-          <span className="text-xs font-semibold text-[#4b5563]">Virtual Data Rooms</span>
+          <span className="text-xs font-semibold text-[#4b5563]">Virtual Data Room</span>
         </div>
 
         {/* Global Search */}

@@ -370,7 +370,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="w-8 h-8 rounded-lg bg-[#0061FF] text-white flex items-center justify-center font-bold text-sm shadow-xs">
               M
             </div>
-            <span className="font-bold text-sm text-[#1a1a1a]">DocSend / MD Studio</span>
+            <span className="font-bold text-sm text-[#1a1a1a]">Markdown Studio</span>
           </div>
           <button
             type="button"
@@ -509,7 +509,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 ورود یا ساخت حساب کاربری
               </h1>
               <p className="text-xs text-[#6b7280]">
-                دسترسی سریع و امن به محیط استودیو DocSend
+                دسترسی سریع و امن به محیط ابری Markdown Studio
               </p>
             </div>
 
