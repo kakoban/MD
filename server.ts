@@ -116,6 +116,9 @@ async function initDatabase() {
         );
 
         ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+        ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+        ALTER TABLE users ALTER COLUMN username DROP NOT NULL;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE;
 
         CREATE TABLE IF NOT EXISTS shared_markdown_files (
           id VARCHAR(100) PRIMARY KEY,
@@ -453,6 +456,69 @@ app.post('/api/auth/send-email-code', async (req: Request, res: Response) => {
     }
   } catch (error: any) {
     res.status(500).json({ error: 'خطا در صدور کد تأیید', details: error.message });
+  }
+});
+
+// Google One-Tap / Fast Login & Register
+app.post('/api/auth/google', async (req: Request, res: Response) => {
+  try {
+    const { googleId, email, displayName, avatarUrl } = req.body;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'آدرس ایمیل گوگل نامعتبر است.' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanGoogleId = googleId || null;
+    const name = displayName && displayName.trim() ? displayName.trim() : cleanEmail.split('@')[0];
+    const avatar = avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
+    const autoUsername = cleanEmail.split('@')[0].replace(/[^\w]/g, '').toLowerCase() || 'user';
+    const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    // Exact Neon PostgreSQL UPSERT for Google users
+    const result = await pool.query(
+      `
+      INSERT INTO users (id, google_id, email, username, display_name, avatar_url, is_verified, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+      ON CONFLICT (email) DO UPDATE 
+      SET google_id = COALESCE(EXCLUDED.google_id, users.google_id),
+          display_name = COALESCE(users.display_name, EXCLUDED.display_name),
+          avatar_url = EXCLUDED.avatar_url,
+          is_verified = true,
+          updated_at = NOW()
+      RETURNING id, google_id, email, username, display_name, avatar_url, bio, created_at
+      `,
+      [userId, cleanGoogleId, cleanEmail, autoUsername, name, avatar]
+    );
+
+    const user = result.rows[0];
+
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        username: user.username || autoUsername,
+        displayName: user.display_name,
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username || autoUsername,
+        displayName: user.display_name,
+        avatarUrl: user.avatar_url,
+        bio: user.bio || '',
+        createdAt: user.created_at,
+      },
+      message: `ورود موفق با حساب گوگل (${cleanEmail})`,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در ورود با حساب گوگل', details: error.message });
   }
 });
 

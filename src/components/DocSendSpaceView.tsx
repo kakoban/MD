@@ -1,32 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  FolderKanban,
   FileText,
   Plus,
-  Upload,
   Search,
   Lock,
-  Unlock,
-  Key,
-  ShieldCheck,
-  Eye,
-  Download,
-  Share2,
   Copy,
   Check,
-  Star,
-  Clock,
-  Sparkles,
-  ArrowUpRight,
-  User,
-  SlidersHorizontal,
-  ChevronRight,
-  ExternalLink,
-  Layers,
-  Database,
-  RefreshCw,
-  FolderOpen,
-  Trash2,
+  Cloud,
+  Eye,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { MarkdownDoc, UserProfile } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
@@ -102,428 +84,314 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
     d.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const spaceTitle = currentUser
-    ? `${currentUser.displayName || currentUser.username}'s Space`
-    : 'Project Beacon (Data Room)';
+  const getAuthorInitials = (name?: string, username?: string) => {
+    if (name) return name.slice(0, 2).toUpperCase();
+    if (username) return username.slice(0, 2).toUpperCase();
+    return 'DS';
+  };
 
-  const userInitials = currentUser?.displayName
-    ? currentUser.displayName.slice(0, 2).toUpperCase()
-    : currentUser?.username
-    ? currentUser.username.slice(0, 2).toUpperCase()
-    : 'DS';
+  const currentUserInitials = getAuthorInitials(currentUser?.displayName, currentUser?.username);
+  const currentUserName = currentUser?.displayName || currentUser?.username || 'مهمان';
 
   return (
     <div
-      className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden bg-[#f8fafc] text-neutral-900 select-none"
+      className="flex-1 flex flex-col w-full h-full bg-white text-[#1a1a1a] select-none"
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleFileDrop}
+      dir={language === 'fa' ? 'rtl' : 'ltr'}
     >
-      {/* 1. LEFT: DocSend Navigation Sidebar */}
-      <aside className="w-full md:w-56 shrink-0 bg-white border-b md:border-b-0 md:border-e border-neutral-200 flex flex-col justify-between z-20">
-        <div>
-          {/* Sub-header inside sidebar */}
-          <div className="p-3 md:p-4 border-b border-neutral-100 flex items-center justify-between">
-            <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-              DocSend Spaces
-            </span>
-            <span className="text-[9px] md:text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-              Active
-            </span>
+      {/* Header Area */}
+      <header className="flex flex-col border-b border-[#e5e5e5] bg-white px-6 pt-6 shrink-0">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-[#1a1a1a] whitespace-nowrap">محتوا</h1>
+          
+          <div className="flex-1 max-w-xl mx-8 relative">
+            <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6b7280]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="جستجو..."
+              className="w-full ps-10 pe-4 py-2 bg-white border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#0061FF] text-sm text-[#1a1a1a] placeholder-[#6b7280]"
+            />
           </div>
 
-          {/* Navigation Links */}
-          <nav className="p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible text-xs font-semibold text-neutral-600">
-            <button
-              type="button"
-              onClick={() => setActiveNav('home')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all shrink-0 md:w-full ${
-                activeNav === 'home'
-                  ? 'bg-neutral-900 text-white shadow-xs'
-                  : 'hover:bg-neutral-100 hover:text-neutral-900'
-              }`}
-            >
-              <FolderKanban className="w-3.5 h-3.5 shrink-0" />
-              <span>صفحه اصلی (Home)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveNav('permissions')}
-              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl transition-all shrink-0 md:w-full ${
-                activeNav === 'permissions'
-                  ? 'bg-neutral-900 text-white shadow-xs'
-                  : 'hover:bg-neutral-100 hover:text-neutral-900'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                <span>مجوزها (Permissions)</span>
-              </div>
-              {pendingRequestsCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-neutral-950 font-black text-[9px]">
-                  {pendingRequestsCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveNav('cloud')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all shrink-0 md:w-full ${
-                activeNav === 'cloud'
-                  ? 'bg-neutral-900 text-white shadow-xs'
-                  : 'hover:bg-neutral-100 hover:text-neutral-900'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5 text-sky-500 shrink-0" />
-              <span>مخزن ابری ({cloudFiles.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenTemplates}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-all shrink-0 md:w-full"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-              <span>الگوهای آماده</span>
-            </button>
-          </nav>
-        </div>
-
-        {/* Space Folders / Trash (Desktop Only) */}
-        <div className="hidden md:block p-3 border-t border-neutral-100 text-xs space-y-1 text-neutral-500">
-          <div className="px-3 py-1 text-[10px] uppercase font-bold text-neutral-400">Space Folders</div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-100 text-neutral-800 font-semibold cursor-pointer">
-            <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
-            <span>Home ({documents.length})</span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-neutral-50 cursor-pointer text-neutral-400">
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Trash</span>
-          </div>
-        </div>
-      </aside>
-
-      {/* 2. CENTER: Main Space Area */}
-      <main className="flex-1 h-full overflow-y-auto flex flex-col bg-[#f8fafc]">
-        {/* Cover Graphic */}
-        <div className="h-28 md:h-44 w-full relative shrink-0 overflow-hidden bg-gradient-to-r from-emerald-800 via-teal-700 to-cyan-800">
-          <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#fff_1.5px,transparent_1.5px)] [background-size:16px_16px]" />
-        </div>
-
-        {/* Space Profile Card & Header */}
-        <div className="max-w-4xl w-full mx-auto px-4 md:px-6 -mt-10 md:-mt-14 relative z-10 space-y-5 pb-16">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-            <div className="flex items-end gap-3.5">
-              {/* Profile Avatar Box */}
-              <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white border border-neutral-200 shadow-lg flex items-center justify-center font-black text-xl md:text-2xl text-neutral-900 shrink-0">
-                {userInitials}
-              </div>
-              <div className="pb-0.5 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-lg md:text-xl font-black text-neutral-900 truncate">
-                    {spaceTitle}
-                  </h1>
-                  <span className="px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold flex items-center gap-1 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                    Active
-                  </span>
-                </div>
-                <p className="text-xs text-neutral-500 mt-0.5 flex items-center gap-1.5 font-medium truncate">
-                  {currentUser?.username ? (
-                    <span className="text-sky-600 font-mono font-bold" dir="ltr">@{currentUser.username}</span>
-                  ) : (
-                    <span>مهمان (برای انتشار رسمی وارد شوید)</span>
-                  )}
-                  <span>•</span>
-                  <span>{documents.length} سند فعال</span>
-                </p>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0">
+          <div className="flex items-center gap-3">
+            {!currentUser && (
+               <button
+                 onClick={onOpenAuth}
+                 className="px-4 py-2 bg-white border border-[#e5e5e5] text-[#1a1a1a] hover:bg-[#f7f7f8] rounded-md text-sm font-medium transition-colors"
+               >
+                 ورود
+               </button>
+            )}
+            {currentUser && (
               <button
-                type="button"
-                onClick={onCreateDoc}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+                onClick={onOpenProfile}
+                className="w-8 h-8 rounded-full bg-[#f9fafb] border border-[#e5e5e5] flex items-center justify-center text-xs font-bold text-[#1a1a1a] hover:bg-[#f7f7f8] transition-colors"
               >
-                <Plus className="w-4 h-4" />
-                <span>+ سند جدید</span>
+                {currentUserInitials}
               </button>
-
-              {currentUser ? (
-                <button
-                  type="button"
-                  onClick={onOpenProfile}
-                  className="px-3 py-2 rounded-xl bg-white border border-neutral-300 hover:bg-neutral-50 text-xs font-bold text-neutral-700 transition-all cursor-pointer shadow-xs"
-                >
-                  پروفایل
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onOpenAuth}
-                  className="px-3 py-2 rounded-xl bg-white border border-neutral-300 hover:bg-neutral-50 text-xs font-bold text-neutral-700 transition-all cursor-pointer shadow-xs"
-                >
-                  ورود
-                </button>
-              )}
-            </div>
+            )}
+            <button
+              onClick={onCreateDoc}
+              className="flex items-center gap-2 px-4 py-2 bg-[#0061FF] hover:bg-[#0050d4] text-white rounded-md text-sm font-medium transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>جدید</span>
+            </button>
           </div>
+        </div>
 
-          {/* DocSend "What are you building?" Box & Drop Zone */}
-          <div className="p-5 md:p-6 rounded-3xl bg-white border border-neutral-200 shadow-sm flex flex-col items-center justify-center text-center space-y-3">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>What are you building?</span>
-            </div>
+        <div className="flex items-center gap-6">
+          <button
+            onClick={() => setActiveNav('home')}
+            className={`pb-3 text-sm font-medium transition-colors relative ${
+              activeNav === 'home' ? 'text-[#0061FF] border-b-2 border-[#0061FF]' : 'text-[#6b7280] hover:text-[#1a1a1a]'
+            }`}
+          >
+            همه اسناد
+          </button>
+          <button
+            onClick={() => setActiveNav('cloud')}
+            className={`pb-3 text-sm font-medium transition-colors relative flex items-center gap-2 ${
+              activeNav === 'cloud' ? 'text-[#0061FF] border-b-2 border-[#0061FF]' : 'text-[#6b7280] hover:text-[#1a1a1a]'
+            }`}
+          >
+            ابری
+            <span className="bg-[#f9fafb] text-[#6b7280] px-1.5 py-0.5 rounded text-xs border border-[#e5e5e5]">
+              {cloudFiles.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveNav('permissions')}
+            className={`pb-3 text-sm font-medium transition-colors relative flex items-center gap-2 ${
+              activeNav === 'permissions' ? 'text-[#0061FF] border-b-2 border-[#0061FF]' : 'text-[#6b7280] hover:text-[#1a1a1a]'
+            }`}
+          >
+            مجوزها
+            {pendingRequestsCount > 0 && (
+              <span className="bg-[#0061FF] text-white px-1.5 py-0.5 rounded text-[10px] font-bold">
+                {pendingRequestsCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </header>
 
-            <div className="max-w-md w-full relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="جستجو در اسناد یا شروع یک یادداشت..."
-                className="w-full ps-3.5 pe-10 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 focus:border-blue-500 focus:bg-white focus:outline-none text-xs text-neutral-800 placeholder-neutral-400 transition-all"
-              />
-              <button
-                type="button"
-                onClick={onCreateDoc}
-                className="absolute end-1.5 top-1.5 p-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all"
-                title="شروع نوشتن"
-              >
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-neutral-500 pt-0.5 flex-wrap justify-center">
-              <span>آپلود فایل:</span>
-              <label className="text-blue-600 font-bold hover:underline cursor-pointer">
-                انتخاب فایل .md
-                <input
-                  type="file"
-                  multiple
-                  accept=".md,.markdown,.txt"
-                  className="hidden"
-                  onChange={(e) => e.target.files && onImportFiles(e.target.files)}
-                />
-              </label>
-              <span>•</span>
-              <button type="button" onClick={onOpenTemplates} className="text-blue-600 font-bold hover:underline">
-                تمپلیت‌ها
-              </button>
-            </div>
-          </div>
-
-          {/* Tab Content: Home, Permissions, Cloud */}
-          {activeNav === 'home' && (
-            <div className="bg-white rounded-3xl border border-neutral-200 overflow-hidden shadow-sm">
-              <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
-                <div className="flex items-center gap-2 font-bold text-xs md:text-sm text-neutral-800">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <span>اسناد موجود در این فضا ({filteredDocs.length})</span>
-                </div>
-                <div className="text-[11px] text-neutral-400 font-medium">کلیک برای مطالعه یا ویرایش</div>
+      {/* Main Content */}
+      <main className="flex-1 overflow-auto bg-white p-6">
+        {/* Home Tab */}
+        {activeNav === 'home' && (
+          <div className="border border-[#e5e5e5] rounded-lg overflow-hidden shadow-sm">
+            {filteredDocs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 bg-white">
+                <FileText className="w-12 h-12 text-[#e5e5e5] mb-4" />
+                <h3 className="text-[#1a1a1a] font-medium mb-1">هیچ سندی یافت نشد</h3>
+                <p className="text-[#6b7280] text-sm mb-4">برای شروع، سند جدید بسازید یا فایلی را اینجا رها کنید</p>
+                <button
+                  onClick={onCreateDoc}
+                  className="px-4 py-2 bg-[#0061FF] hover:bg-[#0050d4] text-white rounded-md text-sm font-medium transition-colors"
+                >
+                  سند جدید بسازید
+                </button>
               </div>
-
-              <div className="divide-y divide-neutral-100">
-                {filteredDocs.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-neutral-400 space-y-2">
-                    <FileText className="w-8 h-8 mx-auto opacity-30" />
-                    <p>سندی یافت نشد.</p>
-                  </div>
-                ) : (
-                  filteredDocs.map((doc) => {
+            ) : (
+              <table className="w-full text-start">
+                <thead className="bg-[#f9fafb] border-b border-[#e5e5e5]">
+                  <tr>
+                    <th className="py-3 px-4 text-start text-[#6b7280] text-xs font-medium uppercase tracking-wider">نام</th>
+                    <th className="py-3 px-4 text-start text-[#6b7280] text-xs font-medium uppercase tracking-wider w-48 hidden sm:table-cell">نویسنده</th>
+                    <th className="py-3 px-4 text-start text-[#6b7280] text-xs font-medium uppercase tracking-wider w-40 hidden md:table-cell">آخرین ویرایش</th>
+                    <th className="py-3 px-4 text-end text-[#6b7280] text-xs font-medium uppercase tracking-wider w-24">لینک‌ها</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e5e5e5]">
+                  {filteredDocs.map(doc => {
                     const dateStr = new Date(doc.updatedAt).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US', {
+                      year: 'numeric',
                       month: 'short',
                       day: 'numeric',
                     });
-
                     return (
-                      <div
-                        key={doc.id}
-                        onClick={() => onOpenDoc(doc.id, 'split')}
-                        className="p-3.5 hover:bg-neutral-50 transition-colors flex items-center justify-between gap-3 cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-                            <FileText className="w-4 h-4" />
+                      <tr key={doc.id} className="hover:bg-[#f7f7f8] transition-colors group cursor-pointer" onClick={() => onOpenDoc(doc.id, 'preview')}>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-[#0061FF] shrink-0" />
+                            <span className="font-medium text-[#1a1a1a] text-sm truncate">{doc.title || 'سند بدون عنوان'}</span>
                           </div>
-                          <div className="min-w-0">
-                            <h3 className="font-bold text-xs text-neutral-900 group-hover:text-blue-600 transition-colors truncate">
-                              {doc.title || 'سند بدون عنوان'}
-                            </h3>
-                            <p className="text-[11px] text-neutral-400 truncate mt-0.5">
-                              {doc.content.slice(0, 100).replace(/[#*`~\[\]]/g, '') || 'متن خالی...'}
-                            </p>
+                        </td>
+                        <td className="py-3 px-4 hidden sm:table-cell">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-[#f9fafb] border border-[#e5e5e5] flex items-center justify-center text-[10px] font-bold text-[#1a1a1a] shrink-0">
+                              {currentUserInitials}
+                            </div>
+                            <span className="text-sm text-[#1a1a1a] truncate">{currentUserName}</span>
                           </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0 text-xs">
-                          <span className="text-[10px] text-neutral-400 font-mono hidden sm:inline">{dateStr}</span>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-[#6b7280] hidden md:table-cell">{dateStr}</td>
+                        <td className="py-3 px-4 text-end">
                           <button
-                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onOpenDoc(doc.id, 'split');
+                              onOpenDoc(doc.id, 'preview');
                             }}
-                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs transition-colors"
+                            className="opacity-0 group-hover:opacity-100 px-3 py-1 bg-white border border-[#e5e5e5] text-[#1a1a1a] hover:bg-[#f7f7f8] rounded-md text-xs font-medium transition-all"
                           >
                             باز کردن
                           </button>
-                        </div>
-                      </div>
+                        </td>
+                      </tr>
                     );
-                  })
-                )}
-              </div>
-            </div>
-          )}
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
-          {activeNav === 'permissions' && (
-            <div className="bg-white rounded-3xl border border-neutral-200 overflow-hidden shadow-sm">
-              <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-xs md:text-sm text-neutral-900 flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>ماتریس دسترسی و مجوزهای سازمانی اسناد (DocSend Permissions)</span>
-                  </h3>
-                </div>
-                {onOpenAccessRequestsManager && (
+        {/* Cloud Tab */}
+        {activeNav === 'cloud' && (
+          <div className="border border-[#e5e5e5] rounded-lg overflow-hidden shadow-sm">
+            {cloudFiles.length === 0 && !isCloudLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 bg-white">
+                 <Cloud className="w-12 h-12 text-[#e5e5e5] mb-4" />
+                 <p className="text-[#6b7280] text-sm">هیچ سند ابری یافت نشد.</p>
+              </div>
+            ) : (
+              <table className="w-full text-start">
+                <thead className="bg-[#f9fafb] border-b border-[#e5e5e5]">
+                  <tr>
+                    <th className="py-3 px-4 text-start text-[#6b7280] text-xs font-medium uppercase tracking-wider">نام</th>
+                    <th className="py-3 px-4 text-start text-[#6b7280] text-xs font-medium uppercase tracking-wider w-48 hidden sm:table-cell">نویسنده</th>
+                    <th className="py-3 px-4 text-center text-[#6b7280] text-xs font-medium uppercase tracking-wider w-24 hidden md:table-cell">بازدید</th>
+                    <th className="py-3 px-4 text-end text-[#6b7280] text-xs font-medium uppercase tracking-wider w-32">لینک‌ها</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e5e5e5]">
+                  {cloudFiles.map(file => (
+                    <tr key={file.id} className="hover:bg-[#f7f7f8] transition-colors group cursor-pointer" onClick={() => onOpenCloudDoc(file)}>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          {file.is_public ? <FileText className="w-5 h-5 text-[#0061FF] shrink-0" /> : <Lock className="w-5 h-5 text-[#6b7280] shrink-0" />}
+                          <span className="font-medium text-[#1a1a1a] text-sm truncate">{file.title}</span>
+                          {!file.is_public && (
+                            <span className="px-2 py-0.5 rounded bg-[#f9fafb] border border-[#e5e5e5] text-[#6b7280] text-[10px] font-medium shrink-0">
+                              محرمانه
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 hidden sm:table-cell">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-[#f9fafb] border border-[#e5e5e5] flex items-center justify-center text-[10px] font-bold text-[#1a1a1a] shrink-0">
+                            {getAuthorInitials(file.author_name, file.author_username)}
+                          </div>
+                          <span className="text-sm text-[#1a1a1a] truncate">{file.author_name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center hidden md:table-cell">
+                        <div className="flex items-center justify-center gap-1 text-[#6b7280]">
+                          <Eye className="w-4 h-4" />
+                          <span className="text-sm">0</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-end">
+                         <div className="flex items-center justify-end gap-2">
+                           <button
+                             onClick={(e) => handleCopyLink(file.id, e)}
+                             className="p-1.5 text-[#6b7280] hover:text-[#1a1a1a] hover:bg-[#e5e5e5] rounded transition-colors"
+                             title="کپی لینک"
+                           >
+                             {copiedId === file.id ? <Check className="w-4 h-4 text-green-600" /> : <LinkIcon className="w-4 h-4" />}
+                           </button>
+                           <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenCloudDoc(file);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 px-3 py-1 bg-white border border-[#e5e5e5] text-[#1a1a1a] hover:bg-[#f7f7f8] rounded-md text-xs font-medium transition-all"
+                            >
+                              {file.is_public ? 'باز کردن' : 'درخواست'}
+                           </button>
+                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* Permissions Tab */}
+        {activeNav === 'permissions' && (
+          <div className="border border-[#e5e5e5] rounded-lg overflow-hidden shadow-sm">
+            <div className="p-4 border-b border-[#e5e5e5] flex justify-between items-center bg-[#f9fafb]">
+               <h3 className="text-[#1a1a1a] text-sm font-medium">مدیریت مجوزها</h3>
+               {onOpenAccessRequestsManager && (
                   <button
-                    type="button"
                     onClick={onOpenAccessRequestsManager}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 text-white font-bold text-xs shadow-xs"
+                    className="px-4 py-2 bg-white border border-[#e5e5e5] text-[#1a1a1a] hover:bg-[#f7f7f8] rounded-md text-sm font-medium transition-colors flex items-center gap-2"
                   >
                     <span>درخواست‌ها</span>
                     {pendingRequestsCount > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-neutral-950 font-black text-[9px]">
+                      <span className="bg-[#0061FF] text-white px-1.5 py-0.5 rounded text-[10px] font-bold">
                         {pendingRequestsCount}
                       </span>
                     )}
                   </button>
-                )}
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-start">
-                  <thead>
-                    <tr className="border-b border-neutral-100 bg-neutral-50 text-neutral-500 font-bold">
-                      <th className="py-2.5 px-3 text-start">عنوان سند</th>
-                      <th className="py-2.5 px-3 text-center">نوع دسترسی</th>
-                      <th className="py-2.5 px-3 text-center">مشاهده آزاد</th>
-                      <th className="py-2.5 px-3 text-center">نیاز به تأیید</th>
-                      <th className="py-2.5 px-3 text-center">عملیات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100 font-medium">
-                    {cloudFiles.slice(0, 15).map((file) => (
-                      <tr key={file.id} className="hover:bg-neutral-50/60 transition-colors">
-                        <td className="py-2.5 px-3 max-w-xs truncate">
-                          <span className="font-bold text-neutral-900">{file.title}</span>
-                          <span className="text-[10px] text-neutral-400 block font-mono">@{file.author_username || 'author'}</span>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          {file.is_public ? (
-                            <span className="px-2 py-0.2 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[9px] border border-emerald-200">
-                              عمومی
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.2 rounded-full bg-rose-50 text-rose-700 font-bold text-[9px] border border-rose-200">
-                              محرمانه
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          {file.is_public ? <Check className="w-3.5 h-3.5 text-emerald-600 mx-auto" /> : '—'}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          {!file.is_public ? <Lock className="w-3.5 h-3.5 text-amber-500 mx-auto" /> : '—'}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => onOpenCloudDoc(file)}
-                            className="px-2.5 py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs"
-                          >
-                            {file.is_public ? 'مشاهده' : 'درخواست دسترسی'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+               )}
             </div>
-          )}
-
-          {activeNav === 'cloud' && (
-            <div className="bg-white rounded-3xl border border-neutral-200 overflow-hidden shadow-sm divide-y divide-neutral-100">
-              <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
-                <span className="font-bold text-xs md:text-sm text-neutral-800 flex items-center gap-2">
-                  <Database className="w-4 h-4 text-sky-500" />
-                  <span>اسناد ابری مخزن مشترک ({cloudFiles.length})</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={fetchCloud}
-                  className="p-1 rounded text-neutral-400 hover:text-neutral-700"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isCloudLoading ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-
-              {cloudFiles.map((file) => (
-                <div
-                  key={file.id}
-                  onClick={() => onOpenCloudDoc(file)}
-                  className="p-3.5 hover:bg-neutral-50 transition-colors flex items-center justify-between gap-3 cursor-pointer group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${file.is_public ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
-                      {file.is_public ? <FileText className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-xs text-neutral-900 group-hover:text-blue-600 transition-colors truncate">
-                          {file.title}
-                        </span>
-                        {!file.is_public && (
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 border border-rose-200 font-bold shrink-0">
-                            غیرعمومی
-                          </span>
-                        )}
+            <table className="w-full text-start">
+              <thead className="bg-[#f9fafb] border-b border-[#e5e5e5]">
+                <tr>
+                  <th className="py-3 px-4 text-start text-[#6b7280] text-xs font-medium uppercase tracking-wider">سند</th>
+                  <th className="py-3 px-4 text-center text-[#6b7280] text-xs font-medium uppercase tracking-wider w-32">نوع دسترسی</th>
+                  <th className="py-3 px-4 text-center text-[#6b7280] text-xs font-medium uppercase tracking-wider w-32 hidden sm:table-cell">عمومی</th>
+                  <th className="py-3 px-4 text-end text-[#6b7280] text-xs font-medium uppercase tracking-wider w-24">عملیات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e5e5e5]">
+                {cloudFiles.slice(0, 15).map(file => (
+                  <tr key={file.id} className="hover:bg-[#f7f7f8] transition-colors">
+                    <td className="py-3 px-4">
+                      <div className="flex flex-col">
+                        <span className="font-medium text-[#1a1a1a] text-sm truncate">{file.title}</span>
+                        <span className="text-[#6b7280] text-xs font-mono truncate">@{file.author_username || 'author'}</span>
                       </div>
-                      <p className="text-[10px] text-neutral-400 truncate mt-0.5">
-                        نویسنده: <strong className="text-neutral-700">{file.author_name}</strong>
-                        {file.author_username && <span className="font-mono text-sky-600 ms-1">@{file.author_username}</span>}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => handleCopyLink(file.id, e)}
-                      className="p-1 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700"
-                      title="کپی لینک"
-                    >
-                      {copiedId === file.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onOpenCloudDoc(file)}
-                      className="px-2.5 py-1 rounded-lg bg-neutral-900 text-white font-bold text-xs hover:bg-neutral-800 transition-colors"
-                    >
-                      {file.is_public ? 'مطالعه' : 'درخواست دسترسی'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-medium border ${
+                        file.is_public 
+                          ? 'bg-green-50 text-green-700 border-green-200' 
+                          : 'bg-red-50 text-red-700 border-red-200'
+                      }`}>
+                        {file.is_public ? 'عمومی' : 'محرمانه'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-center hidden sm:table-cell">
+                      {file.is_public ? <Check className="w-4 h-4 text-green-600 mx-auto" /> : <Lock className="w-4 h-4 text-[#6b7280] mx-auto" />}
+                    </td>
+                    <td className="py-3 px-4 text-end">
+                      <button
+                        onClick={() => onOpenCloudDoc(file)}
+                        className="px-3 py-1 bg-white border border-[#e5e5e5] text-[#1a1a1a] hover:bg-[#f7f7f8] rounded-md text-xs font-medium transition-colors"
+                      >
+                        ویرایش
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {cloudFiles.length === 0 && !isCloudLoading && (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-[#6b7280] text-sm">هیچ فایلی برای نمایش وجود ندارد</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </main>
     </div>
   );

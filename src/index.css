@@ -43,12 +43,12 @@
   --text-primary: #0f172a;
   --text-secondary: #334155;
   --text-muted: #64748b;
-  --accent-color: #f59e0b;
-  --table-border: #e2e8f0;
-  --table-header-bg: #f1f5f9;
-  --table-row-even: #f8fafc;
+  --accent-color: #0061FF;
+  --table-border: #e5e5e5;
+  --table-header-bg: #f9fafb;
+  --table-row-even: #f9fafb;
   --table-row-odd: #ffffff;
-  --table-row-hover: #f1f5f9;
+  --table-row-hover: #f7f7f8;
   --code-bg: #f8fafc;
   --code-border: #e2e8f0;
   --gutter-bg: #f8fafc;
@@ -65,11 +65,11 @@
   --text-primary: #f4f4f5;
   --text-secondary: #a1a1aa;
   --text-muted: #71717a;
-  --accent-color: #f59e0b;
+  --accent-color: #3b82f6;
   --table-border: #2e2e36;
   --table-header-bg: #1f1f23;
   --table-row-even: rgba(255, 255, 255, 0.02);
-  --table-row-hover: rgba(245, 158, 11, 0.07);
+  --table-row-hover: rgba(59, 130, 246, 0.07);
   --code-bg: #141416;
   --code-border: #27272a;
   --gutter-bg: #141417;
@@ -1239,3 +1239,371 @@ mark.md-highlight-orange {
   will-change: background-color, border-color, box-shadow;
 }
 
+
+/* ========================================================
+   PHASE 2: DOCSEND MODAL ANIMATIONS & RESPONSIVE SYSTEM
+   ======================================================== */
+
+/* --- Modal Overlay & Container Animations --- */
+@keyframes modalOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalOverlayOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes modalContentIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modalContentOut {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+}
+
+.modal-overlay {
+  animation: modalOverlayIn 0.2s ease-out forwards;
+}
+
+.modal-content {
+  animation: modalContentIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* --- DocSend-Style Modal Base Classes --- */
+.docsend-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  animation: modalOverlayIn 0.2s ease-out forwards;
+  padding: 1rem;
+}
+
+.docsend-modal-card {
+  background: #ffffff;
+  border-radius: 0.75rem;
+  border: 1px solid #e5e5e5;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 100%;
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: modalContentIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.docsend-modal-card.modal-sm { max-width: 28rem; }
+.docsend-modal-card.modal-md { max-width: 36rem; }
+.docsend-modal-card.modal-lg { max-width: 48rem; }
+.docsend-modal-card.modal-xl { max-width: 64rem; }
+.docsend-modal-card.modal-full { max-width: 80rem; }
+
+.docsend-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e5e5;
+  flex-shrink: 0;
+}
+
+.docsend-modal-header h2 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.docsend-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.docsend-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e5e5e5;
+  flex-shrink: 0;
+}
+
+/* --- DocSend Form Elements --- */
+.docsend-input {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e5e5;
+  background: #ffffff;
+  font-size: 0.875rem;
+  color: #1a1a1a;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+
+.docsend-input:focus {
+  border-color: #0061FF;
+  box-shadow: 0 0 0 3px rgba(0, 97, 255, 0.1);
+}
+
+.docsend-input::placeholder {
+  color: #9ca3af;
+}
+
+.docsend-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.375rem;
+}
+
+/* --- DocSend Buttons --- */
+.docsend-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all 0.15s;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+.docsend-btn-primary {
+  background-color: #0061FF;
+  color: #ffffff;
+}
+
+.docsend-btn-primary:hover {
+  background-color: #0050d4;
+}
+
+.docsend-btn-primary:disabled {
+  background-color: #93c5fd;
+  cursor: not-allowed;
+}
+
+.docsend-btn-secondary {
+  background-color: #ffffff;
+  color: #374151;
+  border: 1px solid #e5e5e5;
+}
+
+.docsend-btn-secondary:hover {
+  background-color: #f7f7f8;
+}
+
+.docsend-btn-danger {
+  background-color: #dc2626;
+  color: #ffffff;
+}
+
+.docsend-btn-danger:hover {
+  background-color: #b91c1c;
+}
+
+.docsend-btn-ghost {
+  background: transparent;
+  color: #6b7280;
+}
+
+.docsend-btn-ghost:hover {
+  background-color: #f7f7f8;
+  color: #1a1a1a;
+}
+
+/* --- Smooth Page Transitions --- */
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-slide-in {
+  animation: fadeSlideIn 0.3s ease-out forwards;
+}
+
+/* --- Responsive Sidebar & Layout --- */
+@media (max-width: 768px) {
+  /* Force sidebar to collapsed (icon-only) mode on mobile */
+  .sidebar-responsive {
+    width: 0 !important;
+    overflow: hidden !important;
+    border: none !important;
+  }
+  
+  .sidebar-responsive.sidebar-mobile-open {
+    width: 240px !important;
+    position: fixed !important;
+    inset-block: 0 !important;
+    inset-inline-start: 0 !important;
+    z-index: 50 !important;
+    overflow: visible !important;
+  }
+
+  /* Mobile overlay when sidebar is open */
+  .sidebar-mobile-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    animation: modalOverlayIn 0.2s ease-out;
+  }
+
+  /* Full-width modals on mobile */
+  .docsend-modal-card {
+    max-width: 100% !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+
+  .docsend-modal-overlay {
+    padding: 0 !important;
+  }
+
+  /* Stack table headers on mobile */
+  .responsive-table thead {
+    display: none;
+  }
+
+  .responsive-table tbody tr {
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem;
+    border-bottom: 1px solid #e5e5e5;
+  }
+
+  .responsive-table tbody td {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    border: none !important;
+  }
+
+  .responsive-table tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 0.75rem;
+  }
+}
+
+/* --- Smooth hover transitions for table rows --- */
+.docsend-table-row {
+  transition: background-color 0.15s ease;
+}
+
+.docsend-table-row:hover {
+  background-color: #f7f7f8;
+}
+
+/* --- Badge / Tag Styles --- */
+.docsend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.docsend-badge-blue {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.docsend-badge-green {
+  background-color: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.docsend-badge-red {
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.docsend-badge-yellow {
+  background-color: #fffbeb;
+  color: #a16207;
+  border: 1px solid #fde68a;
+}
+
+.docsend-badge-gray {
+  background-color: #f9fafb;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
+}
+
+/* --- Tooltip Animation --- */
+@keyframes tooltipIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.docsend-tooltip {
+  animation: tooltipIn 0.15s ease-out;
+}
+
+/* --- Update status bar pulse from amber to blue --- */
+@keyframes statusBarPulseSavingBlue {
+  0% {
+    background-color: var(--bg-secondary);
+    border-top-color: var(--border-color);
+    box-shadow: 0 0 0 0 rgba(0, 97, 255, 0);
+  }
+  50% {
+    background-color: rgba(0, 97, 255, 0.06);
+    border-top-color: rgba(0, 97, 255, 0.45);
+    box-shadow: 0 -3px 14px -1px rgba(0, 97, 255, 0.2), inset 0 1px 0 0 rgba(0, 97, 255, 0.15);
+  }
+  100% {
+    background-color: var(--bg-secondary);
+    border-top-color: var(--border-color);
+    box-shadow: 0 0 0 0 rgba(0, 97, 255, 0);
+  }
+}

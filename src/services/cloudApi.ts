@@ -57,12 +57,35 @@ export interface PublishPayload {
   customId?: string;
 }
 
+async function safeJson<T = any>(res: Response, fallbackError = 'خطای ارتباط با سرور'): Promise<T> {
+  const text = await res.text();
+  if (text && text.trim().startsWith('{')) {
+    const data = JSON.parse(text);
+    if (!res.ok) {
+      const err: any = new Error(data.error || fallbackError);
+      Object.assign(err, data);
+      throw err;
+    }
+    return data;
+  }
+  if (!res.ok) {
+    throw new Error(fallbackError);
+  }
+  return {} as T;
+}
+
 export const cloudApi = {
   // Check health and get stats
   async getHealth() {
-    const res = await fetch('/api/health');
-    if (!res.ok) throw new Error('Failed to connect to database');
-    return res.json();
+    try {
+      const res = await fetch('/api/health');
+      if (!res.ok) return { status: 'offline' };
+      const text = await res.text();
+      if (text && text.trim().startsWith('{')) {
+        return JSON.parse(text);
+      }
+    } catch {}
+    return { status: 'offline' };
   },
 
   // Fetch community files
@@ -73,20 +96,27 @@ export const cloudApi = {
     limit?: number;
     offset?: number;
   }): Promise<FilesResponse> {
-    const searchParams = new URLSearchParams();
-    if (params?.search) searchParams.set('search', params.search);
-    if (params?.tag) searchParams.set('tag', params.tag);
-    if (params?.sort) searchParams.set('sort', params.sort);
-    if (params?.limit) searchParams.set('limit', String(params.limit));
-    if (params?.offset) searchParams.set('offset', String(params.offset));
+    try {
+      const searchParams = new URLSearchParams();
+      if (params?.search) searchParams.set('search', params.search);
+      if (params?.tag) searchParams.set('tag', params.tag);
+      if (params?.sort) searchParams.set('sort', params.sort);
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      if (params?.offset) searchParams.set('offset', String(params.offset));
 
-    const res = await fetch(`/api/files?${searchParams.toString()}`, {
-      headers: authApi.getAuthHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('خطا در دریافت لیست فایل‌ها از دیتابیس');
+      const res = await fetch(`/api/files?${searchParams.toString()}`, {
+        headers: authApi.getAuthHeaders(),
+      });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.trim().startsWith('{')) {
+          return JSON.parse(text);
+        }
+      }
+    } catch (e) {
+      console.warn('Cloud files fetch offline/fallback', e);
     }
-    return res.json();
+    return { files: [], tags: [] };
   },
 
   // Fetch single file by ID
@@ -94,20 +124,7 @@ export const cloudApi = {
     const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
       headers: authApi.getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      if (res.status === 403 && data.isLocked) {
-        const err: any = new Error(data.error || 'این سند خصوصی است و نیاز به مجوز دارد.');
-        err.isLocked = true;
-        err.requiresAuth = data.requiresAuth;
-        err.accessStatus = data.accessStatus;
-        err.file = data.file;
-        throw err;
-      }
-      if (res.status === 404) throw new Error('فایل مورد نظر در دیتابیس یافت نشد.');
-      throw new Error(data.error || 'خطا در بارگذاری فایل از دیتابیس');
-    }
-    return data;
+    return safeJson<SharedMarkdownFile>(res, 'خطا در بارگذاری فایل از دیتابیس');
   },
 
   // Publish / Upload a new markdown file
@@ -121,12 +138,7 @@ export const cloudApi = {
       headers: authApi.getAuthHeaders(),
       body: JSON.stringify(payload),
     });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در انتشار فایل در پایگاه داده');
-    }
-    return data;
+    return safeJson(res, 'خطا در انتشار فایل در پایگاه داده');
   },
 
   // Update existing file
@@ -136,12 +148,7 @@ export const cloudApi = {
       headers: authApi.getAuthHeaders(),
       body: JSON.stringify(payload),
     });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در به‌روزرسانی فایل');
-    }
-    return data;
+    return safeJson(res, 'خطا در به‌روزرسانی فایل');
   },
 
   // Delete file
@@ -150,11 +157,7 @@ export const cloudApi = {
       method: 'DELETE',
       headers: authApi.getAuthHeaders(),
     });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || 'خطا در حذف فایل');
-    }
-    return res.json();
+    return safeJson(res, 'خطا در حذف فایل');
   },
 
   // Star / like a file
@@ -162,8 +165,7 @@ export const cloudApi = {
     const res = await fetch(`/api/files/${encodeURIComponent(id)}/star`, {
       method: 'POST',
     });
-    if (!res.ok) throw new Error('خطا در ثبت امتیاز');
-    return res.json();
+    return safeJson(res, 'خطا در ثبت امتیاز');
   },
 
   // Request access to a private file
@@ -173,23 +175,19 @@ export const cloudApi = {
       headers: authApi.getAuthHeaders(),
       body: JSON.stringify({ message }),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در ارسال درخواست دسترسی');
-    }
-    return data;
+    return safeJson(res, 'خطا در ارسال درخواست دسترسی');
   },
 
   // Get incoming requests for current user's documents
   async getIncomingAccessRequests(): Promise<{ requests: DocumentAccessRequest[] }> {
-    const res = await fetch('/api/access-requests/incoming', {
-      headers: authApi.getAuthHeaders(),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در دریافت درخواست‌های ورودی');
+    try {
+      const res = await fetch('/api/access-requests/incoming', {
+        headers: authApi.getAuthHeaders(),
+      });
+      return safeJson(res, 'خطا در دریافت درخواست‌های ورودی');
+    } catch {
+      return { requests: [] };
     }
-    return data;
   },
 
   // Respond to access request (approve / reject)
@@ -199,22 +197,18 @@ export const cloudApi = {
       headers: authApi.getAuthHeaders(),
       body: JSON.stringify({ status }),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در ثبت پاسخ درخواست');
-    }
-    return data;
+    return safeJson(res, 'خطا در ثبت پاسخ درخواست');
   },
 
   // Get outgoing requests sent by current user
   async getOutgoingAccessRequests(): Promise<{ requests: DocumentAccessRequest[] }> {
-    const res = await fetch('/api/access-requests/outgoing', {
-      headers: authApi.getAuthHeaders(),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در دریافت وضعیت درخواست‌ها');
+    try {
+      const res = await fetch('/api/access-requests/outgoing', {
+        headers: authApi.getAuthHeaders(),
+      });
+      return safeJson(res, 'خطا در دریافت وضعیت درخواست‌ها');
+    } catch {
+      return { requests: [] };
     }
-    return data;
   },
 };

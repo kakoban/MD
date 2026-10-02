@@ -241,7 +241,7 @@ export default function App() {
       setDocuments((prev) => [doc, ...prev]);
       setActiveDocId(doc.id);
     }
-    setViewMode('split');
+    setViewMode('preview');
     setCloudNotice(`سند ابری «${file.title}» بارگذاری شد.`);
     setTimeout(() => setCloudNotice(null), 3000);
   };
@@ -529,7 +529,7 @@ export default function App() {
     };
     setDocuments((prev) => [forkedDoc, ...prev]);
     setActiveDocId(forkedDoc.id);
-    setViewMode('split');
+    setViewMode('preview');
     setCloudNotice(`سند با موفقیت به اسناد شما کپی شد (Fork). اکنون می‌توانید آن را آزادانه ویرایش کنید.`);
     setTimeout(() => setCloudNotice(null), 5000);
   };
@@ -547,7 +547,7 @@ export default function App() {
     };
     setDocuments((prev) => [newDoc, ...prev]);
     setActiveDocId(newDoc.id);
-    setViewMode('split');
+    setViewMode('preview');
     setCloudNotice(`سند جدید بر اساس الگوی «${template.title}» ساخته شد.`);
     setTimeout(() => setCloudNotice(null), 4000);
   };
@@ -1062,42 +1062,43 @@ export default function App() {
 
       {/* Main Workspace: Sidebar + Editor/Preview + Outline */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Document Management Sidebar (hidden in DocSend Workspace / Space landing) */}
-        {viewMode !== 'workspace' && (
-          <Sidebar
-            documents={documents}
-            activeDocId={activeDocId}
-            onSelectDoc={setActiveDocId}
-            onCreateDoc={handleCreateDoc}
-            onOpenTemplates={() => setIsTemplatesOpen(true)}
-            onDeleteDoc={handleDeleteDoc}
-            onDuplicateDoc={handleDuplicateDoc}
-            onToggleFavorite={handleToggleFavorite}
-            onImportFiles={handleImportFiles}
-            onRestoreSamples={handleRestoreSamples}
-            isOpen={isSidebarOpen}
-            onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
-            onOpenCloudDoc={handleOpenFileFromCommunity}
-            onOpenPublishModal={() => setIsShareModalOpen(true)}
-            currentUser={currentUser}
-            onRequestAccess={(file) => setRequestedAccessFile(file)}
-            onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
-            pendingRequestsCount={pendingRequestsCount}
-          />
-        )}
+        {/* Dark Navigation Sidebar (always visible in DocSend layout) */}
+        <Sidebar
+          documents={documents}
+          activeDocId={activeDocId}
+          onSelectDoc={setActiveDocId}
+          onCreateDoc={() => {
+            handleCreateDoc();
+            if (viewMode === 'workspace') setViewMode('preview');
+          }}
+          onOpenTemplates={() => setIsTemplatesOpen(true)}
+          onDeleteDoc={handleDeleteDoc}
+          onDuplicateDoc={handleDuplicateDoc}
+          onToggleFavorite={handleToggleFavorite}
+          onImportFiles={handleImportFiles}
+          onRestoreSamples={handleRestoreSamples}
+          isOpen={isSidebarOpen}
+          onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
+          onOpenCloudDoc={handleOpenFileFromCommunity}
+          onOpenPublishModal={() => setIsShareModalOpen(true)}
+          currentUser={currentUser}
+          onRequestAccess={(file) => setRequestedAccessFile(file)}
+          onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
+          pendingRequestsCount={pendingRequestsCount}
+        />
 
         {/* Central Panes */}
         {viewMode === 'workspace' ? (
           <DocSendSpaceView
             documents={documents}
             currentUser={currentUser}
-            onOpenDoc={(docId, mode = 'split') => {
+            onOpenDoc={(docId, mode = 'preview') => {
               setActiveDocId(docId);
               setViewMode(mode);
             }}
             onCreateDoc={() => {
               handleCreateDoc();
-              setViewMode('split');
+              setViewMode('preview');
             }}
             onOpenCloudDoc={async (file) => {
               const isOwner = currentUser && file.user_id === currentUser.id;
@@ -1120,7 +1121,7 @@ export default function App() {
                   cloudSyncedAt: Date.now(),
                 };
                 handleOpenFileFromCommunity(doc);
-                setViewMode('split');
+                setViewMode('preview');
               } catch (err: any) {
                 if (err.isLocked) {
                   setRequestedAccessFile(file);
@@ -1157,7 +1158,7 @@ export default function App() {
           {/* Divider in Split Mode */}
           {viewMode === 'split' && (
             <div className="w-[1px] bg-[var(--border-color)] shrink-0 select-none relative group">
-              <div className="absolute inset-y-0 -start-1 -end-1 cursor-col-resize hover:bg-amber-500/20" />
+              <div className="absolute inset-y-0 -start-1 -end-1 cursor-col-resize hover:bg-[#0061FF]/20" />
             </div>
           )}
 
@@ -1182,7 +1183,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => handleForkDocument(activeDoc)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/25 font-bold text-xs transition-colors"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0061FF]/10 hover:bg-[#0061FF]/20 text-[#0061FF] border border-[#0061FF]/25 font-bold text-xs transition-colors"
                       title="ایجاد نسخه کپی در اسناد محلی شما جهت ویرایش"
                     >
                       <GitFork className="w-3 h-3" />
@@ -1191,7 +1192,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setViewMode('presentation')}
-                      className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-amber-500 transition-colors"
+                      className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[#0061FF] transition-colors"
                       title="مشاهده در حالت ارائه / اسلاید"
                     >
                       <PresentationIcon className="w-4 h-4" />
@@ -1379,7 +1380,7 @@ export default function App() {
 
       {/* Cloud Toast Notice */}
       {cloudNotice && (
-        <div className="fixed bottom-12 start-1/2 -translate-x-1/2 z-50 bg-neutral-900 border border-emerald-500/40 text-emerald-400 px-4 py-2.5 rounded-2xl shadow-2xl text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="fixed bottom-12 start-1/2 -translate-x-1/2 z-50 bg-white border border-[#e5e5e5] text-[#1a1a1a] px-4 py-2.5 rounded-lg shadow-lg text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
           <Database className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{cloudNotice}</span>
         </div>
@@ -1414,7 +1415,7 @@ export default function App() {
                     {bookletConfig.subtitle}
                   </p>
                 )}
-                <div className="w-24 h-1 bg-amber-500 mx-auto rounded-full mt-6" />
+                <div className="w-24 h-1 bg-[#0061FF] mx-auto rounded-full mt-6" />
               </div>
               <div className="border-t border-neutral-300 pt-4 flex items-center justify-between text-xs text-neutral-600">
                 <div>
