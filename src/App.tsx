@@ -88,9 +88,9 @@ export default function App() {
   const [theme, setTheme] = useState<AppTheme>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_THEME);
-      if (saved) return saved as AppTheme;
+      if (saved && saved !== 'light') return saved as AppTheme;
     } catch {}
-    return 'light'; // Default to light theme as requested!
+    return 'academic'; // Default to Academic Blue theme!
   });
   const [fontFamily, setFontFamily] = useState<FontFamily>(() => {
     try {
@@ -100,7 +100,7 @@ export default function App() {
     return 'vazir';
   });
   const [textDirection, setTextDirection] = useState<TextDirection>('auto');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isOutlineOpen, setIsOutlineOpen] = useState(false);
   const [isCheatsheetOpen, setIsCheatsheetOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
