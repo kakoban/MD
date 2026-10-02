@@ -32,6 +32,7 @@ import {
   FolderOpen,
   Edit3,
   Globe,
+  FolderKanban,
 } from 'lucide-react';
 import { ViewMode, AppTheme, FontFamily, TextDirection, CloudSyncStatus, UserProfile } from '../types';
 
@@ -158,15 +159,36 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="no-print relative z-30 flex items-center justify-between px-3 md:px-4 py-2 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] select-none">
-      {/* Title Input & Save / Cloud Status Indicator */}
+      {/* Title Input & Branding */}
       <div className="flex items-center gap-2 max-w-sm md:max-w-md lg:max-w-lg flex-1">
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          placeholder={t('navbar.docTitlePlaceholder')}
-          className="font-bold text-sm bg-transparent border-b border-transparent hover:border-[var(--border-color)] focus:border-amber-500 focus:outline-none px-1.5 py-0.5 text-[var(--text-primary)] truncate flex-1 min-w-[100px] transition-colors"
-        />
+        {viewMode === 'workspace' ? (
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-amber-500 text-neutral-950 flex items-center justify-center font-black text-xs shadow-xs">
+              DS
+            </div>
+            <span className="font-extrabold text-sm tracking-tight text-[var(--text-primary)]">
+              Markdown Studio <span className="text-amber-500 font-normal text-xs">DocSend</span>
+            </span>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => onViewModeChange('workspace')}
+              className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-amber-500 transition-colors shrink-0"
+              title="بازگشت به فضای اسناد (DocSend Space)"
+            >
+              <FolderKanban className="w-4 h-4 text-amber-500" />
+            </button>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => onTitleChange(e.target.value)}
+              placeholder={t('navbar.docTitlePlaceholder')}
+              className="font-bold text-sm bg-transparent border-b border-transparent hover:border-[var(--border-color)] focus:border-amber-500 focus:outline-none px-1.5 py-0.5 text-[var(--text-primary)] truncate flex-1 min-w-[100px] transition-colors"
+            />
+          </>
+        )}
 
         {/* Cloud Sync Status Pill with Auto-Save */}
         {isCloudShared ? (
@@ -243,8 +265,20 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
       </div>
 
-      {/* Center: View Mode Switcher (Split, Editor, Preview) */}
+      {/* Center: View Mode Switcher (Workspace, Split, Editor, Preview) */}
       <div className="flex items-center bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-xl p-1 gap-1">
+        <button
+          type="button"
+          onClick={() => onViewModeChange('workspace')}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+            viewMode === 'workspace' ? 'bg-[var(--bg-secondary)] text-amber-500 font-bold shadow-xs' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+          }`}
+          title="فضای اسناد و دیتا روم (DocSend Space)"
+        >
+          <FolderKanban className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">فضای اسناد (Space)</span>
+        </button>
+
         <button
           type="button"
           onClick={() => onViewModeChange('split')}

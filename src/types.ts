@@ -13,7 +13,7 @@ export interface MarkdownDoc {
   wordGoal?: number;
 }
 
-export type ViewMode = 'split' | 'editor' | 'preview' | 'presentation';
+export type ViewMode = 'workspace' | 'split' | 'editor' | 'preview' | 'presentation';
 
 export type AppTheme = 'dark' | 'light' | 'sepia' | 'cyber' | 'nord' | 'academic' | 'editorial';
 

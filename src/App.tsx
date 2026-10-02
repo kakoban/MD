@@ -22,6 +22,7 @@ import {
 import { Navbar } from './components/Navbar';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
+import { DocSendSpaceView } from './components/DocSendSpaceView';
 import { Editor, EditorHandle } from './components/Editor';
 import { Preview } from './components/Preview';
 import { PresentationView } from './components/PresentationView';
@@ -79,8 +80,11 @@ export default function App() {
     return SAMPLE_DOCUMENTS[0].id;
   });
 
-  // UI States
-  const [viewMode, setViewMode] = useState<ViewMode>('split');
+  // UI States (DocSend Space landing by default)
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('share') || params.get('file') ? 'preview' : 'workspace';
+  });
   const [theme, setTheme] = useState<AppTheme>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_THEME);
@@ -1041,8 +1045,8 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {/* Formatting Toolbar (shown in split and editor modes) */}
-      {viewMode !== 'preview' && (
+      {/* Formatting Toolbar (shown only in split and editor modes) */}
+      {viewMode !== 'preview' && viewMode !== 'workspace' && (
         <Toolbar
           onInsertMarkdown={handleInsertMarkdown}
           onInsertHighlight={handleInsertHighlight}
@@ -1058,30 +1062,82 @@ export default function App() {
 
       {/* Main Workspace: Sidebar + Editor/Preview + Outline */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Document Management Sidebar */}
-        <Sidebar
-          documents={documents}
-          activeDocId={activeDocId}
-          onSelectDoc={setActiveDocId}
-          onCreateDoc={handleCreateDoc}
-          onOpenTemplates={() => setIsTemplatesOpen(true)}
-          onDeleteDoc={handleDeleteDoc}
-          onDuplicateDoc={handleDuplicateDoc}
-          onToggleFavorite={handleToggleFavorite}
-          onImportFiles={handleImportFiles}
-          onRestoreSamples={handleRestoreSamples}
-          isOpen={isSidebarOpen}
-          onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
-          onOpenCloudDoc={handleOpenFileFromCommunity}
-          onOpenPublishModal={() => setIsShareModalOpen(true)}
-          currentUser={currentUser}
-          onRequestAccess={(file) => setRequestedAccessFile(file)}
-          onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
-          pendingRequestsCount={pendingRequestsCount}
-        />
+        {/* Document Management Sidebar (hidden in DocSend Workspace / Space landing) */}
+        {viewMode !== 'workspace' && (
+          <Sidebar
+            documents={documents}
+            activeDocId={activeDocId}
+            onSelectDoc={setActiveDocId}
+            onCreateDoc={handleCreateDoc}
+            onOpenTemplates={() => setIsTemplatesOpen(true)}
+            onDeleteDoc={handleDeleteDoc}
+            onDuplicateDoc={handleDuplicateDoc}
+            onToggleFavorite={handleToggleFavorite}
+            onImportFiles={handleImportFiles}
+            onRestoreSamples={handleRestoreSamples}
+            isOpen={isSidebarOpen}
+            onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
+            onOpenCloudDoc={handleOpenFileFromCommunity}
+            onOpenPublishModal={() => setIsShareModalOpen(true)}
+            currentUser={currentUser}
+            onRequestAccess={(file) => setRequestedAccessFile(file)}
+            onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
+            pendingRequestsCount={pendingRequestsCount}
+          />
+        )}
 
         {/* Central Panes */}
-        <main className="flex-1 flex overflow-hidden relative">
+        {viewMode === 'workspace' ? (
+          <DocSendSpaceView
+            documents={documents}
+            currentUser={currentUser}
+            onOpenDoc={(docId, mode = 'split') => {
+              setActiveDocId(docId);
+              setViewMode(mode);
+            }}
+            onCreateDoc={() => {
+              handleCreateDoc();
+              setViewMode('split');
+            }}
+            onOpenCloudDoc={async (file) => {
+              const isOwner = currentUser && file.user_id === currentUser.id;
+              const isApproved = file.my_access_status === 'approved';
+              if (!file.is_public && !isOwner && !isApproved) {
+                setRequestedAccessFile(file);
+                return;
+              }
+              try {
+                const fullDoc = await cloudApi.getFileById(file.id);
+                const doc: MarkdownDoc = {
+                  id: fullDoc.id,
+                  title: fullDoc.title,
+                  content: fullDoc.content || '',
+                  createdAt: new Date(fullDoc.created_at).getTime(),
+                  updatedAt: new Date(fullDoc.updated_at).getTime(),
+                  tags: fullDoc.tags,
+                  isCloudShared: true,
+                  cloudAuthor: fullDoc.author_name,
+                  cloudSyncedAt: Date.now(),
+                };
+                handleOpenFileFromCommunity(doc);
+                setViewMode('split');
+              } catch (err: any) {
+                if (err.isLocked) {
+                  setRequestedAccessFile(file);
+                } else {
+                  alert(err.message || 'خطا در بارگذاری فایل');
+                }
+              }
+            }}
+            onImportFiles={handleImportFiles}
+            onOpenTemplates={() => setIsTemplatesOpen(true)}
+            onOpenProfile={() => setIsProfileModalOpen(true)}
+            onOpenAuth={() => setIsAuthModalOpen(true)}
+            onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
+            pendingRequestsCount={pendingRequestsCount}
+          />
+        ) : (
+          <main className="flex-1 flex overflow-hidden relative">
           {/* Editor Pane */}
           {(viewMode === 'split' || viewMode === 'editor') && (
             <Editor
@@ -1108,39 +1164,37 @@ export default function App() {
           {/* Preview Pane with Reader Mode Header for Shared Docs */}
           {(viewMode === 'split' || viewMode === 'preview') && (
             <div className="flex-1 flex flex-col h-full overflow-hidden">
-              {/* Shared Doc Reader Mode Banner */}
+              {/* Shared Doc Reader Mode Banner (DocSend Clean Style) */}
               {activeDoc?.isCloudShared && (
-                <div className="no-print mx-3 mt-2.5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-2.5 text-xs shrink-0 shadow-xs">
+                <div className="no-print mx-4 mt-2 px-3 py-1.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-between gap-2 text-xs shrink-0 shadow-xs">
                   <div className="flex items-center gap-2">
-                    <Database className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <div>
-                      <span className="font-bold text-[var(--text-primary)]">
-                        سند اشتراکی از پایگاه داده ابری Neon
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-semibold text-xs text-[var(--text-secondary)]">
+                      سند اشتراکی ابری
+                    </span>
+                    {activeDoc.cloudAuthor && (
+                      <span className="text-[11px] text-[var(--text-muted)]">
+                        • نویسنده: <strong className="text-[var(--text-primary)]">{activeDoc.cloudAuthor}</strong>
                       </span>
-                      {activeDoc.cloudAuthor && (
-                        <span className="text-[var(--text-muted)] ms-1.5">
-                          • نویسنده: <strong className="text-[var(--text-primary)]">{activeDoc.cloudAuthor}</strong>
-                        </span>
-                      )}
-                    </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleForkDocument(activeDoc)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs shadow-xs transition-colors"
-                      title="ایجاد نسخه کپی در اسناد محلی شما جهت ویرایش آزادانه"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/25 font-bold text-xs transition-colors"
+                      title="ایجاد نسخه کپی در اسناد محلی شما جهت ویرایش"
                     >
-                      <GitFork className="w-3.5 h-3.5" />
-                      <span>کپی به اسناد من و ویرایش (Fork)</span>
+                      <GitFork className="w-3 h-3" />
+                      <span>کپی و ویرایش (Fork)</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setViewMode('presentation')}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[var(--bg-secondary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs font-medium transition-colors"
+                      className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-amber-500 transition-colors"
+                      title="مشاهده در حالت ارائه / اسلاید"
                     >
-                      <PresentationIcon className="w-3.5 h-3.5 text-amber-500" />
-                      <span>حالت اسلاید</span>
+                      <PresentationIcon className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -1172,6 +1226,7 @@ export default function App() {
             totalMatches={searchMatches.length}
           />
         </main>
+        )}
 
         {/* Document Outline / TOC Drawer */}
         <Outline
@@ -1182,17 +1237,19 @@ export default function App() {
         />
       </div>
 
-      {/* Bottom Status Bar with Writing Goal Progress */}
-      <StatsBar
-        stats={stats}
-        direction={effectiveDirection}
-        cursorPos={cursorPos}
-        selectionStats={selectionStats}
-        wordGoal={activeDoc?.wordGoal}
-        onUpdateWordGoal={handleUpdateWordGoal}
-        onGoalMet={() => setIsConfettiActive(true)}
-        syncStatus={effectiveSyncStatus}
-      />
+      {/* Bottom Status Bar (hidden in Workspace / Space mode) */}
+      {viewMode !== 'workspace' && (
+        <StatsBar
+          stats={stats}
+          direction={effectiveDirection}
+          cursorPos={cursorPos}
+          selectionStats={selectionStats}
+          wordGoal={activeDoc?.wordGoal}
+          onUpdateWordGoal={handleUpdateWordGoal}
+          onGoalMet={() => setIsConfettiActive(true)}
+          syncStatus={effectiveSyncStatus}
+        />
+      )}
 
       {/* Interactive Full-Screen Confetti Celebration Overlay */}
       {isConfettiActive && (
