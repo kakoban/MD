@@ -23,7 +23,8 @@ import {
   LogOut,
   FolderOpen,
   ArrowLeft,
-  ArrowRight
+  ArrowRight,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { ViewMode, AppTheme, FontFamily, TextDirection, CloudSyncStatus, UserProfile } from '../types';
 
@@ -388,15 +389,29 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
+        {/* Copy Share Link button (when doc is published to cloud) */}
+        {isCloudShared && onCopyShareLink && (
+          <button
+            type="button"
+            onClick={onCopyShareLink}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold transition-colors ms-1 cursor-pointer"
+            title="کپی لینک اختصاصی سند برای ارسال به دیگران"
+          >
+            <LinkIcon className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">کپی لینک سند</span>
+          </button>
+        )}
+
         {/* Share Button */}
         {onOpenShareModal && (
           <button
             type="button"
             onClick={onOpenShareModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#0061FF] hover:bg-[#0050e6] text-white text-xs font-semibold transition-colors ms-1"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#0061FF] hover:bg-[#0050e6] text-white text-xs font-semibold transition-colors ms-1 cursor-pointer"
+            title="انتشار و تنظیم مجوزهای دسترسی سند"
           >
             <Share2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">اشتراک‌گذاری</span>
+            <span className="hidden sm:inline">{isCloudShared ? 'تنظیمات اشتراک' : 'انتشار و اشتراک'}</span>
           </button>
         )}
 

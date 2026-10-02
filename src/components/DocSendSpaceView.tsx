@@ -745,6 +745,39 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                           </div>
 
                           <div className="flex items-center gap-2 shrink-0">
+                            {doc.isCloudShared ? (
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyLink(doc.id, e)}
+                                className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#0061ff] hover:bg-[#eff6ff] rounded-md transition-colors border border-[#dbeafe]"
+                                title="کپی لینک مستقیم این سند برای ارسال به دیگران"
+                              >
+                                {copiedId === doc.id ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-emerald-600 font-bold">کپی شد!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Share2 className="w-3.5 h-3.5" />
+                                    <span>کپی لینک</span>
+                                  </>
+                                )}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenDoc(doc.id, 'split');
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-semibold text-[#6b7280] hover:text-[#0061ff] hover:bg-[#f3f4f6] rounded-md transition-colors"
+                                title="برای اشتراک‌گذاری، این سند را منتشر کنید"
+                              >
+                                انتشار سند
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={(e) => {

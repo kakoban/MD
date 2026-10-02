@@ -1177,7 +1177,8 @@ app.get('/api/files/:id', async (req: Request, res: Response) => {
         u.avatar_url as author_avatar
       FROM shared_markdown_files f
       LEFT JOIN users u ON f.user_id = u.id
-      WHERE f.id = $1
+      WHERE f.id = $1 OR LOWER(f.id) = LOWER($1)
+      LIMIT 1
       `,
       [id]
     );
@@ -1393,6 +1394,224 @@ app.post('/api/files/:id/star', async (req: Request, res: Response) => {
     res.json({ success: true, stars: result.rows[0].stars_count });
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to star file', details: error.message });
+  }
+});
+
+// =============================================================
+// DOCUMENT ACCESS REQUESTS (Permissions System)
+// =============================================================
+
+// 1. Request access to a private document
+app.post('/api/files/:id/request-access', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'برای ارسال درخواست دسترسی باید وارد حساب کاربری خود شوید.' });
+    }
+
+    const { id } = req.params;
+    const { message = '' } = req.body;
+
+    const fileRes = await pool.query(
+      'SELECT id, title, user_id FROM shared_markdown_files WHERE id = $1 OR LOWER(id) = LOWER($1)',
+      [id]
+    );
+    if (fileRes.rows.length === 0) {
+      return res.status(404).json({ error: 'فایل مورد نظر یافت نشد.' });
+    }
+
+    const file = fileRes.rows[0];
+    if (!file.user_id) {
+      return res.status(400).json({ error: 'نویسنده این فایل ثبت نشده است.' });
+    }
+
+    if (file.user_id === authUser.id) {
+      return res.status(400).json({ error: 'شما مالک این سند هستید.' });
+    }
+
+    const reqId = `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const result = await pool.query(
+      `
+      INSERT INTO document_access_requests (id, file_id, requester_id, owner_id, status, message, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW())
+      ON CONFLICT (file_id, requester_id) DO UPDATE
+      SET status = 'pending', message = EXCLUDED.message, updated_at = NOW()
+      RETURNING *
+      `,
+      [reqId, file.id, authUser.id, file.user_id, String(message).slice(0, 500)]
+    );
+
+    // Send email notification to owner if configured
+    try {
+      const ownerRes = await pool.query('SELECT email, display_name FROM users WHERE id = $1', [file.user_id]);
+      if (ownerRes.rows.length > 0 && ownerRes.rows[0].email) {
+        const ownerEmail = ownerRes.rows[0].email;
+        const transporter = getMailTransporter();
+        if (transporter && !ownerEmail.endsWith('@local.user')) {
+          await transporter.sendMail({
+            from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
+            to: ownerEmail,
+            subject: `درخواست دسترسی جدید برای سند «${file.title}»`,
+            html: `
+              <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; padding: 24px; color: #1f2937;">
+                <h2 style="color: #d97706;">درخواست دسترسی جدید به سند محرمانه</h2>
+                <p>کاربر <strong>${authUser.displayName || authUser.username}</strong> درخواست مشاهده سند شما با عنوان <strong>«${file.title}»</strong> را ارسال نموده است.</p>
+                ${message ? `<p style="background: #f3f4f6; padding: 12px; border-radius: 8px;">پیام متقاضی: ${message}</p>` : ''}
+                <p>جهت تایید یا رد این درخواست به بخش «مجوزها» در پنل استودیو مارک‌دان مراجعه فرمایید.</p>
+              </div>
+            `,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Could not dispatch owner notification email:', e);
+    }
+
+    res.json({
+      success: true,
+      request: result.rows[0],
+      message: 'درخواست دسترسی شما برای نویسنده سند ارسال گردید.',
+    });
+  } catch (error: any) {
+    console.error('Error requesting file access:', error);
+    res.status(500).json({ error: 'خطا در ثبت درخواست دسترسی', details: error.message });
+  }
+});
+
+// 2. Get incoming access requests for documents owned by authUser
+app.get('/api/access-requests/incoming', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'ابتدا وارد حساب کاربری شوید.' });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        ar.*,
+        f.title as file_title,
+        f.description as file_description,
+        COALESCE(NULLIF(u.display_name, ''), u.username) as requester_name,
+        u.username as requester_username,
+        u.avatar_url as requester_avatar,
+        u.email as requester_email
+      FROM document_access_requests ar
+      JOIN shared_markdown_files f ON ar.file_id = f.id
+      JOIN users u ON ar.requester_id = u.id
+      WHERE ar.owner_id = $1
+      ORDER BY ar.created_at DESC
+      `,
+      [authUser.id]
+    );
+
+    res.json({ requests: result.rows });
+  } catch (error: any) {
+    console.error('Error fetching incoming requests:', error);
+    res.status(500).json({ error: 'خطا در دریافت درخواست‌های دسترسی' });
+  }
+});
+
+// 3. Respond to an access request (approve or reject)
+app.post('/api/access-requests/:id/respond', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'ابتدا وارد حساب کاربری شوید.' });
+    }
+
+    const { id } = req.params;
+    const { status } = req.body;
+    if (status !== 'approved' && status !== 'rejected') {
+      return res.status(400).json({ error: 'وضعیت نامعتبر است. فقط approved یا rejected مجاز است.' });
+    }
+
+    const existing = await pool.query('SELECT * FROM document_access_requests WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'درخواست یافت نشد.' });
+    }
+
+    if (existing.rows[0].owner_id !== authUser.id) {
+      return res.status(403).json({ error: 'شما مالک این سند نیستید.' });
+    }
+
+    const updated = await pool.query(
+      'UPDATE document_access_requests SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+
+    // Notify requester if approved
+    if (status === 'approved') {
+      try {
+        const reqInfo = await pool.query(`
+          SELECT u.email, u.display_name, f.title
+          FROM users u, shared_markdown_files f
+          WHERE u.id = $1 AND f.id = $2
+        `, [existing.rows[0].requester_id, existing.rows[0].file_id]);
+
+        if (reqInfo.rows.length > 0 && reqInfo.rows[0].email) {
+          const requesterEmail = reqInfo.rows[0].email;
+          const transporter = getMailTransporter();
+          if (transporter && !requesterEmail.endsWith('@local.user')) {
+            await transporter.sendMail({
+              from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
+              to: requesterEmail,
+              subject: `دسترسی شما به سند «${reqInfo.rows[0].title}» تأیید شد`,
+              html: `
+                <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; padding: 24px; color: #1f2937;">
+                  <h2 style="color: #059669;">دسترسی به سند تأیید شد 🎉</h2>
+                  <p>درخواست شما برای دسترسی به سند <strong>«${reqInfo.rows[0].title}»</strong> توسط نویسنده تایید گردید.</p>
+                  <p>اکنون می‌توانید با مراجعه به لینک زیر، محتوای این سند را مطالعه فرمایید:</p>
+                  <p><a href="${process.env.APP_URL || ''}/?share=${existing.rows[0].file_id}" style="color: #0284c7; font-weight: bold;">مشاهده سند</a></p>
+                </div>
+              `,
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Could not dispatch approval email:', e);
+      }
+    }
+
+    res.json({
+      success: true,
+      request: updated.rows[0],
+      message: status === 'approved' ? 'دسترسی کاربر با موفقیت تایید شد.' : 'درخواست دسترسی رد شد.',
+    });
+  } catch (error: any) {
+    console.error('Error responding to access request:', error);
+    res.status(500).json({ error: 'خطا در ثبت پاسخ درخواست' });
+  }
+});
+
+// 4. Get outgoing access requests sent by authUser
+app.get('/api/access-requests/outgoing', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'ابتدا وارد حساب کاربری شوید.' });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        ar.*,
+        f.title as file_title,
+        f.description as file_description,
+        COALESCE(NULLIF(u.display_name, ''), f.author_name) as owner_name
+      FROM document_access_requests ar
+      JOIN shared_markdown_files f ON ar.file_id = f.id
+      LEFT JOIN users u ON ar.owner_id = u.id
+      WHERE ar.requester_id = $1
+      ORDER BY ar.created_at DESC
+      `,
+      [authUser.id]
+    );
+
+    res.json({ requests: result.rows });
+  } catch (error: any) {
+    console.error('Error fetching outgoing requests:', error);
+    res.status(500).json({ error: 'خطا در دریافت وضعیت درخواست‌ها' });
   }
 });
 

@@ -328,8 +328,16 @@ export default function App() {
           setCloudNotice(`فایل «${file.title}» در حالت مطالعه از مخزن ابری Neon باز شد.`);
           setTimeout(() => setCloudNotice(null), 5000);
         })
-        .catch((err) => {
+        .catch((err: any) => {
           console.error('Failed to load shared file from URL:', err);
+          if (err.isLocked && err.file) {
+            setRequestedAccessFile(err.file);
+            setCloudNotice('این سند خصوصی است. لطفاً برای دسترسی، درخواست خود را ارسال فرمایید.');
+            setTimeout(() => setCloudNotice(null), 6000);
+          } else {
+            setCloudNotice(err.message || 'فایل مورد نظر در پایگاه داده ابری یافت نشد.');
+            setTimeout(() => setCloudNotice(null), 5000);
+          }
         });
     }
   }, []);
