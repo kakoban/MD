@@ -407,13 +407,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         )}
 
-        {/* Document Comments Button */}
-        {isCloudShared && onToggleComments && (
+        {/* Document Comments Button (Always accessible) */}
+        {onToggleComments && (
           <button
             type="button"
             onClick={onToggleComments}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#f7f7f8] hover:bg-[#e5e7eb] text-[#1a1a1a] text-xs font-semibold transition-colors ms-1 cursor-pointer"
-            title="نظرات و بازخوردها"
+            title="مشاهده و ثبت نظرات"
           >
             <MessageSquare className="w-3.5 h-3.5 text-[#0061FF]" />
             <span className="hidden sm:inline">نظرات</span>

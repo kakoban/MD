@@ -520,6 +520,18 @@ export default function App() {
     setTimeout(() => setCloudNotice(null), 3500);
   };
 
+  // Handler for opening comments (opens drawer or prompts to publish)
+  const handleOpenCommentsClick = useCallback(() => {
+    if (!activeDoc) return;
+    if (!activeDoc.isCloudShared) {
+      setCloudNotice('این سند هنوز در فضای ابری منتشر نشده است. با انتشار آن، بخش نظرات فعال می‌شود.');
+      setTimeout(() => setCloudNotice(null), 4500);
+      setIsShareModalOpen(true);
+    } else {
+      setIsCommentsOpen((prev) => !prev);
+    }
+  }, [activeDoc]);
+
   // Handler for setting / updating writing goal
   const handleUpdateWordGoal = (newGoal: number | undefined) => {
     if (!activeDoc) return;
@@ -1066,7 +1078,7 @@ export default function App() {
         onOpenProfile={() => setIsProfileModalOpen(true)}
         onOpenMyDocuments={() => setIsMyDocumentsModalOpen(true)}
         onLogout={handleLogout}
-        onToggleComments={() => setIsCommentsOpen(!isCommentsOpen)}
+        onToggleComments={handleOpenCommentsClick}
         commentsCount={activeDocCommentsCount}
       />
 
@@ -1188,7 +1200,21 @@ export default function App() {
 
           {/* Preview Pane with Reader Mode Header for Shared Docs */}
           {(viewMode === 'split' || viewMode === 'preview') && (
-            <div className="flex-1 flex flex-col h-full overflow-hidden">
+            <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+              {/* Floating Comments Button right inside the document preview */}
+              <button
+                type="button"
+                onClick={handleOpenCommentsClick}
+                className="no-print absolute bottom-8 end-8 z-30 flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#0061FF] hover:bg-[#0050e6] text-white font-bold text-xs shadow-xl hover:shadow-2xl transition-all cursor-pointer select-none animate-in fade-in"
+                title="مشاهده و ثبت نظرات این سند"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>نظرات</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-white text-[#0061FF] font-black text-[10px]">
+                  {activeDocCommentsCount}
+                </span>
+              </button>
+
               {/* Shared Doc Reader Mode Banner (DocSend Clean Style) */}
               {activeDoc?.isCloudShared && (
                 <div className="no-print mx-4 mt-2 px-3 py-1.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-between gap-2 text-xs shrink-0 shadow-xs">
