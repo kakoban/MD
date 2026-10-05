@@ -25,6 +25,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Link as LinkIcon,
+  MessageSquare,
 } from 'lucide-react';
 import { ViewMode, AppTheme, FontFamily, TextDirection, CloudSyncStatus, UserProfile } from '../types';
 
@@ -63,6 +64,8 @@ interface NavbarProps {
   onOpenProfile?: () => void;
   onOpenMyDocuments?: () => void;
   onLogout?: () => void;
+  onToggleComments?: () => void;
+  commentsCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -100,6 +103,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenProfile,
   onOpenMyDocuments,
   onLogout,
+  onToggleComments,
+  commentsCount = 0,
 }: NavbarProps) => {
   const { language, setLanguage, t } = useLanguage();
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -399,6 +404,22 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <LinkIcon className="w-3.5 h-3.5 text-emerald-600" />
             <span className="hidden sm:inline">کپی لینک سند</span>
+          </button>
+        )}
+
+        {/* Document Comments Button */}
+        {isCloudShared && onToggleComments && (
+          <button
+            type="button"
+            onClick={onToggleComments}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#f7f7f8] hover:bg-[#e5e7eb] text-[#1a1a1a] text-xs font-semibold transition-colors ms-1 cursor-pointer"
+            title="نظرات و بازخوردها"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-[#0061FF]" />
+            <span className="hidden sm:inline">نظرات</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-[#0061FF]/10 text-[#0061FF] font-bold text-[10px]">
+              {commentsCount}
+            </span>
           </button>
         )}
 

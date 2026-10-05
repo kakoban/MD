@@ -37,6 +37,17 @@ export interface DocumentAccessRequest {
   owner_name?: string;
 }
 
+export interface DocumentComment {
+  id: string;
+  file_id: string;
+  user_id: string;
+  author_name: string;
+  author_username?: string;
+  author_avatar?: string;
+  content: string;
+  created_at: string;
+}
+
 export interface CommunityTag {
   tag: string;
   count: number;
@@ -210,5 +221,33 @@ export const cloudApi = {
     } catch {
       return { requests: [] };
     }
+  },
+
+  // Document Comments API
+  async getComments(fileId: string): Promise<DocumentComment[]> {
+    try {
+      const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments`);
+      const data = await safeJson<{ comments: DocumentComment[] }>(res, 'خطا در بارگذاری نظرات');
+      return data.comments || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async addComment(fileId: string, content: string): Promise<{ success: boolean; comment: DocumentComment }> {
+    const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments`, {
+      method: 'POST',
+      headers: authApi.getAuthHeaders(),
+      body: JSON.stringify({ content }),
+    });
+    return safeJson(res, 'خطا در ثبت نظر');
+  },
+
+  async deleteComment(commentId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`/api/comments/${encodeURIComponent(commentId)}`, {
+      method: 'DELETE',
+      headers: authApi.getAuthHeaders(),
+    });
+    return safeJson(res, 'خطا در حذف نظر');
   },
 };

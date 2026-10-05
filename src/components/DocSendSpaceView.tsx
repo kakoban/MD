@@ -26,6 +26,7 @@ import {
   Settings,
   HelpCircle,
   Zap,
+  MessageSquare,
 } from 'lucide-react';
 import { MarkdownDoc, UserProfile } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
@@ -883,6 +884,58 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            )}
+
+            {/* 7. Q&A / Comments Section */}
+            {activeTab === 'qa' && (
+              <div className="bg-white rounded-2xl border border-[#e5e7eb] overflow-hidden shadow-xs p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-[#f1f5f9] pb-4">
+                  <div>
+                    <h3 className="font-bold text-sm text-[#111827] flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-[#0061ff]" />
+                      <span>پرسش و پاسخ و نظرات اسناد (Q&A & Discussion)</span>
+                    </h3>
+                    <p className="text-xs text-[#6b7280] mt-0.5">
+                      مشاهده نظرات، سوالات و تعامل روی اسناد منتشرشده
+                    </p>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-[#f1f5f9]">
+                  {cloudFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      onClick={() => onOpenCloudDoc(file)}
+                      className="py-3 px-4 hover:bg-[#f8fafc] rounded-xl flex items-center justify-between cursor-pointer group transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                          <MessageSquare className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-xs text-[#111827] group-hover:text-[#0061ff] transition-colors">
+                            {file.title}
+                          </span>
+                          <span className="text-[11px] text-[#9ca3af] block">
+                            نویسنده: {file.author_name}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenCloudDoc(file);
+                        }}
+                        className="px-3 py-1.5 bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#111827] font-semibold text-xs rounded-lg"
+                      >
+                        مشاهده و ثبت نظر
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

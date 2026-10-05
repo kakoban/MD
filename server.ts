@@ -165,6 +165,16 @@ async function initDatabase() {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_password_expires_at TIMESTAMPTZ;
         CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_password_token);
 
+        CREATE TABLE IF NOT EXISTS document_comments (
+          id VARCHAR(100) PRIMARY KEY,
+          file_id VARCHAR(100) NOT NULL REFERENCES shared_markdown_files(id) ON DELETE CASCADE,
+          user_id VARCHAR(100) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          content TEXT NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_doc_comments_file ON document_comments(file_id, created_at ASC);
+
         -- Ensure all documents authored by registered users display their chosen registration display_name
         UPDATE shared_markdown_files f
         SET author_name = u.display_name
@@ -1394,6 +1404,118 @@ app.post('/api/files/:id/star', async (req: Request, res: Response) => {
     res.json({ success: true, stars: result.rows[0].stars_count });
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to star file', details: error.message });
+  }
+});
+
+// =============================================================
+// DOCUMENT COMMENTS (/api/files/:id/comments & /api/comments/:id)
+// =============================================================
+
+// 1. Get all comments for a document
+app.get('/api/files/:id/comments', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `
+      SELECT
+        c.id, c.file_id, c.user_id, c.content, c.created_at,
+        COALESCE(NULLIF(u.display_name, ''), u.username) as author_name,
+        u.username as author_username,
+        u.avatar_url as author_avatar
+      FROM document_comments c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.file_id = $1 OR LOWER(c.file_id) = LOWER($1)
+      ORDER BY c.created_at ASC
+      `,
+      [id]
+    );
+    res.json({ comments: result.rows });
+  } catch (error: any) {
+    console.error('Error fetching comments:', error);
+    res.status(500).json({ error: 'خطا در بارگذاری نظرات' });
+  }
+});
+
+// 2. Add a new comment (requires authentication)
+app.post('/api/files/:id/comments', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'برای ثبت نظر ابتدا باید وارد حساب کاربری خود شوید.' });
+    }
+
+    const { id } = req.params;
+    const { content } = req.body;
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'متن نظر نمی‌تواند خالی باشد.' });
+    }
+
+    // Verify file exists
+    const fileRes = await pool.query(
+      'SELECT id, title FROM shared_markdown_files WHERE id = $1 OR LOWER(id) = LOWER($1)',
+      [id]
+    );
+    if (fileRes.rows.length === 0) {
+      return res.status(404).json({ error: 'سند مورد نظر یافت نشد.' });
+    }
+    const realFileId = fileRes.rows[0].id;
+
+    const commentId = `cmt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const insertRes = await pool.query(
+      `
+      INSERT INTO document_comments (id, file_id, user_id, content, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, NOW(), NOW())
+      RETURNING id, file_id, user_id, content, created_at
+      `,
+      [commentId, realFileId, authUser.id, content.trim()]
+    );
+
+    const newComment = {
+      ...insertRes.rows[0],
+      author_name: authUser.displayName || authUser.username,
+      author_username: authUser.username,
+      author_avatar: '',
+    };
+
+    res.status(201).json({ success: true, comment: newComment });
+  } catch (error: any) {
+    console.error('Error adding comment:', error);
+    res.status(500).json({ error: 'خطا در ثبت نظر', details: error.message });
+  }
+});
+
+// 3. Delete a comment (only author or file owner)
+app.delete('/api/comments/:id', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'نشست کاربری نامعتبر است.' });
+    }
+
+    const { id } = req.params;
+    const commentRes = await pool.query(
+      `
+      SELECT c.*, f.user_id as file_owner_id
+      FROM document_comments c
+      JOIN shared_markdown_files f ON c.file_id = f.id
+      WHERE c.id = $1
+      `,
+      [id]
+    );
+    if (commentRes.rows.length === 0) {
+      return res.status(404).json({ error: 'نظر مورد نظر یافت نشد.' });
+    }
+
+    const comment = commentRes.rows[0];
+    if (comment.user_id !== authUser.id && comment.file_owner_id !== authUser.id) {
+      return res.status(403).json({ error: 'شما دسترسی حذف این نظر را ندارید.' });
+    }
+
+    await pool.query('DELETE FROM document_comments WHERE id = $1', [id]);
+    res.json({ success: true, message: 'نظر با موفقیت حذف گردید.' });
+  } catch (error: any) {
+    console.error('Error deleting comment:', error);
+    res.status(500).json({ error: 'خطا در حذف نظر' });
   }
 });
 

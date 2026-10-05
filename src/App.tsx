@@ -41,11 +41,12 @@ import { AuthModal } from './components/AuthModal';
 import { AccessRequestModal } from './components/AccessRequestModal';
 import { AccessRequestsManagerModal } from './components/AccessRequestsManagerModal';
 import { SharedMarkdownFile } from './services/cloudApi';
+import { DocumentComments } from './components/DocumentComments';
 import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
 import { authApi } from './services/authApi';
 import { UserProfile } from './types';
-import { Database, GitFork, Sparkles, Presentation as PresentationIcon } from 'lucide-react';
+import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare } from 'lucide-react';
 
 const STORAGE_KEY_DOCS = 'markdown_studio_docs_v2';
 const STORAGE_KEY_ACTIVE = 'markdown_studio_active_id_v2';
@@ -116,6 +117,8 @@ export default function App() {
   const [requestedAccessFile, setRequestedAccessFile] = useState<SharedMarkdownFile | null>(null);
   const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [activeDocCommentsCount, setActiveDocCommentsCount] = useState<number>(0);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isMyDocumentsModalOpen, setIsMyDocumentsModalOpen] = useState(false);
   const [cloudFilesCount, setCloudFilesCount] = useState<number>(0);
@@ -263,6 +266,18 @@ export default function App() {
   useEffect(() => {
     fetchPendingRequestsCount();
   }, [fetchPendingRequestsCount]);
+
+  // Load comments count for active cloud-shared document
+  useEffect(() => {
+    if (activeDoc?.id && activeDoc.isCloudShared) {
+      cloudApi
+        .getComments(activeDoc.id)
+        .then((cmts) => setActiveDocCommentsCount(cmts.length))
+        .catch(() => {});
+    } else {
+      setActiveDocCommentsCount(0);
+    }
+  }, [activeDoc?.id, activeDoc?.isCloudShared]);
 
   // Check URL query parameters for ?verify_token or ?reset_token or ?share=ID or ?file=ID
   useEffect(() => {
@@ -1051,6 +1066,8 @@ export default function App() {
         onOpenProfile={() => setIsProfileModalOpen(true)}
         onOpenMyDocuments={() => setIsMyDocumentsModalOpen(true)}
         onLogout={handleLogout}
+        onToggleComments={() => setIsCommentsOpen(!isCommentsOpen)}
+        commentsCount={activeDocCommentsCount}
       />
 
       {/* Formatting Toolbar (shown only in split and editor modes) */}
@@ -1187,6 +1204,15 @@ export default function App() {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsCommentsOpen(true)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[#0061FF]/10 hover:text-[#0061FF] text-[var(--text-secondary)] text-xs font-semibold transition-colors cursor-pointer"
+                      title="مشاهده و ثبت نظرات این سند"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-[#0061FF]" />
+                      <span>نظرات ({activeDocCommentsCount})</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleForkDocument(activeDoc)}
@@ -1365,6 +1391,19 @@ export default function App() {
         onClose={() => setIsAccessManagerOpen(false)}
         onRequestsUpdated={fetchPendingRequestsCount}
       />
+
+      {/* Document Comments Drawer */}
+      {activeDoc && (
+        <DocumentComments
+          isOpen={isCommentsOpen}
+          onClose={() => setIsCommentsOpen(false)}
+          fileId={activeDoc.id}
+          documentTitle={activeDoc.title}
+          currentUser={currentUser}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+          onCommentsCountChange={setActiveDocCommentsCount}
+        />
+      )}
 
       {/* User Profile Modal */}
       {currentUser && (
