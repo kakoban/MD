@@ -7,6 +7,7 @@ import {
   MoveHorizontal,
   Highlighter,
   MessageSquarePlus,
+  MessageSquare,
   Trash2,
   X,
   Check,
@@ -23,6 +24,8 @@ interface PreviewProps {
   onRemoveHighlight?: (highlightedText: string) => void;
   onAddTeacherNote?: (targetText: string, noteText: string) => void;
   scrollRef?: React.RefObject<HTMLDivElement | null>;
+  onToggleComments?: () => void;
+  commentsCount?: number;
 }
 
 interface FloatingMenuState {
@@ -51,6 +54,8 @@ export const Preview: React.FC<PreviewProps> = ({
   onRemoveHighlight,
   onAddTeacherNote,
   scrollRef,
+  onToggleComments,
+  commentsCount = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRef = scrollRef || containerRef;
@@ -255,6 +260,22 @@ export const Preview: React.FC<PreviewProps> = ({
 
       {/* Floating Toolbar: Teacher Pen, Layout Width & Zoom Controls */}
       <div className="absolute top-4 end-5 z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-md backdrop-blur-md opacity-95 hover:opacity-100 transition-opacity select-none">
+        {/* Comments Button */}
+        {onToggleComments && (
+          <button
+            type="button"
+            onClick={onToggleComments}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0061FF]/10 hover:bg-[#0061FF]/20 text-[#0061FF] transition-all cursor-pointer"
+            title="مشاهده و ثبت نظرات این سند"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-[#0061FF]" />
+            <span className="hidden sm:inline font-bold">نظرات</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-[#0061FF] text-white font-black text-[10px]">
+              {commentsCount}
+            </span>
+          </button>
+        )}
+
         {/* TEACHER HIGHLIGHTER PEN BUTTON */}
         <div className="relative flex items-center">
           <button

@@ -520,17 +520,39 @@ export default function App() {
     setTimeout(() => setCloudNotice(null), 3500);
   };
 
-  // Handler for opening comments (opens drawer or prompts to publish)
-  const handleOpenCommentsClick = useCallback(() => {
+  // Handler for opening comments (opens drawer directly, auto-syncing if needed)
+  const handleOpenCommentsClick = useCallback(async () => {
     if (!activeDoc) return;
     if (!activeDoc.isCloudShared) {
-      setCloudNotice('این سند هنوز در فضای ابری منتشر نشده است. با انتشار آن، بخش نظرات فعال می‌شود.');
-      setTimeout(() => setCloudNotice(null), 4500);
-      setIsShareModalOpen(true);
-    } else {
-      setIsCommentsOpen((prev) => !prev);
+      setCloudNotice('در حال آماده‌سازی بخش نظرات و اتصال به دیتابیس ابری...');
+      try {
+        const res = await cloudApi.publishFile({
+          title: activeDoc.title || 'سند جدید',
+          content: activeDoc.content,
+          is_public: true,
+          author_name: currentUser?.displayName || currentUser?.username || 'کاربر ناشناس',
+        });
+        if (res.file) {
+          const cloudDoc: MarkdownDoc = {
+            ...activeDoc,
+            id: res.file.id,
+            isCloudShared: true,
+            cloudAuthor: res.file.author_name,
+            cloudSyncedAt: Date.now(),
+          };
+          setDocuments((prev) => prev.map((d) => (d.id === activeDoc.id ? cloudDoc : d)));
+          setActiveDocId(res.file.id);
+          cloudSyncedStateRef.current[res.file.id] = { title: res.file.title, content: activeDoc.content };
+          setCloudSyncStatus('synced');
+          setCloudNotice('سند با موفقیت در مخزن ابری ثبت شد. اکنون می‌توانید نظر خود را بنویسید.');
+          setTimeout(() => setCloudNotice(null), 4000);
+        }
+      } catch (err: any) {
+        console.error('Failed to auto-publish doc for comments:', err);
+      }
     }
-  }, [activeDoc]);
+    setIsCommentsOpen(true);
+  }, [activeDoc, currentUser]);
 
   // Handler for setting / updating writing goal
   const handleUpdateWordGoal = (newGoal: number | undefined) => {
@@ -1201,20 +1223,6 @@ export default function App() {
           {/* Preview Pane with Reader Mode Header for Shared Docs */}
           {(viewMode === 'split' || viewMode === 'preview') && (
             <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-              {/* Floating Comments Button right inside the document preview */}
-              <button
-                type="button"
-                onClick={handleOpenCommentsClick}
-                className="no-print absolute bottom-8 end-8 z-30 flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#0061FF] hover:bg-[#0050e6] text-white font-bold text-xs shadow-xl hover:shadow-2xl transition-all cursor-pointer select-none animate-in fade-in"
-                title="مشاهده و ثبت نظرات این سند"
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span>نظرات</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-white text-[#0061FF] font-black text-[10px]">
-                  {activeDocCommentsCount}
-                </span>
-              </button>
-
               {/* Shared Doc Reader Mode Banner (DocSend Clean Style) */}
               {activeDoc?.isCloudShared && (
                 <div className="no-print mx-4 mt-2 px-3 py-1.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-between gap-2 text-xs shrink-0 shadow-xs">
@@ -1269,6 +1277,8 @@ export default function App() {
                 onHighlightText={handleHighlightFromPreview}
                 onRemoveHighlight={handleRemoveHighlightFromPreview}
                 onAddTeacherNote={handleAddTeacherNote}
+                onToggleComments={handleOpenCommentsClick}
+                commentsCount={activeDocCommentsCount}
               />
             </div>
           )}
