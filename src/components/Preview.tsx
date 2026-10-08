@@ -13,8 +13,57 @@ import {
   X,
   Check,
   Sparkles,
-  Palette
+  Palette,
+  Compass,
+  Monitor,
+  MousePointerClick,
+  FileSpreadsheet,
+  Download,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+
+interface WalkthroughStep {
+  id: number;
+  number: number;
+  title: string;
+  targetTool: string;
+  pathSteps: string[];
+  instruction: string;
+  file?: string;
+}
+
+function parseStepDetails(rawText: string, targetHint = '', stepNumber = 1): WalkthroughStep {
+  const text = rawText.trim();
+  let targetTool = targetHint;
+  if (!targetTool) {
+    if (/power\s*bi/i.test(text)) targetTool = 'Power BI Desktop';
+    else if (/excel/i.test(text)) targetTool = 'Microsoft Excel';
+    else if (/power\s*query/i.test(text)) targetTool = 'Power Query Editor';
+    else if (/vscode|vs\s*code/i.test(text)) targetTool = 'VS Code';
+    else if (/python/i.test(text)) targetTool = 'Python Environment';
+    else if (/terminal|bash|shell/i.test(text)) targetTool = 'Terminal / CLI';
+    else targetTool = 'نرم‌افزار / محیط کار';
+  }
+
+  const pathMatch = text.match(/([A-Za-z0-9_؀-ۿ\s]+(?:\s*(?:->|➔|→)\s*[A-Za-z0-9_؀-ۿ\s]+)+)/);
+  const pathSteps = pathMatch ? pathMatch[0].split(/\s*(?:->|➔|→)\s*/).map((s) => s.trim()).filter(Boolean) : [];
+
+  const fileMatch = text.match(/[\w؀-ۿ-]+\.(xlsx|pbix|csv|json|py|sql|txt|md)\b/i);
+  const file = fileMatch ? fileMatch[0] : undefined;
+
+  const title = text.split(/[:\n.]/)[0].trim().slice(0, 60) || `مرحله ${stepNumber}`;
+
+  return {
+    id: stepNumber,
+    number: stepNumber,
+    title,
+    targetTool,
+    pathSteps,
+    instruction: text,
+    file,
+  };
+}
 
 interface PreviewProps {
   html: string;
@@ -75,6 +124,41 @@ export const Preview: React.FC<PreviewProps> = ({
   const [showNoteModal, setShowNoteModal] = useState<{ targetText: string } | null>(null);
   const [teacherNoteInput, setTeacherNoteInput] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Interactive Walkthrough feature states
+  const [walkthroughActive, setWalkthroughActive] = useState<boolean>(false);
+  const [activeStep, setActiveStep] = useState<WalkthroughStep | null>(null);
+  const [totalStepsCount, setTotalStepsCount] = useState<number>(0);
+
+  const handleAdvanceStep = useCallback(
+    (delta: number) => {
+      if (!activeStep) return;
+      const el = activeRef.current;
+      if (!el) return;
+      const stepElements = Array.from(
+        el.querySelectorAll<HTMLElement>(
+          '.walkthrough-step-chip, .walkthrough-file-chip, .markdown-body ol > li'
+        )
+      );
+      const nextIdx = activeStep.number - 1 + delta;
+      if (nextIdx >= 0 && nextIdx < stepElements.length) {
+        const targetEl = stepElements[nextIdx];
+        const chipStep = targetEl.getAttribute('data-walkthrough-step');
+        const chipTarget = targetEl.getAttribute('data-walkthrough-target') || '';
+        const chipFile = targetEl.getAttribute('data-walkthrough-file');
+        const rawText = chipStep || targetEl.innerText.trim();
+        const nextData = parseStepDetails(rawText, chipTarget, nextIdx + 1);
+        if (chipFile) nextData.file = chipFile;
+
+        stepElements.forEach((s) => s.classList.remove('walkthrough-step-focused'));
+        targetEl.classList.add('walkthrough-step-focused');
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        setActiveStep(nextData);
+      }
+    },
+    [activeStep, activeRef]
+  );
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -198,12 +282,56 @@ export const Preview: React.FC<PreviewProps> = ({
     };
     marks.forEach((m) => m.addEventListener('click', handleMarkClick));
 
+    // 4. Click listener for Walkthrough Steps, chips, and numbered list items
+    const stepElements = el.querySelectorAll<HTMLElement>(
+      '.walkthrough-step-chip, .walkthrough-file-chip, .markdown-body ol > li'
+    );
+    setTotalStepsCount(stepElements.length);
+
+    const handleStepElementClick = (e: MouseEvent) => {
+      const targetEl = e.currentTarget as HTMLElement;
+      if ((e.target as HTMLElement).closest('input, button, a')) return;
+
+      const chipStep = targetEl.getAttribute('data-walkthrough-step');
+      const chipTarget = targetEl.getAttribute('data-walkthrough-target') || '';
+      const chipFile = targetEl.getAttribute('data-walkthrough-file');
+      const rawText = chipStep || targetEl.innerText.trim();
+
+      let stepNum = 1;
+      stepElements.forEach((s, idx) => {
+        if (s === targetEl) stepNum = idx + 1;
+      });
+
+      const stepData = parseStepDetails(rawText, chipTarget, stepNum);
+      if (chipFile) stepData.file = chipFile;
+
+      stepElements.forEach((s) => s.classList.remove('walkthrough-step-focused'));
+      targetEl.classList.add('walkthrough-step-focused');
+
+      setActiveStep(stepData);
+      setWalkthroughActive(true);
+    };
+    stepElements.forEach((s) => s.addEventListener('click', handleStepElementClick));
+
     return () => {
       checkboxes.forEach((cb) => cb.removeEventListener('change', handleCheckboxClick));
       copyBtns.forEach((btn) => btn.removeEventListener('click', handleCopyClick));
       marks.forEach((m) => m.removeEventListener('click', handleMarkClick));
+      stepElements.forEach((s) => s.removeEventListener('click', handleStepElementClick));
     };
   }, [html, onToggleTask, activeRef]);
+
+  // Clean up focus ring when walkthrough mode is deactivated
+  useEffect(() => {
+    if (!walkthroughActive) {
+      const el = activeRef.current;
+      if (el) {
+        el.querySelectorAll('.walkthrough-step-focused').forEach((s) =>
+          s.classList.remove('walkthrough-step-focused')
+        );
+      }
+    }
+  }, [walkthroughActive, activeRef]);
 
   // Close floating menu when clicking away
   useEffect(() => {
@@ -291,6 +419,54 @@ export const Preview: React.FC<PreviewProps> = ({
             </span>
           </button>
         )}
+
+        {/* INTERACTIVE WALKTHROUGH MODE TOGGLE */}
+        <button
+          type="button"
+          onClick={() => {
+            const next = !walkthroughActive;
+            setWalkthroughActive(next);
+            if (!next) {
+              setActiveStep(null);
+              showToast('حالت آموزش تعاملی خاموش شد');
+            } else {
+              showToast('حالت آموزش تعاملی روشن شد. روی مراحل کلیک کنید');
+              const el = activeRef.current;
+              if (el) {
+                const stepElements = el.querySelectorAll<HTMLElement>(
+                  '.walkthrough-step-chip, .walkthrough-file-chip, .markdown-body ol > li'
+                );
+                if (stepElements.length > 0) {
+                  const firstEl = stepElements[0];
+                  const chipStep = firstEl.getAttribute('data-walkthrough-step');
+                  const chipTarget = firstEl.getAttribute('data-walkthrough-target') || '';
+                  const chipFile = firstEl.getAttribute('data-walkthrough-file');
+                  const rawText = chipStep || firstEl.innerText.trim();
+                  const firstData = parseStepDetails(rawText, chipTarget, 1);
+                  if (chipFile) firstData.file = chipFile;
+
+                  stepElements.forEach((s) => s.classList.remove('walkthrough-step-focused'));
+                  firstEl.classList.add('walkthrough-step-focused');
+                  setActiveStep(firstData);
+                }
+              }
+            }
+          }}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            walkthroughActive
+              ? 'bg-emerald-500 text-neutral-950 font-bold shadow-md ring-2 ring-emerald-400/50'
+              : 'hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+          }`}
+          title={
+            walkthroughActive
+              ? 'آموزش تعاملی روشن است (کلیک برای خاموش کردن)'
+              : 'فعال‌سازی حالت آموزش تعاملی گام‌به‌گام'
+          }
+        >
+          <Compass className="w-3.5 h-3.5 text-emerald-500" />
+          <span className="hidden sm:inline font-bold">آموزش تعاملی</span>
+          {walkthroughActive && <span className="w-2 h-2 rounded-full bg-neutral-950 animate-pulse" />}
+        </button>
 
         {/* TEACHER HIGHLIGHTER PEN BUTTON */}
         <div className="relative flex items-center">
@@ -410,21 +586,204 @@ export const Preview: React.FC<PreviewProps> = ({
         )}
       </div>
 
-      {/* Main Preview Scroll Area */}
-      <div
-        ref={activeRef}
-        onScroll={handleScroll}
-        onMouseUp={handleMouseUp}
-        dir={direction}
-        className={`flex-1 overflow-y-auto p-6 md:p-12 lg:p-14 text-[var(--text-primary)] ${fontClass} ${
-          teacherPenActive ? 'cursor-text select-text' : ''
-        }`}
-      >
+      {/* Main Preview Container with Side Walkthrough Panel */}
+      <div className="flex-1 flex overflow-hidden relative">
         <div
-          className={`${widthContainerClass} markdown-body transition-all duration-200`}
-          style={{ fontSize: `${zoomLevel}%` }}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+          ref={activeRef}
+          onScroll={handleScroll}
+          onMouseUp={handleMouseUp}
+          dir={direction}
+          className={`flex-1 overflow-y-auto p-6 md:p-12 lg:p-14 text-[var(--text-primary)] ${fontClass} ${
+            teacherPenActive ? 'cursor-text select-text' : ''
+          } ${walkthroughActive ? 'walkthrough-active' : ''}`}
+        >
+          <div
+            className={`${widthContainerClass} markdown-body transition-all duration-200`}
+            style={{ fontSize: `${zoomLevel}%` }}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </div>
+
+        {/* Walkthrough Companion Simulator Panel */}
+        {walkthroughActive && activeStep && (
+          <aside className="w-80 md:w-96 border-s border-[var(--border-color)] bg-[var(--bg-secondary)] flex flex-col shadow-2xl z-20 select-none animate-in slide-in-from-end duration-200 shrink-0">
+            {/* Header */}
+            <div className="p-4 border-b border-[var(--border-color)] bg-[var(--bg-tertiary)]/50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                  <Compass className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                      گام {activeStep.number} {totalStepsCount > 0 ? `از ${totalStepsCount}` : ''}
+                    </span>
+                    <span className="text-[10px] font-semibold text-[var(--text-muted)] truncate max-w-[110px]">
+                      {activeStep.targetTool}
+                    </span>
+                  </div>
+                  <h4 className="font-bold text-xs text-[var(--text-primary)] truncate max-w-[200px] mt-0.5">
+                    {activeStep.title}
+                  </h4>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveStep(null)}
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
+                title="بستن این مرحله"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+              {/* Target Software & Breadcrumb Card */}
+              <div className="p-3.5 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="flex items-center gap-1 font-semibold text-[var(--text-secondary)]">
+                    <Monitor className="w-3.5 h-3.5 text-[#0061FF]" />
+                    <span>محیط نرم‌افزار:</span>
+                  </span>
+                  <span className="font-bold text-[var(--text-primary)]">{activeStep.targetTool}</span>
+                </div>
+
+                {activeStep.pathSteps.length > 0 && (
+                  <div className="pt-2 border-t border-[var(--border-color)]/60">
+                    <span className="text-[10px] text-[var(--text-muted)] block mb-1">مسیر منو / دکمه‌ها:</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {activeStep.pathSteps.map((step, idx) => (
+                        <React.Fragment key={idx}>
+                          <span
+                            className={`px-2 py-0.5 rounded-md font-mono text-[11px] font-bold ${
+                              idx === activeStep.pathSteps.length - 1
+                                ? 'bg-[#0061FF] text-white shadow-xs'
+                                : 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
+                            }`}
+                          >
+                            {step}
+                          </span>
+                          {idx < activeStep.pathSteps.length - 1 && (
+                            <ChevronLeft className="w-3 h-3 text-[var(--text-muted)] rtl:rotate-0 rotate-180" />
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Interactive Simulator Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-neutral-900 to-neutral-950 text-white border border-neutral-800 space-y-3 shadow-lg">
+                <div className="flex items-center justify-between pb-2 border-b border-neutral-800 text-[10px] text-neutral-400">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                    <span className="ms-1.5 font-mono text-[9px] text-neutral-300">
+                      {activeStep.targetTool}
+                    </span>
+                  </div>
+                  <span>شبیه‌ساز تعاملی کلیک</span>
+                </div>
+
+                {/* Simulated Click Target */}
+                <div className="p-3.5 rounded-xl bg-neutral-900/90 border border-neutral-700/60 text-center space-y-2.5">
+                  <p className="text-[11px] text-neutral-300 leading-relaxed">
+                    روی دکمه کلیک کنید تا مرحله در محیط شبیه‌ساز اجرا و تأیید شود:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      showToast(`✓ گام ${activeStep.number} تأیید شد! حرکت به مرحله بعد...`);
+                      handleAdvanceStep(1);
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0061FF] hover:bg-[#0052cc] text-white font-bold text-xs shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer animate-pulse"
+                  >
+                    <MousePointerClick className="w-4 h-4" />
+                    <span>
+                      {activeStep.pathSteps[activeStep.pathSteps.length - 1] || activeStep.title}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Source/Practice File if referenced */}
+              {activeStep.file && (
+                <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 space-y-2 text-xs">
+                  <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-300">
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>فایل تمرین / داده سورس:</span>
+                  </div>
+                  <div className="flex items-center justify-between bg-[var(--bg-secondary)] p-2 rounded-xl border border-emerald-500/20">
+                    <span
+                      className="font-mono text-[11px] font-bold text-[var(--text-primary)] truncate max-w-[170px]"
+                      dir="ltr"
+                    >
+                      {activeStep.file}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => showToast(`فایل ${activeStep.file} آماده بارگذاری و استفاده است.`)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>دریافت سورس</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Instruction text */}
+              <div className="p-3.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] space-y-1">
+                <span className="font-bold text-[10px] text-[var(--text-muted)] block">متن دستورالعمل گام:</span>
+                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                  {activeStep.instruction}
+                </p>
+              </div>
+            </div>
+
+            {/* Navigation & Dismiss Footer */}
+            <div className="p-3.5 border-t border-[var(--border-color)] bg-[var(--bg-tertiary)]/40 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={activeStep.number <= 1}
+                  onClick={() => handleAdvanceStep(-1)}
+                  className="flex-1 flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl border border-[var(--border-color)] hover:bg-[var(--bg-primary)] disabled:opacity-30 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-3.5 h-3.5 rtl:rotate-0 rotate-180" />
+                  <span>گام قبلی</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={totalStepsCount > 0 && activeStep.number >= totalStepsCount}
+                  onClick={() => handleAdvanceStep(1)}
+                  className="flex-1 flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-[#0061FF] hover:bg-[#0052cc] text-white disabled:opacity-30 text-xs font-bold transition-colors shadow-xs cursor-pointer"
+                >
+                  <span>گام بعدی</span>
+                  <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-0 rotate-180" />
+                </button>
+              </div>
+
+              {/* Explicit Exit Tutorial Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setWalkthroughActive(false);
+                  setActiveStep(null);
+                  showToast('حالت آموزش تعاملی خاموش شد.');
+                }}
+                className="w-full py-1.5 rounded-xl text-center text-xs text-rose-500 hover:bg-rose-500/10 font-bold transition-colors cursor-pointer"
+              >
+                ✕ خروج از حالت آموزش (غیرفعال‌سازی)
+              </button>
+            </div>
+          </aside>
+        )}
       </div>
 
       {/* FLOATING SELECTION / HIGHLIGHT TOOLBAR */}

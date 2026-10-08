@@ -1573,6 +1573,29 @@ mark.md-highlight-orange {
   border: 1px solid #e5e7eb;
 }
 
+/* --- Walkthrough Mode Styles --- */
+.walkthrough-step-chip {
+  transition: all 0.15s ease-in-out;
+}
+.walkthrough-active .walkthrough-step-chip {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4);
+}
+.walkthrough-active .markdown-body ol > li {
+  position: relative;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.6rem;
+}
+.walkthrough-active .markdown-body ol > li:hover {
+  background-color: rgba(0, 97, 255, 0.07);
+}
+.walkthrough-step-focused {
+  background-color: rgba(0, 97, 255, 0.1) !important;
+  box-shadow: 0 0 0 2px #0061ff !important;
+  border-radius: 0.5rem;
+}
+
 /* --- Tooltip Animation --- */
 @keyframes tooltipIn {
   from {

@@ -167,6 +167,26 @@ function postprocessHtml(html: string, mathBlocks: string[], mathInlines: string
     `;
   });
 
+  // Support Interactive Walkthrough Steps: [step:Step Title | Tool or Path] or [action:Action Name]
+  result = result.replace(/\[(step|action):\s*([^\|\]]+)(?:\|\s*([^\]]+))?\]/gi, (_, type, title, target) => {
+    const cleanTitle = title.trim();
+    const cleanTarget = (target || '').trim();
+    return `<span class="walkthrough-step-chip inline-flex items-center gap-1.5 px-2.5 py-0.5 my-0.5 rounded-lg font-bold text-xs cursor-pointer transition-all border select-none bg-sky-50 text-sky-800 border-sky-300 hover:bg-sky-100 hover:border-sky-400 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-700 shadow-xs" data-walkthrough-step="${escapeHtml(cleanTitle)}" data-walkthrough-target="${escapeHtml(cleanTarget)}" title="کلیک برای مشاهده راهنمای تعاملی این مرحله">
+      <span class="step-chip-icon text-[11px]">🎯</span>
+      <span class="step-chip-title">${cleanTitle}</span>
+      ${cleanTarget ? `<span class="step-chip-target opacity-80 font-normal text-[10px] ps-1 border-s border-current">${cleanTarget}</span>` : ''}
+    </span>`;
+  });
+
+  // Support Practice/Source files: [file:Filename.ext]
+  result = result.replace(/\[file:\s*([^\]]+)\]/gi, (_, filename) => {
+    const cleanFile = filename.trim();
+    return `<span class="walkthrough-file-chip inline-flex items-center gap-1.5 px-2.5 py-0.5 my-0.5 rounded-lg font-bold text-xs cursor-pointer transition-all border select-none bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700 shadow-xs" data-walkthrough-file="${escapeHtml(cleanFile)}" title="فایل سورس / تمرین">
+      <span class="text-[11px]">📊</span>
+      <span>${cleanFile}</span>
+    </span>`;
+  });
+
   return result;
 }
 
