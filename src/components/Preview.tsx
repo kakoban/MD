@@ -8,6 +8,7 @@ import {
   Highlighter,
   MessageSquarePlus,
   MessageSquare,
+  LayoutDashboard,
   Trash2,
   X,
   Check,
@@ -26,6 +27,7 @@ interface PreviewProps {
   scrollRef?: React.RefObject<HTMLDivElement | null>;
   onToggleComments?: () => void;
   commentsCount?: number;
+  onBackToWorkspace?: () => void;
 }
 
 interface FloatingMenuState {
@@ -56,6 +58,7 @@ export const Preview: React.FC<PreviewProps> = ({
   scrollRef,
   onToggleComments,
   commentsCount = 0,
+  onBackToWorkspace,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRef = scrollRef || containerRef;
@@ -260,6 +263,19 @@ export const Preview: React.FC<PreviewProps> = ({
 
       {/* Floating Toolbar: Teacher Pen, Layout Width & Zoom Controls */}
       <div className="absolute top-4 end-5 z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-md backdrop-blur-md opacity-95 hover:opacity-100 transition-opacity select-none">
+        {/* Back to Workspace Dashboard Button */}
+        {onBackToWorkspace && (
+          <button
+            type="button"
+            onClick={onBackToWorkspace}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-[#0061FF] text-white hover:bg-[#0052cc] shadow-xs transition-all cursor-pointer"
+            title="بازگشت به صفحه اصلی و داشبورد اسناد"
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            <span>داشبورد اسناد</span>
+          </button>
+        )}
+
         {/* Comments Button */}
         {onToggleComments && (
           <button

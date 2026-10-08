@@ -14,6 +14,7 @@ import {
   Palette,
   AlignRight,
   AlignLeft,
+  LayoutDashboard,
   Type,
   ChevronDown,
   FileDown,
@@ -158,15 +159,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="no-print relative z-30 flex items-center justify-between px-4 h-14 bg-white border-b border-[#e5e5e5] text-[#1a1a1a] select-none shrink-0 w-full">
-      {/* Left Section: Back, Title, Cloud Status */}
-      <div className="flex items-center gap-3 flex-1 min-w-0">
+      {/* Left Section: Back to Dashboard, Title, Cloud Status */}
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
         <button
           type="button"
           onClick={() => onViewModeChange('workspace')}
-          className="p-2 rounded-lg hover:bg-[#f7f7f8] text-[#6b7280] hover:text-[#1a1a1a] transition-colors shrink-0"
-          title="بازگشت به فضای اسناد"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0061FF] hover:bg-[#0050d4] text-white font-bold text-xs transition-all shrink-0 shadow-xs cursor-pointer"
+          title="بازگشت به صفحه اصلی و داشبورد اسناد"
         >
-          {direction === 'rtl' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
+          <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
+          <LayoutDashboard className="w-4 h-4" />
+          <span>داشبورد اسناد</span>
         </button>
 
         <input
@@ -191,6 +194,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Center Section: View Modes */}
       <div className="flex items-center bg-[#f7f7f8] border border-[#e5e5e5] rounded-lg p-0.5 gap-0.5 shrink-0 hidden md:flex">
+        <button
+          type="button"
+          onClick={() => onViewModeChange('workspace')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-[#4b5563] hover:text-[#0061FF] hover:bg-white transition-colors cursor-pointer"
+          title="بازگشت به داشبورد اسناد"
+        >
+          <LayoutDashboard className="w-4 h-4 text-[#0061FF]" />
+          <span>داشبورد</span>
+        </button>
         <button
           type="button"
           onClick={() => onViewModeChange('split')}

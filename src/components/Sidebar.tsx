@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   FileText,
   FolderKanban,
+  LayoutDashboard,
   BarChart3,
   Settings,
   ChevronLeft,
@@ -32,6 +33,7 @@ interface SidebarProps {
   onRequestAccess?: (file: SharedMarkdownFile) => void;
   onOpenAccessRequestsManager?: () => void;
   pendingRequestsCount?: number;
+  onBackToWorkspace?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -42,6 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleOpen,
   currentUser,
   pendingRequestsCount = 0,
+  onBackToWorkspace,
 }) => {
   const [activeNavItem, setActiveNavItem] = useState<'content' | 'spaces' | 'analytics' | 'settings'>('content');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,23 +58,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     {
+      id: 'spaces',
+      label: 'داشبورد اسناد',
+      icon: <LayoutDashboard className="w-5 h-5 text-[#0061FF]" />,
+      onClick: () => {
+        setActiveNavItem('spaces');
+        if (onBackToWorkspace) onBackToWorkspace();
+      },
+      badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined
+    },
+    {
       id: 'content',
-      label: 'محتوا',
+      label: 'محتوا و اسناد',
       icon: <FileText className="w-5 h-5" />,
       onClick: () => {
         setActiveNavItem('content');
         if (!isOpen) onToggleOpen();
       }
-    },
-    {
-      id: 'spaces',
-      label: 'فضاها',
-      icon: <FolderKanban className="w-5 h-5" />,
-      onClick: () => {
-        setActiveNavItem('spaces');
-        if (onOpenTemplates) onOpenTemplates();
-      },
-      badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined
     },
     {
       id: 'analytics',
@@ -109,18 +112,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       />
 
       {/* 1. Logo Area */}
-      <div 
-        className="p-4 flex items-center cursor-pointer"
-        onClick={onToggleOpen}
+      <div
+        className="p-4 flex items-center cursor-pointer hover:bg-white/5 transition-colors"
+        onClick={() => {
+          if (onBackToWorkspace) onBackToWorkspace();
+          else onToggleOpen();
+        }}
+        title="بازگشت به صفحه اصلی / داشبورد"
       >
         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#0061FF] flex items-center justify-center text-white font-bold shadow-md">
           M
         </div>
-        
+
         {isOpen && (
           <div className="ms-3 flex-1 overflow-hidden">
             <div className="text-white font-bold text-sm truncate">MD Studio</div>
-            <div className="text-[#8b8fa3] text-[10px] truncate">Secure Document Sharing</div>
+            <div className="text-[#8b8fa3] text-[10px] truncate">بازگشت به داشبورد</div>
           </div>
         )}
       </div>

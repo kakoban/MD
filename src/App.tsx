@@ -46,7 +46,7 @@ import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
 import { authApi } from './services/authApi';
 import { UserProfile } from './types';
-import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare } from 'lucide-react';
+import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare, LayoutDashboard, ArrowRight } from 'lucide-react';
 
 const STORAGE_KEY_DOCS = 'markdown_studio_docs_v2';
 const STORAGE_KEY_ACTIVE = 'markdown_studio_active_id_v2';
@@ -1142,6 +1142,7 @@ export default function App() {
             onRequestAccess={(file) => setRequestedAccessFile(file)}
             onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
             pendingRequestsCount={pendingRequestsCount}
+            onBackToWorkspace={() => setViewMode('workspace')}
           />
         )}
 
@@ -1227,6 +1228,15 @@ export default function App() {
               {activeDoc?.isCloudShared && (
                 <div className="no-print mx-4 mt-2 px-3 py-1.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-between gap-2 text-xs shrink-0 shadow-xs">
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('workspace')}
+                      className="me-2 text-[#0061FF] hover:bg-[#0061FF]/10 px-2 py-0.5 rounded-md font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                      title="بازگشت به داشبورد اصلی اسناد"
+                    >
+                      <LayoutDashboard className="w-3.5 h-3.5" />
+                      <span>داشبورد اسناد</span>
+                    </button>
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     <span className="font-semibold text-xs text-[var(--text-secondary)]">
                       سند اشتراکی ابری
@@ -1279,6 +1289,7 @@ export default function App() {
                 onAddTeacherNote={handleAddTeacherNote}
                 onToggleComments={handleOpenCommentsClick}
                 commentsCount={activeDocCommentsCount}
+                onBackToWorkspace={() => setViewMode('workspace')}
               />
             </div>
           )}
