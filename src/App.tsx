@@ -770,17 +770,27 @@ export default function App() {
   }, []);
 
   // Import files (.md, .txt, .markdown)
-  const handleImportFiles = useCallback((files: FileList) => {
+  const handleImportFiles = useCallback((files: FileList | File[]) => {
     Array.from(files).forEach((file) => {
+      if (!file.name.match(/.(md|markdown|txt)$/i)) return;
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result as string;
         if (text !== undefined) {
-          const title = file.name.replace(/\.(md|markdown|txt)$/i, '');
+          const title = file.name.replace(/.(md|markdown|txt)$/i, "");
+          let folderPath: string | undefined = undefined;
+          const relPath = (file as any).webkitRelativePath || "";
+          if (relPath) {
+            const parts = relPath.split("/").filter(Boolean);
+            if (parts.length > 1) {
+              folderPath = parts.slice(0, -1).join("/");
+            }
+          }
           const newDoc: MarkdownDoc = {
             id: `imported-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            title: title || 'سند وارد شده',
+            title: title || "سند وارد شده",
             content: text,
+            folderPath,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -790,6 +800,16 @@ export default function App() {
       };
       reader.readAsText(file);
     });
+  }, []);
+
+  const handleUpdateDocFolder = useCallback((docId: string, folderPath?: string) => {
+    setDocuments((prev) =>
+      prev.map((d) =>
+        d.id === docId
+          ? { ...d, folderPath: folderPath?.trim() || undefined, updatedAt: Date.now() }
+          : d
+      )
+    );
   }, []);
 
   // Interactive Task List Checkbox Click
@@ -1143,6 +1163,7 @@ export default function App() {
             onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
             pendingRequestsCount={pendingRequestsCount}
             onBackToWorkspace={() => setViewMode('workspace')}
+            onUpdateDocFolder={handleUpdateDocFolder}
           />
         )}
 
@@ -1195,6 +1216,7 @@ export default function App() {
             onOpenAuth={() => setIsAuthModalOpen(true)}
             onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
             pendingRequestsCount={pendingRequestsCount}
+            onUpdateDocFolder={handleUpdateDocFolder}
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">

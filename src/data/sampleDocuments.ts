@@ -3,6 +3,7 @@ import { MarkdownDoc } from '../types';
 export const SAMPLE_DOCUMENTS: MarkdownDoc[] = [
   {
     id: 'welcome-guide',
+    folderPath: 'راهنمای آموزشی/فصل ۱: مقدمات مارک‌دان',
     title: 'راهنمای جامع مارک‌دان استودیو پرو',
     createdAt: Date.now() - 86400000 * 2,
     updatedAt: Date.now() - 3600000,
@@ -142,6 +143,7 @@ $$
   },
   {
     id: 'developer-notes',
+    folderPath: 'راهنمای آموزشی/فصل ۲: یادداشت‌های فنی',
     title: 'یادداشت‌های فنی توسعه نرم‌افزار',
     createdAt: Date.now() - 86400000 * 5,
     updatedAt: Date.now() - 7200000,
@@ -192,6 +194,7 @@ npm run dev
   },
   {
     id: 'book-summary',
+    folderPath: 'کتابخانه و مراجع/خلاصه کتاب‌ها',
     title: 'خلاصه کتاب: کار عمیق (Deep Work)',
     createdAt: Date.now() - 86400000 * 10,
     updatedAt: Date.now() - 86400000,

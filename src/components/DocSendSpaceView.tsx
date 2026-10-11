@@ -29,10 +29,16 @@ import {
   HelpCircle,
   X,
   ExternalLink,
+  FolderTree,
+  FolderUp,
+  Folder,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { MarkdownDoc, UserProfile } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
 import { useLanguage } from '../context/LanguageContext';
+import { buildDocTree, DocTreeNode, countTreeDocs } from '../utils/docTree';
 
 interface DocSendSpaceViewProps {
   documents: MarkdownDoc[];
@@ -40,12 +46,13 @@ interface DocSendSpaceViewProps {
   onOpenDoc: (docId: string, mode?: 'split' | 'editor' | 'preview') => void;
   onCreateDoc: () => void;
   onOpenCloudDoc: (file: SharedMarkdownFile) => void;
-  onImportFiles: (files: FileList) => void;
+  onImportFiles: (files: FileList | File[]) => void;
   onOpenTemplates: () => void;
   onOpenProfile: () => void;
   onOpenAuth: () => void;
   onOpenAccessRequestsManager?: () => void;
   pendingRequestsCount?: number;
+  onUpdateDocFolder?: (docId: string, folderPath?: string) => void;
 }
 
 export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
@@ -60,15 +67,25 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   onOpenAuth,
   onOpenAccessRequestsManager,
   pendingRequestsCount = 0,
+  onUpdateDocFolder,
 }) => {
   const { t, language } = useLanguage();
   const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions'>('all');
-  const [viewStyle, setViewStyle] = useState<'grid' | 'list'>('grid');
+  const [viewStyle, setViewStyle] = useState<'grid' | 'list' | 'tree'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [cloudFiles, setCloudFiles] = useState<SharedMarkdownFile[]>([]);
   const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const toggleFolderCollapse = (path: string) => {
+    setCollapsedFolders((prev) => ({
+      ...prev,
+      [path]: !prev[path],
+    }));
+  };
 
   const fetchCloud = useCallback(async () => {
     setIsCloudLoading(true);
@@ -130,6 +147,125 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
     ? currentUser.username.slice(0, 2).toUpperCase()
     : 'U';
 
+  const docTree = buildDocTree(filteredLocalDocs);
+
+  const renderDashboardTreeNode = (node: DocTreeNode, depth: number = 0): React.ReactNode => {
+    return (
+      <div key={node.fullPath || 'root-tree'} className="space-y-3">
+        {node.children.map((child) => {
+          const isCollapsed = Boolean(collapsedFolders[child.fullPath]);
+          const docCount = countTreeDocs(child);
+          return (
+            <div
+              key={child.fullPath}
+              className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden transition-all shadow-xs"
+            >
+              <button
+                type="button"
+                onClick={() => toggleFolderCollapse(child.fullPath)}
+                className="w-full px-5 py-3.5 flex items-center justify-between bg-[var(--bg-tertiary)]/30 hover:bg-[var(--bg-tertiary)]/60 transition-colors cursor-pointer text-start"
+              >
+                <div className="flex items-center gap-2.5">
+                  {isCollapsed ? (
+                    <ChevronRight className="w-4 h-4 text-[var(--text-muted)] rtl:rotate-180" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+                  )}
+                  {isCollapsed ? (
+                    <Folder className="w-4 h-4 text-amber-400" />
+                  ) : (
+                    <FolderOpen className="w-4 h-4 text-amber-400" />
+                  )}
+                  <span className="font-bold text-sm text-[var(--text-primary)]">
+                    {child.name}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold font-mono">
+                    {docCount} سند آموزشی
+                  </span>
+                </div>
+              </button>
+
+              {!isCollapsed && (
+                <div className="p-4 space-y-3 bg-[var(--bg-secondary)]/50">
+                  {renderDashboardTreeNode(child, depth + 1)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {node.docs.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {node.docs.map((doc) => {
+              const snippet = doc.content
+                .replace(/[#*`~\[\]]/g, '')
+                .replace(/\n+/g, ' ')
+                .trim()
+                .slice(0, 100);
+              return (
+                <div
+                  key={doc.id}
+                  onClick={() => onOpenDoc(doc.id, 'split')}
+                  className="p-4 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] hover:border-[#0061FF]/40 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-36 group"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <div className="flex items-center gap-2 truncate">
+                        <FileText className="w-3.5 h-3.5 text-[#0061FF] shrink-0" />
+                        <h4 className="font-bold text-xs text-[var(--text-primary)] group-hover:text-[#0061FF] transition-colors truncate">
+                          {doc.title || 'سند بدون عنوان'}
+                        </h4>
+                      </div>
+                      {doc.isFavorite && (
+                        <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)] line-clamp-2 leading-relaxed">
+                      {snippet || 'سند بدون متن...'}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-[var(--border-color)]/60 flex items-center justify-between text-[11px]">
+                    <span className="text-[10px] text-[var(--text-muted)] font-mono">
+                      {new Date(doc.updatedAt).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenDoc(doc.id, 'preview');
+                        }}
+                        className="px-2 py-0.5 rounded text-[10px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+                      >
+                        مطالعه
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenDoc(doc.id, 'split');
+                        }}
+                        className="px-2 py-0.5 rounded bg-[#0061FF]/10 text-[#0061FF] text-[10px] font-bold"
+                      >
+                        ویرایش
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div
       className="flex-1 flex flex-col h-full w-full overflow-hidden bg-[var(--bg-primary)] text-[var(--text-primary)] select-none"
@@ -142,6 +278,16 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
         type="file"
         multiple
         accept=".md,.markdown,.txt"
+        className="hidden"
+        onChange={(e) => e.target.files && onImportFiles(e.target.files)}
+      />
+
+      {/* Hidden folder input */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        {...({ webkitdirectory: '', directory: '' } as any)}
+        multiple
         className="hidden"
         onChange={(e) => e.target.files && onImportFiles(e.target.files)}
       />
@@ -276,6 +422,22 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     آپلود فایل .md
                   </span>
                   <span className="text-[10px] text-[var(--text-muted)]">خواندن از سیستم</span>
+                </div>
+              </div>
+
+              {/* 2.5 Upload Folder / Course */}
+              <div
+                onClick={() => folderInputRef.current?.click()}
+                className="group p-4 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-amber-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-32"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <FolderUp className="w-5 h-5 stroke-[2]" />
+                </div>
+                <div>
+                  <span className="font-bold text-xs text-[var(--text-primary)] block group-hover:text-amber-400 transition-colors">
+                    آپلود پوشه آموزشی
+                  </span>
+                  <span className="text-[10px] text-[var(--text-muted)]">ایجاد درخت سرفصل‌ها</span>
                 </div>
               </div>
 
@@ -422,6 +584,18 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     title="نمایش فهرستی"
                   >
                     <List className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewStyle('tree')}
+                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                      viewStyle === 'tree'
+                        ? 'bg-[var(--bg-secondary)] text-amber-400 shadow-xs border border-[var(--border-color)]'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                    }`}
+                    title="نمایش درخت سرفصل‌های آموزشی"
+                  >
+                    <FolderTree className="w-4 h-4" />
                   </button>
                   <button
                     type="button"
@@ -691,6 +865,11 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       </div>
                     );
                   })}
+              </div>
+            ) : viewStyle === 'tree' ? (
+              /* TREE VIEW (Educational Course Structure) */
+              <div className="space-y-4">
+                {renderDashboardTreeNode(docTree, 0)}
               </div>
             ) : (
               /* LIST VIEW (Clean Notion Table) */

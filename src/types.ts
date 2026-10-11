@@ -11,6 +11,7 @@ export interface MarkdownDoc {
   cloudAuthor?: string;
   isForked?: boolean;
   wordGoal?: number;
+  folderPath?: string;
 }
 
 export type ViewMode = 'workspace' | 'split' | 'editor' | 'preview' | 'presentation';
