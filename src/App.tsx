@@ -61,7 +61,13 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          const seen = new Set<string>();
+          return parsed.filter((d: MarkdownDoc) => {
+            const key = `${(d.title || '').trim()}::${(d.folderPath || '').trim()}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
         }
       }
     } catch (e) {
@@ -769,36 +775,84 @@ export default function App() {
     }
   }, []);
 
-  // Import files (.md, .txt, .markdown)
-  const handleImportFiles = useCallback((files: FileList | File[]) => {
-    Array.from(files).forEach((file) => {
-      if (!file.name.match(/.(md|markdown|txt)$/i)) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target?.result as string;
-        if (text !== undefined) {
-          const title = file.name.replace(/.(md|markdown|txt)$/i, "");
-          let folderPath: string | undefined = undefined;
-          const relPath = (file as any).webkitRelativePath || "";
-          if (relPath) {
-            const parts = relPath.split("/").filter(Boolean);
-            if (parts.length > 1) {
-              folderPath = parts.slice(0, -1).join("/");
-            }
+  // Import files (.md, .txt, .markdown) or entire folders with automatic upsert & deduplication
+  const handleImportFiles = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter((file) =>
+      /\.(md|markdown|txt)$/i.test(file.name)
+    );
+    if (fileArray.length === 0) return;
+
+    const readPromises = fileArray.map((file) => {
+      return new Promise<{ file: File; text: string }>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          resolve({ file, text: (e.target?.result as string) || '' });
+        };
+        reader.readAsText(file);
+      });
+    });
+
+    const results = await Promise.all(readPromises);
+
+    setDocuments((prev) => {
+      let updatedList = [...prev];
+      let lastActiveId: string | null = null;
+
+      results.forEach(({ file, text }) => {
+        const title = file.name.replace(/\.(md|markdown|txt)$/i, '') || 'سند وارد شده';
+        let folderPath: string | undefined = undefined;
+        const relPath = (file as any).webkitRelativePath || '';
+        if (relPath) {
+          const parts = relPath.split('/').filter(Boolean);
+          if (parts.length > 1) {
+            folderPath = parts.slice(0, -1).join('/');
           }
+        }
+
+        const matchIdx = updatedList.findIndex(
+          (d) =>
+            d.title.trim() === title.trim() &&
+            (d.folderPath || '').trim() === (folderPath || '').trim()
+        );
+
+        if (matchIdx !== -1) {
+          // Update existing document in-place
+          const existing = updatedList[matchIdx];
+          updatedList[matchIdx] = {
+            ...existing,
+            content: text,
+            updatedAt: Date.now(),
+          };
+          lastActiveId = existing.id;
+          // Clean up any other duplicates in state
+          updatedList = updatedList.filter(
+            (d, idx) =>
+              idx === matchIdx ||
+              !(
+                d.title.trim() === title.trim() &&
+                (d.folderPath || '').trim() === (folderPath || '').trim()
+              )
+          );
+        } else {
+          // Add new document
           const newDoc: MarkdownDoc = {
             id: `imported-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            title: title || "سند وارد شده",
+            title,
             content: text,
             folderPath,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
-          setDocuments((prev) => [newDoc, ...prev]);
-          setActiveDocId(newDoc.id);
+          updatedList.unshift(newDoc);
+          lastActiveId = newDoc.id;
         }
-      };
-      reader.readAsText(file);
+      });
+
+      if (lastActiveId) {
+        setActiveDocId(lastActiveId);
+      }
+
+      return updatedList;
     });
   }, []);
 
