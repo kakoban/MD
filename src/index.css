@@ -286,93 +286,104 @@
   text-align: end;
 }
 
-/* Text Highlighting Classes */
+/* Text Highlighting Classes - Soft, Modern & Non-intrusive */
 mark.md-highlight {
   border-radius: 4px;
-  padding: 0.15em 0.35em;
-  margin: 0 0.1em;
-  font-weight: 500;
+  padding: 0.1em 0.3em;
+  margin: 0 0.05em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
 
 mark.md-highlight-yellow {
-  background-color: #fef08a;
-  color: #713f12;
+  background-color: rgba(250, 204, 21, 0.28);
+  border-bottom: 2px solid rgba(234, 179, 8, 0.65);
+  color: inherit;
 }
 
 mark.md-highlight-green {
-  background-color: #bbf7d0;
-  color: #14532d;
+  background-color: rgba(34, 197, 94, 0.22);
+  border-bottom: 2px solid rgba(34, 197, 94, 0.65);
+  color: inherit;
 }
 
 mark.md-highlight-blue {
-  background-color: #bae6fd;
-  color: #0c4a6e;
+  background-color: rgba(56, 189, 248, 0.22);
+  border-bottom: 2px solid rgba(56, 189, 248, 0.65);
+  color: inherit;
 }
 
 mark.md-highlight-pink {
-  background-color: #fbcfe8;
-  color: #831843;
+  background-color: rgba(244, 114, 182, 0.22);
+  border-bottom: 2px solid rgba(244, 114, 182, 0.65);
+  color: inherit;
 }
 
 mark.md-highlight-purple {
-  background-color: #e9d5ff;
-  color: #581c87;
+  background-color: rgba(168, 85, 247, 0.22);
+  border-bottom: 2px solid rgba(168, 85, 247, 0.65);
+  color: inherit;
 }
 
 mark.md-highlight-orange {
-  background-color: #fed7aa;
-  color: #7c2d12;
+  background-color: rgba(251, 146, 60, 0.22);
+  border-bottom: 2px solid rgba(251, 146, 60, 0.65);
+  color: inherit;
 }
 
 /* In dark themes, soften the highlight text slightly for optimal contrast */
 .theme-dark mark.md-highlight-yellow,
 .theme-cyber mark.md-highlight-yellow,
-.theme-nord mark.md-highlight-yellow {
-  background-color: rgba(234, 179, 8, 0.3);
-  color: #fef08a;
-  border-bottom: 2px solid #eab308;
+.theme-nord mark.md-highlight-yellow,
+.theme-academic mark.md-highlight-yellow {
+  background-color: rgba(234, 179, 8, 0.22);
+  border-bottom: 2px solid rgba(234, 179, 8, 0.7);
+  color: inherit;
 }
 
 .theme-dark mark.md-highlight-green,
 .theme-cyber mark.md-highlight-green,
-.theme-nord mark.md-highlight-green {
-  background-color: rgba(34, 197, 94, 0.3);
-  color: #bbf7d0;
-  border-bottom: 2px solid #22c55e;
+.theme-nord mark.md-highlight-green,
+.theme-academic mark.md-highlight-green {
+  background-color: rgba(34, 197, 94, 0.22);
+  border-bottom: 2px solid rgba(34, 197, 94, 0.7);
+  color: inherit;
 }
 
 .theme-dark mark.md-highlight-blue,
 .theme-cyber mark.md-highlight-blue,
-.theme-nord mark.md-highlight-blue {
-  background-color: rgba(56, 189, 248, 0.3);
-  color: #bae6fd;
-  border-bottom: 2px solid #38bdf8;
+.theme-nord mark.md-highlight-blue,
+.theme-academic mark.md-highlight-blue {
+  background-color: rgba(56, 189, 248, 0.22);
+  border-bottom: 2px solid rgba(56, 189, 248, 0.7);
+  color: inherit;
 }
 
 .theme-dark mark.md-highlight-pink,
 .theme-cyber mark.md-highlight-pink,
-.theme-nord mark.md-highlight-pink {
-  background-color: rgba(236, 72, 153, 0.3);
-  color: #fbcfe8;
-  border-bottom: 2px solid #ec4899;
+.theme-nord mark.md-highlight-pink,
+.theme-academic mark.md-highlight-pink {
+  background-color: rgba(244, 114, 182, 0.22);
+  border-bottom: 2px solid rgba(244, 114, 182, 0.7);
+  color: inherit;
 }
 
 .theme-dark mark.md-highlight-purple,
 .theme-cyber mark.md-highlight-purple,
-.theme-nord mark.md-highlight-purple {
-  background-color: rgba(168, 85, 247, 0.3);
-  color: #e9d5ff;
-  border-bottom: 2px solid #a855f7;
+.theme-nord mark.md-highlight-purple,
+.theme-academic mark.md-highlight-purple {
+  background-color: rgba(168, 85, 247, 0.22);
+  border-bottom: 2px solid rgba(168, 85, 247, 0.7);
+  color: inherit;
 }
 
 .theme-dark mark.md-highlight-orange,
 .theme-cyber mark.md-highlight-orange,
-.theme-nord mark.md-highlight-orange {
-  background-color: rgba(249, 115, 22, 0.3);
-  color: #fed7aa;
-  border-bottom: 2px solid #f97316;
+.theme-nord mark.md-highlight-orange,
+.theme-academic mark.md-highlight-orange {
+  background-color: rgba(249, 115, 22, 0.22);
+  border-bottom: 2px solid rgba(249, 115, 22, 0.7);
+  color: inherit;
 }
 
 /* Prism Syntax Highlighting Tokens */

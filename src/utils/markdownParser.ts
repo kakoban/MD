@@ -76,7 +76,7 @@ function preprocessMarkdown(md: string): { processed: string; mathBlocks: string
   // Supports: yellow, green, blue, pink, purple, orange
   processed = processed.replace(/==(?:(yellow|green|blue|pink|purple|orange):)?([^=\n\r]+?)==/g, (_, color, text) => {
     const chosenColor = color || 'yellow';
-    return `<mark class="md-highlight md-highlight-${chosenColor} cursor-pointer hover:ring-2 hover:ring-amber-500/50 transition-all" data-highlight-color="${chosenColor}" data-raw-text="${escapeHtml(text.trim())}">${text}</mark>`;
+    return `<mark class="md-highlight md-highlight-${chosenColor}">${text}</mark>`;
   });
 
   return { processed, mathBlocks, mathInlines };

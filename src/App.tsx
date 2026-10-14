@@ -736,13 +736,15 @@ export default function App() {
   }, [history, historyIndex, handleContentChange]);
 
   // Document management: Create, Duplicate, Delete, Toggle Favorite
-  const handleCreateDoc = useCallback(() => {
+  const handleCreateDoc = useCallback((initialFolderPath?: string) => {
     const newDoc: MarkdownDoc = {
       id: `doc-${Date.now()}`,
       title: 'یادداشت جدید',
       content: `# یادداشت جدید\n\nاینجا شروع به نوشتن کنید یا از ==هایلایت زرد== و ==green:هایلایت سبز== استفاده نمایید...\n`,
+      folderPath: initialFolderPath?.trim() || undefined,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      uploadedAt: Date.now(),
     };
     setDocuments((prev) => [newDoc, ...prev]);
     setActiveDocId(newDoc.id);
@@ -793,7 +795,7 @@ export default function App() {
   }, []);
 
   // Import files (.md, .txt, .markdown) or entire folders with automatic upsert & deduplication
-  const handleImportFiles = useCallback(async (files: FileList | File[]) => {
+  const handleImportFiles = useCallback(async (files: FileList | File[], targetFolderPath?: string) => {
     const fileArray = Array.from(files).filter((file) =>
       /\.(md|markdown|txt)$/i.test(file.name)
     );
@@ -817,7 +819,7 @@ export default function App() {
 
       results.forEach(({ file, text }) => {
         const title = file.name.replace(/\.(md|markdown|txt)$/i, '') || 'سند وارد شده';
-        let folderPath: string | undefined = undefined;
+        let folderPath: string | undefined = targetFolderPath?.trim() || undefined;
         const relPath = (file as any).webkitRelativePath || '';
         if (relPath) {
           const parts = relPath.replace(/\\/g, '/').split('/').filter(Boolean);
@@ -879,6 +881,26 @@ export default function App() {
           ? { ...d, folderPath: folderPath?.trim() || undefined, updatedAt: Date.now() }
           : d
       )
+    );
+  }, []);
+
+  const handleRenameFolder = useCallback((oldPath: string, newPath: string) => {
+    const cleanOld = oldPath.trim();
+    const cleanNew = newPath.trim();
+    if (!cleanOld || !cleanNew || cleanOld === cleanNew) return;
+
+    setDocuments((prev) =>
+      prev.map((d) => {
+        const cur = (d.folderPath || '').trim();
+        if (cur === cleanOld) {
+          return { ...d, folderPath: cleanNew, updatedAt: Date.now() };
+        }
+        if (cur.startsWith(cleanOld + '/')) {
+          const rest = cur.slice(cleanOld.length);
+          return { ...d, folderPath: cleanNew + rest, updatedAt: Date.now() };
+        }
+        return d;
+      })
     );
   }, []);
 
@@ -1192,6 +1214,8 @@ export default function App() {
         onLogout={handleLogout}
         onToggleComments={handleOpenCommentsClick}
         commentsCount={activeDocCommentsCount}
+        folderPath={activeDoc?.folderPath}
+        onUpdateFolder={(newFolder) => activeDoc && handleUpdateDocFolder(activeDoc.id, newFolder)}
       />
 
       {/* Formatting Toolbar (shown only in split and editor modes) */}
@@ -1289,6 +1313,7 @@ export default function App() {
             onUpdateDocFolder={handleUpdateDocFolder}
             onDeleteDoc={handleDeleteDoc}
             onOpenQuickSwitcher={() => setIsQuickSwitcherOpen(true)}
+            onRenameFolder={handleRenameFolder}
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">

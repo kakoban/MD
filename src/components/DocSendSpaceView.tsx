@@ -35,6 +35,7 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowUpDown,
+  Edit3,
 } from 'lucide-react';
 import { MarkdownDoc, UserProfile, DocSortOption } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
@@ -54,9 +55,9 @@ interface DocSendSpaceViewProps {
   documents: MarkdownDoc[];
   currentUser: UserProfile | null;
   onOpenDoc: (docId: string, mode?: 'split' | 'editor' | 'preview') => void;
-  onCreateDoc: () => void;
+  onCreateDoc: (initialFolderPath?: string) => void;
   onOpenCloudDoc: (file: SharedMarkdownFile) => void;
-  onImportFiles: (files: FileList | File[]) => void;
+  onImportFiles: (files: FileList | File[], targetFolderPath?: string) => void;
   onOpenTemplates: () => void;
   onOpenProfile: () => void;
   onOpenAuth: () => void;
@@ -65,6 +66,7 @@ interface DocSendSpaceViewProps {
   onUpdateDocFolder?: (docId: string, folderPath?: string) => void;
   onDeleteDoc?: (docId: string) => void;
   onOpenQuickSwitcher?: () => void;
+  onRenameFolder?: (oldPath: string, newPath: string) => void;
 }
 
 export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
@@ -82,6 +84,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   onUpdateDocFolder,
   onDeleteDoc,
   onOpenQuickSwitcher,
+  onRenameFolder,
 }) => {
   const { t, language } = useLanguage();
   const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions'>('all');
@@ -95,6 +98,23 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const [targetFolderForUpload, setTargetFolderForUpload] = useState<string | null>(null);
+  const targetFolderInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUploadToSpecificFolder = (folderPath: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setTargetFolderForUpload(folderPath);
+    targetFolderInputRef.current?.click();
+  };
+
+  const handlePromptChangeDocFolder = (doc: MarkdownDoc, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentFolder = getEffectiveFolderPath(doc.folderPath);
+    const promptVal = prompt(`تغییر یا انتساب پوشه برای سند «${doc.title}»:`, currentFolder);
+    if (promptVal !== null) {
+      onUpdateDocFolder?.(doc.id, promptVal.trim());
+    }
+  };
 
   const availableFolders = React.useMemo(() => {
     const counts: Record<string, number> = {};
@@ -210,7 +230,43 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     {child.name}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={(e) => handleUploadToSpecificFolder(child.fullPath, e)}
+                    className="px-2 py-0.5 rounded-lg bg-[var(--bg-secondary)] hover:bg-[#0061FF] text-[var(--text-muted)] hover:text-white border border-[var(--border-color)] text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                    title={`افزودن و آپلود فایل‌های جدید در پوشه «${child.name}» بدون نیاز به آپلود مجدد کل پوشه`}
+                  >
+                    <Upload className="w-3 h-3 text-emerald-400" />
+                    <span className="hidden sm:inline">افزودن فایل</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onCreateDoc(child.fullPath)}
+                    className="px-2 py-0.5 rounded-lg bg-[var(--bg-secondary)] hover:bg-[#0061FF] text-[var(--text-muted)] hover:text-white border border-[var(--border-color)] text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                    title={`ایجاد سند جدید در پوشه «${child.name}»`}
+                  >
+                    <Plus className="w-3 h-3 text-[#0061FF]" />
+                    <span className="hidden sm:inline">سند جدید</span>
+                  </button>
+
+                  {onRenameFolder && child.name !== 'عمومی' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newName = prompt(`تغییر نام پوشه «${child.name}»:`, child.name);
+                        if (newName && newName.trim() && newName.trim() !== child.name) {
+                          onRenameFolder(child.fullPath, newName.trim());
+                        }
+                      }}
+                      className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] border border-transparent hover:border-[var(--border-color)] transition-colors cursor-pointer"
+                      title="تغییر نام پوشه برای تمام اسناد داخل آن"
+                    >
+                      <Edit3 className="w-3 h-3 text-amber-400" />
+                    </button>
+                  )}
+
                   <span className={`text-[11px] px-2.5 py-0.5 rounded-full ${theme.badge} font-bold font-mono`}>
                     {docCount} سند آموزشی
                   </span>
@@ -259,12 +315,22 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                   </div>
 
                   <div className="pt-2 border-t border-[var(--border-color)]/60 flex items-center justify-between text-[11px]">
-                    <span className="text-[10px] text-[var(--text-muted)] font-mono">
-                      {new Date(doc.updatedAt).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        onClick={(e) => handlePromptChangeDocFolder(doc, e)}
+                        className={`text-[9px] px-1.5 py-0.2 rounded font-bold border ${docTheme.badge} inline-flex items-center gap-0.5 cursor-pointer hover:ring-1 hover:ring-[#0061FF] transition-all shrink-0`}
+                        title="کلیک برای تغییر پوشه یا جابه‌جایی این سند"
+                      >
+                        <Folder className="w-2.5 h-2.5" />
+                        <span className="truncate max-w-[80px]">{getEffectiveFolderPath(doc.folderPath)}</span>
+                      </span>
+                      <span className="text-[10px] text-[var(--text-muted)] font-mono truncate">
+                        {new Date(getDocUploadTime(doc)).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                    </div>
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
@@ -338,6 +404,22 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
         onChange={(e) => e.target.files && onImportFiles(e.target.files)}
       />
 
+      {/* Hidden input for importing files directly into a targeted folder */}
+      <input
+        ref={targetFolderInputRef}
+        type="file"
+        multiple
+        accept=".md,.markdown,.txt"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && targetFolderForUpload) {
+            onImportFiles(e.target.files, targetFolderForUpload);
+            setTargetFolderForUpload(null);
+            if (targetFolderInputRef.current) targetFolderInputRef.current.value = '';
+          }
+        }}
+      />
+
       {/* 1. TOP HEADER: Clean Google Docs / Notion Style */}
       <header className="h-16 border-b border-[var(--border-color)] px-4 sm:px-8 flex items-center justify-between bg-[var(--bg-secondary)] shrink-0 z-30">
         {/* Brand */}
@@ -402,7 +484,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
 
           <button
             type="button"
-            onClick={onCreateDoc}
+            onClick={() => onCreateDoc()}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0061FF] hover:bg-[#0050d4] text-white font-bold text-xs shadow-sm hover:shadow-md transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -453,7 +535,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3.5">
               {/* 1. Blank Document */}
               <div
-                onClick={onCreateDoc}
+                onClick={() => onCreateDoc()}
                 className="group p-4 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-[#0061FF] hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-32"
               >
                 <div className="w-10 h-10 rounded-xl bg-[#0061FF]/10 text-[#0061FF] flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -837,9 +919,14 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                             </div>
 
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${theme.badge} flex items-center gap-1`}>
+                              <span
+                                onClick={(e) => handlePromptChangeDocFolder(doc, e)}
+                                className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${theme.badge} flex items-center gap-1 cursor-pointer hover:ring-2 hover:ring-[#0061FF] transition-all`}
+                                title="کلیک برای تغییر پوشه یا جابه‌جایی این سند"
+                              >
                                 <Folder className="w-2.5 h-2.5" />
                                 <span>{folderName}</span>
+                                <Edit3 className="w-2.5 h-2.5 opacity-60" />
                               </span>
                               {doc.isCloudShared && (
                                 <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 font-bold">
@@ -1055,9 +1142,14 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                               </div>
                             </td>
                             <td className="py-3 px-4">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${theme.badge} inline-flex items-center gap-1`}>
+                              <span
+                                onClick={(e) => handlePromptChangeDocFolder(doc, e)}
+                                className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${theme.badge} inline-flex items-center gap-1 cursor-pointer hover:ring-2 hover:ring-[#0061FF] transition-all`}
+                                title="کلیک برای تغییر پوشه یا جابه‌جایی این سند"
+                              >
                                 <Folder className="w-2.5 h-2.5" />
                                 <span>{folderName}</span>
+                                <Edit3 className="w-2 h-2 opacity-60" />
                               </span>
                             </td>
                             <td className="py-3 px-4 text-[var(--text-muted)] font-mono text-[11px]">

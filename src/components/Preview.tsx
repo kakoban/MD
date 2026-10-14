@@ -34,14 +34,6 @@ interface PreviewProps {
   onBackToWorkspace?: () => void;
 }
 
-interface FloatingMenuState {
-  x: number;
-  y: number;
-  text: string;
-  isExistingHighlight?: boolean;
-  currentColor?: HighlightColor;
-}
-
 const HIGHLIGHT_COLORS: { id: HighlightColor; name: string; bg: string; dot: string; hover: string }[] = [
   { id: 'yellow', name: 'زرد', bg: 'bg-amber-300', dot: 'bg-amber-400', hover: 'hover:ring-amber-400' },
   { id: 'green', name: 'سبز', bg: 'bg-emerald-300', dot: 'bg-emerald-400', hover: 'hover:ring-emerald-400' },
@@ -75,7 +67,6 @@ export const Preview: React.FC<PreviewProps> = ({
   const [teacherPenActive, setTeacherPenActive] = useState<boolean>(false);
   const [activePenColor, setActivePenColor] = useState<HighlightColor>('yellow');
   const [showPenColorMenu, setShowPenColorMenu] = useState<boolean>(false);
-  const [floatingMenu, setFloatingMenu] = useState<FloatingMenuState | null>(null);
   const [showNoteModal, setShowNoteModal] = useState<{ targetText: string } | null>(null);
   const [teacherNoteInput, setTeacherNoteInput] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -101,46 +92,24 @@ export const Preview: React.FC<PreviewProps> = ({
     setReadingProgress(progress);
   };
 
-  // Handle text selection in preview pane
+  // Handle text selection in preview pane (strictly quiet unless teacher pen is active)
   const handleMouseUp = useCallback(() => {
-    // If floating menu is open and user clicked inside it, don't close immediately
+    if (!teacherPenActive || !onHighlightText) return;
+
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) {
-      return;
-    }
+    if (!selection || selection.isCollapsed) return;
 
     const selectedText = selection.toString().trim();
-    if (!selectedText || selectedText.length < 1) {
-      return;
-    }
+    if (!selectedText) return;
 
-    // Verify selection is inside activeRef
     const range = selection.getRangeAt(0);
     const container = activeRef.current;
-    if (!container || !container.contains(range.commonAncestorContainer)) {
-      return;
-    }
+    if (!container || !container.contains(range.commonAncestorContainer)) return;
 
-    // If Teacher Pen mode is active: automatically highlight with chosen color!
-    if (teacherPenActive && onHighlightText) {
-      onHighlightText(selectedText, activePenColor);
-      const colorName = HIGHLIGHT_COLORS.find((c) => c.id === activePenColor)?.name || activePenColor;
-      showToast(`متن با رنگ ${colorName} هایلایت شد`);
-      selection.removeAllRanges();
-      return;
-    }
-
-    // Otherwise, show the floating action bar right at the selection
-    const rect = range.getBoundingClientRect();
-    const x = Math.max(16, Math.min(window.innerWidth - 320, rect.left + rect.width / 2 - 140));
-    const y = rect.top > 65 ? rect.top - 54 : rect.bottom + 8;
-
-    setFloatingMenu({
-      x,
-      y,
-      text: selectedText,
-      isExistingHighlight: false,
-    });
+    onHighlightText(selectedText, activePenColor);
+    const colorName = HIGHLIGHT_COLORS.find((c) => c.id === activePenColor)?.name || activePenColor;
+    showToast(`متن با رنگ ${colorName} هایلایت شد`);
+    selection.removeAllRanges();
   }, [teacherPenActive, activePenColor, onHighlightText, showToast, activeRef]);
 
   // Wire up interactive task checkboxes, code copy, and click-on-highlight in rendered HTML
@@ -267,64 +236,12 @@ export const Preview: React.FC<PreviewProps> = ({
     };
     runBtns.forEach((btn) => btn.addEventListener('click', handleRunClick));
 
-    // 3. Click listener on existing highlight marks (<mark class="md-highlight">)
-    const marks = el.querySelectorAll<HTMLElement>('mark.md-highlight');
-    const handleMarkClick = (e: MouseEvent) => {
-      e.stopPropagation();
-      const mark = e.currentTarget as HTMLElement;
-      const rawText = mark.getAttribute('data-raw-text') || mark.innerText.trim();
-      const currentColor = (mark.getAttribute('data-highlight-color') as HighlightColor) || 'yellow';
-      const rect = mark.getBoundingClientRect();
-      const x = Math.max(16, Math.min(window.innerWidth - 320, rect.left + rect.width / 2 - 140));
-      const y = rect.top > 65 ? rect.top - 54 : rect.bottom + 8;
-
-      setFloatingMenu({
-        x,
-        y,
-        text: rawText,
-        isExistingHighlight: true,
-        currentColor,
-      });
-    };
-    marks.forEach((m) => m.addEventListener('click', handleMarkClick));
-
     return () => {
       checkboxes.forEach((cb) => cb.removeEventListener('change', handleCheckboxClick));
       copyBtns.forEach((btn) => btn.removeEventListener('click', handleCopyClick));
       runBtns.forEach((btn) => btn.removeEventListener('click', handleRunClick));
-      marks.forEach((m) => m.removeEventListener('click', handleMarkClick));
     };
   }, [html, onToggleTask, activeRef]);
-
-  // Close floating menu when clicking away
-  useEffect(() => {
-    const handleDocumentClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.floating-highlight-menu') || target.closest('mark.md-highlight')) {
-        return;
-      }
-      setFloatingMenu(null);
-    };
-    document.addEventListener('mousedown', handleDocumentClick);
-    return () => document.removeEventListener('mousedown', handleDocumentClick);
-  }, []);
-
-  const handleApplyHighlight = (color: HighlightColor) => {
-    if (!floatingMenu || !onHighlightText) return;
-    onHighlightText(floatingMenu.text, color);
-    const colorName = HIGHLIGHT_COLORS.find((c) => c.id === color)?.name || color;
-    showToast(`هایلایت با رنگ ${colorName} اعمال شد`);
-    setFloatingMenu(null);
-    window.getSelection()?.removeAllRanges();
-  };
-
-  const handleRemoveHighlight = () => {
-    if (!floatingMenu || !onRemoveHighlight) return;
-    onRemoveHighlight(floatingMenu.text);
-    showToast('هایلایت برداشته شد');
-    setFloatingMenu(null);
-    window.getSelection()?.removeAllRanges();
-  };
 
   const fontClass =
     fontFamily === 'mono'
@@ -519,72 +436,6 @@ export const Preview: React.FC<PreviewProps> = ({
           />
         </div>
       </div>
-
-      {/* FLOATING SELECTION / HIGHLIGHT TOOLBAR */}
-      {floatingMenu && (
-        <div
-          className="floating-highlight-menu fixed z-50 animate-in fade-in zoom-in-95 duration-150 flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl backdrop-blur-md select-none"
-          style={{
-            left: `${floatingMenu.x}px`,
-            top: `${floatingMenu.y}px`,
-          }}
-        >
-          {/* Highlighter Palette */}
-          <div className="flex items-center gap-1 pe-1 border-e border-[var(--border-color)]">
-            {HIGHLIGHT_COLORS.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => handleApplyHighlight(c.id)}
-                className={`w-6 h-6 rounded-full ${c.dot} hover:scale-125 transition-transform shadow-xs flex items-center justify-center ${
-                  floatingMenu.currentColor === c.id ? 'ring-2 ring-offset-1 ring-amber-500' : ''
-                }`}
-                title={`هایلایت با رنگ ${c.name}`}
-              >
-                {floatingMenu.currentColor === c.id && <Check className="w-3 h-3 text-neutral-900 stroke-[3]" />}
-              </button>
-            ))}
-          </div>
-
-          {/* Add Teacher Note Button */}
-          {onAddTeacherNote && (
-            <button
-              type="button"
-              onClick={() => {
-                setShowNoteModal({ targetText: floatingMenu.text });
-                setFloatingMenu(null);
-              }}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-xs transition-colors"
-              title="افزودن نکته یا یادداشت مدرس برای این بخش"
-            >
-              <MessageSquarePlus className="w-3.5 h-3.5 text-amber-500" />
-              <span className="text-[11px] font-medium hidden sm:inline">یادداشت مدرس</span>
-            </button>
-          )}
-
-          {/* Remove Highlight Button if existing */}
-          {floatingMenu.isExistingHighlight && onRemoveHighlight && (
-            <button
-              type="button"
-              onClick={handleRemoveHighlight}
-              className="p-1 rounded-lg hover:bg-rose-500/15 text-rose-500 transition-colors"
-              title="حذف هایلایت از این متن"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Close Button */}
-          <button
-            type="button"
-            onClick={() => setFloatingMenu(null)}
-            className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            title="بستن"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* TEACHER NOTE MODAL */}
       {showNoteModal && (

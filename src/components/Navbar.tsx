@@ -23,6 +23,7 @@ import {
   User,
   LogOut,
   FolderOpen,
+  Folder,
   ArrowLeft,
   ArrowRight,
   Link as LinkIcon,
@@ -67,6 +68,8 @@ interface NavbarProps {
   onLogout?: () => void;
   onToggleComments?: () => void;
   commentsCount?: number;
+  folderPath?: string;
+  onUpdateFolder?: (newFolder: string) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -106,6 +109,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onToggleComments,
   commentsCount = 0,
+  folderPath,
+  onUpdateFolder,
 }: NavbarProps) => {
   const { language, setLanguage, t } = useLanguage();
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -179,6 +184,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           placeholder={t('navbar.docTitlePlaceholder')}
           className="font-semibold text-sm bg-transparent border border-transparent hover:border-[#e5e5e5] focus:border-[#0061FF] focus:outline-none px-2 py-1 rounded-md text-[#1a1a1a] truncate min-w-[100px] max-w-[300px] transition-colors"
         />
+
+        <button
+          type="button"
+          onClick={() => {
+            const promptVal = prompt('تغییر یا انتساب پوشه / سرفصل این سند:', folderPath || 'عمومی');
+            if (promptVal !== null) {
+              onUpdateFolder?.(promptVal.trim());
+            }
+          }}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#374151] border border-[#d1d5db] transition-colors cursor-pointer shrink-0"
+          title="کلیک برای تغییر پوشه، دوره یا سرفصل این سند"
+        >
+          <Folder className="w-3.5 h-3.5 text-amber-500" />
+          <span className="truncate max-w-[140px]">{folderPath || 'عمومی'}</span>
+        </button>
 
         {isCloudShared && (
           <div className="flex items-center shrink-0 ms-2" title={`وضعیت همگام‌سازی: ${cloudSyncStatus}`}>
