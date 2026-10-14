@@ -38,7 +38,7 @@ import {
 import { MarkdownDoc, UserProfile } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
 import { useLanguage } from '../context/LanguageContext';
-import { buildDocTree, DocTreeNode, countTreeDocs } from '../utils/docTree';
+import { buildDocTree, DocTreeNode, countTreeDocs, deduplicateDocs } from '../utils/docTree';
 
 interface DocSendSpaceViewProps {
   documents: MarkdownDoc[];
@@ -53,6 +53,7 @@ interface DocSendSpaceViewProps {
   onOpenAccessRequestsManager?: () => void;
   pendingRequestsCount?: number;
   onUpdateDocFolder?: (docId: string, folderPath?: string) => void;
+  onDeleteDoc?: (docId: string) => void;
 }
 
 export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
@@ -68,6 +69,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   onOpenAccessRequestsManager,
   pendingRequestsCount = 0,
   onUpdateDocFolder,
+  onDeleteDoc,
 }) => {
   const { t, language } = useLanguage();
   const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions'>('all');
@@ -118,8 +120,8 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
     }
   };
 
-  // Filter documents based on search & tab
-  const filteredLocalDocs = documents.filter((d) => {
+  // Filter documents based on search & tab (with deduplication guaranteed)
+  const filteredLocalDocs = deduplicateDocs(documents).filter((d) => {
     const matchesSearch =
       d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.content.toLowerCase().includes(searchQuery.toLowerCase());
@@ -255,6 +257,21 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       >
                         ویرایش
                       </button>
+                      {onDeleteDoc && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`آیا از حذف «${doc.title}» اطمینان دارید؟`)) {
+                              onDeleteDoc(doc.id);
+                            }
+                          }}
+                          className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400 transition-colors"
+                          title="حذف سند"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -778,6 +795,22 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                             >
                               ویرایش
                             </button>
+
+                            {onDeleteDoc && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`آیا از حذف «${doc.title}» اطمینان دارید؟`)) {
+                                    onDeleteDoc(doc.id);
+                                  }
+                                }}
+                                className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400 transition-colors"
+                                title="حذف سند"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -940,6 +973,21 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                               >
                                 ویرایش
                               </button>
+                              {onDeleteDoc && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`آیا از حذف «${doc.title}» اطمینان دارید؟`)) {
+                                      onDeleteDoc(doc.id);
+                                    }
+                                  }}
+                                  className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400 transition-colors"
+                                  title="حذف سند"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

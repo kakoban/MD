@@ -47,6 +47,7 @@ import { MyDocumentsModal } from './components/MyDocumentsModal';
 import { authApi } from './services/authApi';
 import { UserProfile } from './types';
 import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare, LayoutDashboard, ArrowRight } from 'lucide-react';
+import { deduplicateDocs, normalizeDocKey } from './utils/docTree';
 
 const STORAGE_KEY_DOCS = 'markdown_studio_docs_v2';
 const STORAGE_KEY_ACTIVE = 'markdown_studio_active_id_v2';
@@ -61,13 +62,7 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const seen = new Set<string>();
-          return parsed.filter((d: MarkdownDoc) => {
-            const key = `${(d.title || '').trim()}::${(d.folderPath || '').trim()}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
+          return deduplicateDocs(parsed);
         }
       }
     } catch (e) {
@@ -75,6 +70,14 @@ export default function App() {
     }
     return SAMPLE_DOCUMENTS;
   });
+
+  // Active self-healing: purge any duplicate documents immediately on mount
+  useEffect(() => {
+    setDocuments((prev) => {
+      const deduped = deduplicateDocs(prev);
+      return deduped.length !== prev.length ? deduped : prev;
+    });
+  }, []);
 
   // State: Active Document ID
   const [activeDocId, setActiveDocId] = useState<string>(() => {
@@ -803,16 +806,16 @@ export default function App() {
         let folderPath: string | undefined = undefined;
         const relPath = (file as any).webkitRelativePath || '';
         if (relPath) {
-          const parts = relPath.split('/').filter(Boolean);
+          const parts = relPath.replace(/\\/g, '/').split('/').filter(Boolean);
           if (parts.length > 1) {
             folderPath = parts.slice(0, -1).join('/');
           }
         }
 
+        const targetKey = normalizeDocKey(title, folderPath);
+
         const matchIdx = updatedList.findIndex(
-          (d) =>
-            d.title.trim() === title.trim() &&
-            (d.folderPath || '').trim() === (folderPath || '').trim()
+          (d) => normalizeDocKey(d.title, d.folderPath) === targetKey
         );
 
         if (matchIdx !== -1) {
@@ -820,18 +823,15 @@ export default function App() {
           const existing = updatedList[matchIdx];
           updatedList[matchIdx] = {
             ...existing,
+            title,
             content: text,
+            folderPath: folderPath || existing.folderPath,
             updatedAt: Date.now(),
           };
           lastActiveId = existing.id;
           // Clean up any other duplicates in state
           updatedList = updatedList.filter(
-            (d, idx) =>
-              idx === matchIdx ||
-              !(
-                d.title.trim() === title.trim() &&
-                (d.folderPath || '').trim() === (folderPath || '').trim()
-              )
+            (d, idx) => idx === matchIdx || normalizeDocKey(d.title, d.folderPath) !== targetKey
           );
         } else {
           // Add new document
@@ -852,7 +852,7 @@ export default function App() {
         setActiveDocId(lastActiveId);
       }
 
-      return updatedList;
+      return deduplicateDocs(updatedList);
     });
   }, []);
 
@@ -1271,6 +1271,7 @@ export default function App() {
             onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
             pendingRequestsCount={pendingRequestsCount}
             onUpdateDocFolder={handleUpdateDocFolder}
+            onDeleteDoc={handleDeleteDoc}
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">
