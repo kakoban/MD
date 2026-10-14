@@ -49,6 +49,14 @@ import { authApi } from './services/authApi';
 import { UserProfile } from './types';
 import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare, LayoutDashboard, ArrowRight } from 'lucide-react';
 import { deduplicateDocs, normalizeDocKey } from './utils/docTree';
+import {
+  getStoredDirectoryHandle,
+  storeDirectoryHandle,
+  clearStoredDirectoryHandle,
+  verifyDirectoryPermission,
+  scanDirectoryHandle,
+  isFileSystemAccessSupported,
+} from './utils/localSync';
 
 const STORAGE_KEY_DOCS = 'markdown_studio_docs_v2';
 const STORAGE_KEY_ACTIVE = 'markdown_studio_active_id_v2';
@@ -136,6 +144,8 @@ export default function App() {
   const [cloudNotice, setCloudNotice] = useState<string | null>(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('synced');
   const [localSaveStatus, setLocalSaveStatus] = useState<CloudSyncStatus>('synced');
+  const [linkedLocalFolder, setLinkedLocalFolder] = useState<string | null>(null);
+  const [isSyncingLocal, setIsSyncingLocal] = useState<boolean>(false);
   const localSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isFirstRenderRef = useRef<boolean>(true);
   const cloudSyncedStateRef = useRef<Record<string, { title: string; content: string }>>({});
@@ -904,6 +914,127 @@ export default function App() {
     );
   }, []);
 
+  // Check stored local directory handle on mount
+  useEffect(() => {
+    if (isFileSystemAccessSupported()) {
+      getStoredDirectoryHandle().then((handle) => {
+        if (handle) {
+          setLinkedLocalFolder(handle.name);
+        }
+      });
+    }
+  }, []);
+
+  // 1-Click Sync from Local Computer Disk
+  const handleSyncFromLocalDisk = useCallback(async (forcePickNew = false) => {
+    if (!isFileSystemAccessSupported()) {
+      alert('مرورگر شما از دسترسی مستقیم به فایل‌های سیستمی پشتیبانی نمی‌کند. لطفاً از دکمه آپلود پوشه استفاده فرمایید.');
+      return;
+    }
+
+    setIsSyncingLocal(true);
+    try {
+      let handle = forcePickNew ? null : await getStoredDirectoryHandle();
+
+      if (!handle) {
+        // @ts-ignore
+        handle = await window.showDirectoryPicker({
+          id: 'markdown_studio_notes_dir',
+          mode: 'read',
+        });
+        if (handle) {
+          await storeDirectoryHandle(handle);
+          setLinkedLocalFolder(handle.name);
+        }
+      }
+
+      if (!handle) {
+        setIsSyncingLocal(false);
+        return;
+      }
+
+      const hasPermission = await verifyDirectoryPermission(handle);
+      if (!hasPermission) {
+        setIsSyncingLocal(false);
+        return;
+      }
+
+      const files = await scanDirectoryHandle(handle);
+      if (files.length === 0) {
+        setCloudNotice(`پوشه «${handle.name}» متصل شد اما فایل مارک‌دان یا متنی در آن یافت نشد.`);
+        setTimeout(() => setCloudNotice(null), 4000);
+        setIsSyncingLocal(false);
+        return;
+      }
+
+      let updatedCount = 0;
+      let newCount = 0;
+
+      setDocuments((prev) => {
+        let updatedList = [...prev];
+
+        files.forEach((f) => {
+          const targetKey = normalizeDocKey(f.title, f.folderPath);
+          const matchIdx = updatedList.findIndex(
+            (d) => normalizeDocKey(d.title, d.folderPath) === targetKey
+          );
+
+          if (matchIdx !== -1) {
+            const existing = updatedList[matchIdx];
+            if (existing.content !== f.content) {
+              updatedCount++;
+            }
+            updatedList[matchIdx] = {
+              ...existing,
+              title: f.title,
+              content: f.content,
+              folderPath: f.folderPath || existing.folderPath,
+              updatedAt: Date.now(),
+              uploadedAt: Date.now(),
+            };
+            updatedList = updatedList.filter(
+              (d, idx) => idx === matchIdx || normalizeDocKey(d.title, d.folderPath) !== targetKey
+            );
+          } else {
+            newCount++;
+            const newDoc: MarkdownDoc = {
+              id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              title: f.title,
+              content: f.content,
+              folderPath: f.folderPath,
+              createdAt: f.lastModified,
+              updatedAt: Date.now(),
+              uploadedAt: Date.now(),
+            };
+            updatedList.unshift(newDoc);
+          }
+        });
+
+        return deduplicateDocs(updatedList);
+      });
+
+      setCloudNotice(
+        `✅ همگام‌سازی از کامپیوتر انجام شد: ${files.length} سند بررسی شد (${updatedCount} به‌روزرسانی محتوا، ${newCount} سند جدید)`
+      );
+      setTimeout(() => setCloudNotice(null), 4500);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error('Local disk sync failed:', err);
+        setCloudNotice('خطا در همگام‌سازی پوشه محلی کامپیوتر.');
+        setTimeout(() => setCloudNotice(null), 3500);
+      }
+    } finally {
+      setIsSyncingLocal(false);
+    }
+  }, []);
+
+  const handleUnlinkLocalFolder = useCallback(async () => {
+    await clearStoredDirectoryHandle();
+    setLinkedLocalFolder(null);
+    setCloudNotice('اتصال به پوشه کامپیوتر لغو گردید.');
+    setTimeout(() => setCloudNotice(null), 3000);
+  }, []);
+
   // Interactive Task List Checkbox Click
   const handleToggleTask = useCallback((taskIndex: number) => {
     if (!activeDoc) return;
@@ -1216,6 +1347,9 @@ export default function App() {
         commentsCount={activeDocCommentsCount}
         folderPath={activeDoc?.folderPath}
         onUpdateFolder={(newFolder) => activeDoc && handleUpdateDocFolder(activeDoc.id, newFolder)}
+        onSyncLocalDisk={handleSyncFromLocalDisk}
+        linkedLocalFolder={linkedLocalFolder}
+        isSyncingLocal={isSyncingLocal}
       />
 
       {/* Formatting Toolbar (shown only in split and editor modes) */}
@@ -1258,6 +1392,9 @@ export default function App() {
             pendingRequestsCount={pendingRequestsCount}
             onBackToWorkspace={() => setViewMode('workspace')}
             onUpdateDocFolder={handleUpdateDocFolder}
+            onSyncLocalDisk={handleSyncFromLocalDisk}
+            linkedLocalFolder={linkedLocalFolder}
+            isSyncingLocal={isSyncingLocal}
           />
         )}
 
@@ -1270,9 +1407,9 @@ export default function App() {
               setActiveDocId(docId);
               setViewMode(mode);
             }}
-            onCreateDoc={() => {
-              handleCreateDoc();
-              setViewMode('preview');
+            onCreateDoc={(folderPath) => {
+              handleCreateDoc(folderPath);
+              setViewMode('split');
             }}
             onOpenCloudDoc={async (file) => {
               const isOwner = currentUser && file.user_id === currentUser.id;
@@ -1314,6 +1451,10 @@ export default function App() {
             onDeleteDoc={handleDeleteDoc}
             onOpenQuickSwitcher={() => setIsQuickSwitcherOpen(true)}
             onRenameFolder={handleRenameFolder}
+            onSyncLocalDisk={handleSyncFromLocalDisk}
+            linkedLocalFolder={linkedLocalFolder}
+            isSyncingLocal={isSyncingLocal}
+            onUnlinkLocalFolder={handleUnlinkLocalFolder}
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">

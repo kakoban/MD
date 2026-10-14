@@ -47,6 +47,9 @@ interface SidebarProps {
   pendingRequestsCount?: number;
   onBackToWorkspace?: () => void;
   onUpdateDocFolder?: (docId: string, folderPath?: string) => void;
+  onSyncLocalDisk?: (forcePickNew?: boolean) => void;
+  linkedLocalFolder?: string | null;
+  isSyncingLocal?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -65,6 +68,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentUser,
   pendingRequestsCount = 0,
   onBackToWorkspace,
+  onSyncLocalDisk,
+  linkedLocalFolder,
+  isSyncingLocal = false,
 }) => {
   const [activeNavItem, setActiveNavItem] = useState<'content' | 'spaces' | 'analytics' | 'settings'>('content');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -390,6 +396,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <FolderUp className="w-3.5 h-3.5" />
                 </button>
+                {onSyncLocalDisk && (
+                  <button
+                    type="button"
+                    onClick={() => onSyncLocalDisk(false)}
+                    disabled={isSyncingLocal}
+                    className="p-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 rounded-lg transition-colors border border-blue-500/20 cursor-pointer"
+                    title={
+                      linkedLocalFolder
+                        ? `بروزرسانی تغییرات فایل‌ها از پوشه «${linkedLocalFolder}» کامپیوتر`
+                        : 'اتصال به پوشه لوکال کامپیوتر برای بروزرسانی خودکار'
+                    }
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isSyncingLocal ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() =>

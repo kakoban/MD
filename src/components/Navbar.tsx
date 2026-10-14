@@ -28,6 +28,7 @@ import {
   ArrowRight,
   Link as LinkIcon,
   MessageSquare,
+  RefreshCw,
 } from 'lucide-react';
 import { ViewMode, AppTheme, FontFamily, TextDirection, CloudSyncStatus, UserProfile } from '../types';
 
@@ -70,6 +71,9 @@ interface NavbarProps {
   commentsCount?: number;
   folderPath?: string;
   onUpdateFolder?: (newFolder: string) => void;
+  onSyncLocalDisk?: (forcePickNew?: boolean) => void;
+  linkedLocalFolder?: string | null;
+  isSyncingLocal?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -111,6 +115,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   commentsCount = 0,
   folderPath,
   onUpdateFolder,
+  onSyncLocalDisk,
+  linkedLocalFolder,
+  isSyncingLocal = false,
 }: NavbarProps) => {
   const { language, setLanguage, t } = useLanguage();
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -199,6 +206,29 @@ export const Navbar: React.FC<NavbarProps> = ({
           <Folder className="w-3.5 h-3.5 text-amber-500" />
           <span className="truncate max-w-[140px]">{folderPath || 'عمومی'}</span>
         </button>
+
+        {onSyncLocalDisk && (
+          <button
+            type="button"
+            onClick={() => onSyncLocalDisk(false)}
+            disabled={isSyncingLocal}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
+              linkedLocalFolder
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                : 'bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#4b5563] border-[#d1d5db]'
+            }`}
+            title={
+              linkedLocalFolder
+                ? `بروزرسانی مستقیم تغییرات از پوشه «${linkedLocalFolder}» کامپیوتر شما`
+                : 'اتصال به پوشه لوکال کامپیوتر جهت بروزرسانی با ۱ کلیک'
+            }
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncingLocal ? 'animate-spin text-emerald-600' : linkedLocalFolder ? 'text-emerald-600' : ''}`} />
+            <span className="hidden xl:inline">
+              {linkedLocalFolder ? `بروزرسانی از دیسک (${linkedLocalFolder})` : 'بروزرسانی از کامپیوتر'}
+            </span>
+          </button>
+        )}
 
         {isCloudShared && (
           <div className="flex items-center shrink-0 ms-2" title={`وضعیت همگام‌سازی: ${cloudSyncStatus}`}>

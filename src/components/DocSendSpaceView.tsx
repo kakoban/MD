@@ -67,6 +67,10 @@ interface DocSendSpaceViewProps {
   onDeleteDoc?: (docId: string) => void;
   onOpenQuickSwitcher?: () => void;
   onRenameFolder?: (oldPath: string, newPath: string) => void;
+  onSyncLocalDisk?: (forcePickNew?: boolean) => void;
+  linkedLocalFolder?: string | null;
+  isSyncingLocal?: boolean;
+  onUnlinkLocalFolder?: () => void;
 }
 
 export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
@@ -85,6 +89,10 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   onDeleteDoc,
   onOpenQuickSwitcher,
   onRenameFolder,
+  onSyncLocalDisk,
+  linkedLocalFolder,
+  isSyncingLocal = false,
+  onUnlinkLocalFolder,
 }) => {
   const { t, language } = useLanguage();
   const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions'>('all');
@@ -482,6 +490,46 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
             </button>
           )}
 
+          {/* 1-Click Sync from Local PC */}
+          {onSyncLocalDisk && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onSyncLocalDisk(false)}
+                disabled={isSyncingLocal}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                  linkedLocalFolder
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                    : 'bg-[var(--bg-tertiary)] hover:bg-[#0061FF] hover:text-white border-[var(--border-color)] text-[var(--text-secondary)]'
+                }`}
+                title={
+                  linkedLocalFolder
+                    ? `بروزرسانی تغییرات فایل‌ها از پوشه «${linkedLocalFolder}» کامپیوتر شما بدون نیاز به آپلود مجدد`
+                    : 'اتصال به پوشه لوکال کامپیوتر برای همگام‌سازی و بروزرسانی خودکار با ۱ کلیک'
+                }
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingLocal ? 'animate-spin text-emerald-500' : linkedLocalFolder ? 'text-emerald-500' : ''}`} />
+                <span className="hidden sm:inline">
+                  {linkedLocalFolder ? `بروزرسانی از کامپیوتر (${linkedLocalFolder})` : 'اتصال به پوشه کامپیوتر'}
+                </span>
+                <span className="sm:hidden">
+                  {isSyncingLocal ? 'در حال بروزرسانی...' : 'بروزرسانی'}
+                </span>
+              </button>
+
+              {linkedLocalFolder && onUnlinkLocalFolder && (
+                <button
+                  type="button"
+                  onClick={onUnlinkLocalFolder}
+                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                  title={`قطع اتصال پوشه لوکال (${linkedLocalFolder})`}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => onCreateDoc()}
@@ -580,6 +628,44 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                   <span className="text-[10px] text-[var(--text-muted)]">ایجاد درخت سرفصل‌ها</span>
                 </div>
               </div>
+
+              {/* 2.8 1-Click Sync from Local PC */}
+              {onSyncLocalDisk && (
+                <div
+                  onClick={() => onSyncLocalDisk(false)}
+                  className={`group p-4 rounded-2xl bg-[var(--bg-secondary)] border transition-all cursor-pointer flex flex-col justify-between h-32 ${
+                    linkedLocalFolder
+                      ? 'border-emerald-500/60 hover:border-emerald-400 hover:shadow-md'
+                      : 'border-[var(--border-color)] hover:border-[#0061FF] hover:shadow-md'
+                  }`}
+                  title={
+                    linkedLocalFolder
+                      ? `بروزرسانی تغییرات فایل‌ها از پوشه «${linkedLocalFolder}» کامپیوتر شما بدون نیاز به آپلود مجدد`
+                      : 'اتصال به پوشه لوکال کامپیوتر برای همگام‌سازی و بروزرسانی خودکار با ۱ کلیک'
+                  }
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${
+                      linkedLocalFolder ? 'bg-emerald-500/15 text-emerald-500' : 'bg-[#0061FF]/10 text-[#0061FF]'
+                    }`}>
+                      <RefreshCw className={`w-5 h-5 ${isSyncingLocal ? 'animate-spin text-emerald-400' : ''}`} />
+                    </div>
+                    {linkedLocalFolder && (
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-bold border border-emerald-500/20">
+                        متصل
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-bold text-xs text-[var(--text-primary)] block transition-colors">
+                      {linkedLocalFolder ? 'بروزرسانی از کامپیوتر' : 'اتصال به کامپیوتر'}
+                    </span>
+                    <span className="text-[10px] text-[var(--text-muted)] truncate block">
+                      {linkedLocalFolder ? `پوشه: ${linkedLocalFolder}` : 'همگام‌سازی با ۱ کلیک'}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* 3. Meeting Notes Template */}
               <div
