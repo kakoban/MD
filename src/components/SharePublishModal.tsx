@@ -56,6 +56,22 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
       setAuthorName(defaultAuthor.trim());
     }
   }, [defaultAuthor, isOpen]);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      const activeTitle = (documentTitle || '').trim() || 'سند جدید';
+      setTitle(activeTitle);
+      const autoSlug = activeTitle
+        .toLowerCase()
+        .replace(/[\s\-_]+/g, '-')
+        .replace(/[^\w؀-ۿ-]/g, '')
+        .slice(0, 50);
+      setCustomId(autoSlug);
+      setPublishedUrl(null);
+      setErrorMsg(null);
+      setCopiedLink(false);
+    }
+  }, [isOpen, documentTitle]);
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState<string[]>(['آموزشی']);
   const [tagInput, setTagInput] = useState('');
@@ -244,7 +260,17 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
               <input
                 type="text"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTitle(val);
+                  const autoSlug = val
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[\s\-_]+/g, '-')
+                    .replace(/[^\w؀-ۿ-]/g, '')
+                    .slice(0, 50);
+                  setCustomId(autoSlug);
+                }}
                 placeholder="عنوان فایل مارک‌دان..."
                 className="w-full p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-amber-500 font-medium"
                 required

@@ -1,4 +1,4 @@
-import { MarkdownDoc } from "../types";
+import { MarkdownDoc, DocSortOption } from "../types";
 
 export interface DocTreeNode {
   name: string;
@@ -8,6 +8,26 @@ export interface DocTreeNode {
 }
 
 export const DEFAULT_FOLDER_NAME = "عمومی";
+
+export function getDocUploadTime(doc: MarkdownDoc): number {
+  return doc.uploadedAt || doc.createdAt || doc.updatedAt || 0;
+}
+
+export function sortDocs(docs: MarkdownDoc[], sortBy: DocSortOption = 'upload-desc'): MarkdownDoc[] {
+  const list = [...docs];
+  switch (sortBy) {
+    case 'upload-desc':
+      return list.sort((a, b) => getDocUploadTime(b) - getDocUploadTime(a));
+    case 'upload-asc':
+      return list.sort((a, b) => getDocUploadTime(a) - getDocUploadTime(b));
+    case 'updated-desc':
+      return list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    case 'title-asc':
+      return list.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'fa', { numeric: true }));
+    default:
+      return list.sort((a, b) => getDocUploadTime(b) - getDocUploadTime(a));
+  }
+}
 
 export function getEffectiveFolderPath(folderPath?: string): string {
   const clean = (folderPath || "")
@@ -106,16 +126,16 @@ export function normalizeDocKey(title: string, folderPath?: string): string {
 export function deduplicateDocs(docs: MarkdownDoc[]): MarkdownDoc[] {
   const map = new Map<string, MarkdownDoc>();
   // Sort oldest first so newer docs overwrite older duplicates
-  const sorted = [...docs].sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+  const sorted = [...docs].sort((a, b) => getDocUploadTime(a) - getDocUploadTime(b));
   for (const doc of sorted) {
     const key = normalizeDocKey(doc.title, doc.folderPath);
     map.set(key, doc);
   }
-  return Array.from(map.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return sortDocs(Array.from(map.values()), 'upload-desc');
 }
 
 // ponytail: in-memory tree grouping by folderPath; upgrade to indexed tree if docs > 1000
-export function buildDocTree(docs: MarkdownDoc[]): DocTreeNode {
+export function buildDocTree(docs: MarkdownDoc[], sortBy: DocSortOption = 'upload-desc'): DocTreeNode {
   const root: DocTreeNode = { name: "", fullPath: "", children: [], docs: [] };
   const cleanDocs = deduplicateDocs(docs);
 
@@ -138,6 +158,13 @@ export function buildDocTree(docs: MarkdownDoc[]): DocTreeNode {
     }
     current.docs.push(doc);
   });
+
+  function sortTreeNodes(node: DocTreeNode) {
+    node.docs = sortDocs(node.docs, sortBy);
+    node.children.sort((a, b) => a.name.localeCompare(b.name, 'fa', { numeric: true }));
+    node.children.forEach(sortTreeNodes);
+  }
+  sortTreeNodes(root);
 
   return root;
 }

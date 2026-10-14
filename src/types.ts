@@ -4,6 +4,7 @@ export interface MarkdownDoc {
   content: string;
   createdAt: number;
   updatedAt: number;
+  uploadedAt?: number;
   isFavorite?: boolean;
   tags?: string[];
   isCloudShared?: boolean;
@@ -13,6 +14,8 @@ export interface MarkdownDoc {
   wordGoal?: number;
   folderPath?: string;
 }
+
+export type DocSortOption = 'upload-desc' | 'upload-asc' | 'updated-desc' | 'title-asc';
 
 export type ViewMode = 'workspace' | 'split' | 'editor' | 'preview' | 'presentation';
 

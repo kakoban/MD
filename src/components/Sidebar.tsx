@@ -19,9 +19,10 @@ import {
   ChevronDown,
   Plus,
   Upload,
-  User
+  User,
+  ArrowUpDown,
 } from 'lucide-react';
-import { MarkdownDoc, UserProfile } from '../types';
+import { MarkdownDoc, UserProfile, DocSortOption } from '../types';
 import { SharedMarkdownFile } from '../services/cloudApi';
 import { buildDocTree, DocTreeNode, countTreeDocs, getFolderTheme } from '../utils/docTree';
 
@@ -69,6 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<DocSortOption>('upload-desc');
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
 
   const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,8 +98,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [documents, searchQuery]);
 
   const docTree = useMemo(() => {
-    return buildDocTree(filteredDocs);
-  }, [filteredDocs]);
+    return buildDocTree(filteredDocs, sortBy);
+  }, [filteredDocs, sortBy]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -387,6 +389,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   title="آپلود پوشه / درخت سرفصل‌های آموزشی"
                 >
                   <FolderUp className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSortBy((curr) =>
+                      curr === 'upload-desc'
+                        ? 'upload-asc'
+                        : curr === 'upload-asc'
+                        ? 'title-asc'
+                        : 'upload-desc'
+                    )
+                  }
+                  className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg transition-colors cursor-pointer"
+                  title={`مرتب‌سازی سرفصل‌ها: ${
+                    sortBy === 'upload-desc'
+                      ? 'جدیدترین زمان آپلود'
+                      : sortBy === 'upload-asc'
+                      ? 'قدیمی‌ترین زمان آپلود'
+                      : 'بر اساس نام (الفبا)'
+                  }`}
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5 text-[#0061FF]" />
                 </button>
               </div>
 

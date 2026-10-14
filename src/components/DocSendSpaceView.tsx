@@ -34,8 +34,9 @@ import {
   Folder,
   ChevronDown,
   ChevronRight,
+  ArrowUpDown,
 } from 'lucide-react';
-import { MarkdownDoc, UserProfile } from '../types';
+import { MarkdownDoc, UserProfile, DocSortOption } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -45,6 +46,8 @@ import {
   deduplicateDocs,
   getFolderTheme,
   getEffectiveFolderPath,
+  sortDocs,
+  getDocUploadTime,
 } from '../utils/docTree';
 
 interface DocSendSpaceViewProps {
@@ -61,6 +64,7 @@ interface DocSendSpaceViewProps {
   pendingRequestsCount?: number;
   onUpdateDocFolder?: (docId: string, folderPath?: string) => void;
   onDeleteDoc?: (docId: string) => void;
+  onOpenQuickSwitcher?: () => void;
 }
 
 export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
@@ -77,10 +81,13 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   pendingRequestsCount = 0,
   onUpdateDocFolder,
   onDeleteDoc,
+  onOpenQuickSwitcher,
 }) => {
   const { t, language } = useLanguage();
   const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions'>('all');
   const [viewStyle, setViewStyle] = useState<'grid' | 'list' | 'tree'>('grid');
+  const [sortBy, setSortBy] = useState<DocSortOption>('upload-desc');
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [cloudFiles, setCloudFiles] = useState<SharedMarkdownFile[]>([]);
   const [isCloudLoading, setIsCloudLoading] = useState(false);
@@ -88,6 +95,15 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const availableFolders = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    deduplicateDocs(documents).forEach((d) => {
+      const f = getEffectiveFolderPath(d.folderPath);
+      counts[f] = (counts[f] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, count]) => ({ name, count }));
+  }, [documents]);
 
   const toggleFolderCollapse = (path: string) => {
     setCollapsedFolders((prev) => ({
@@ -127,7 +143,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
     }
   };
 
-  // Filter documents based on search & tab (with deduplication guaranteed)
+  // Filter and sort documents based on search, tab, folder and chosen upload time / title
   const filteredLocalDocs = deduplicateDocs(documents).filter((d) => {
     const matchesSearch =
       d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -135,8 +151,12 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
     if (!matchesSearch) return false;
     if (activeFilter === 'starred') return Boolean(d.isFavorite);
     if (activeFilter === 'cloud') return false;
+    if (selectedFolder && getEffectiveFolderPath(d.folderPath) !== selectedFolder) {
+      return false;
+    }
     return true;
   });
+  const sortedLocalDocs = sortDocs(filteredLocalDocs, sortBy);
 
   const filteredCloudFiles = cloudFiles.filter((f) => {
     const matchesSearch =
@@ -156,7 +176,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
     ? currentUser.username.slice(0, 2).toUpperCase()
     : 'U';
 
-  const docTree = buildDocTree(filteredLocalDocs);
+  const docTree = buildDocTree(sortedLocalDocs, sortBy);
 
   const renderDashboardTreeNode = (node: DocTreeNode, depth: number = 0): React.ReactNode => {
     return (
@@ -333,7 +353,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
           </div>
         </div>
 
-        {/* Global Search Bar (Google Docs style) */}
+        {/* Global Search Bar (Google Docs style with Ctrl+K trigger) */}
         <div className="flex-1 max-w-xl mx-4 sm:mx-8 relative">
           <Search className="w-4 h-4 text-[var(--text-muted)] absolute start-3.5 top-1/2 -translate-y-1/2" />
           <input
@@ -341,16 +361,28 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="جستجو در تمام اسناد، متن‌ها و سرفصل‌ها..."
-            className="w-full ps-10 pe-9 py-2 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] focus:border-[#0061FF] focus:bg-[var(--bg-secondary)] focus:outline-none text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-all shadow-inner"
+            className="w-full ps-10 pe-24 py-2 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] focus:border-[#0061FF] focus:bg-[var(--bg-secondary)] focus:outline-none text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-all shadow-inner"
           />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute end-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <div className="absolute end-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onOpenQuickSwitcher && (
+              <button
+                type="button"
+                onClick={onOpenQuickSwitcher}
+                className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[#0061FF] hover:text-white border border-[var(--border-color)] text-[10px] text-[var(--text-muted)] font-mono cursor-pointer transition-colors"
+                title="پالت جستجوی سریع (کلید میانبر Ctrl + K)"
+              >
+                <span>Ctrl+K</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Right Section: Actions & User */}
@@ -584,56 +616,116 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                 </button>
               </div>
 
-              {/* View Toggle (Grid / List) */}
+              {/* View Toggle & Sorting Controls */}
               {activeFilter !== 'permissions' && (
-                <div className="flex items-center gap-1 self-end sm:self-auto shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setViewStyle('grid')}
-                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                      viewStyle === 'grid'
-                        ? 'bg-[var(--bg-secondary)] text-[#0061FF] shadow-xs border border-[var(--border-color)]'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                    }`}
-                    title="نمایش شبکه‌ای (کارت‌ها)"
-                  >
-                    <Grid className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewStyle('list')}
-                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                      viewStyle === 'list'
-                        ? 'bg-[var(--bg-secondary)] text-[#0061FF] shadow-xs border border-[var(--border-color)]'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                    }`}
-                    title="نمایش فهرستی"
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewStyle('tree')}
-                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                      viewStyle === 'tree'
-                        ? 'bg-[var(--bg-secondary)] text-amber-400 shadow-xs border border-[var(--border-color)]'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                    }`}
-                    title="نمایش درخت سرفصل‌های آموزشی"
-                  >
-                    <FolderTree className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={fetchCloud}
-                    className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors ms-1 cursor-pointer"
-                    title="بروزرسانی"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isCloudLoading ? 'animate-spin' : ''}`} />
-                  </button>
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+                  {/* Sort Order Selector */}
+                  <div className="flex items-center gap-1.5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl px-2.5 py-1 shadow-xs">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-[#0061FF] shrink-0" />
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as DocSortOption)}
+                      className="bg-transparent text-xs text-[var(--text-primary)] font-medium focus:outline-none cursor-pointer pe-1"
+                      title="مرتب‌سازی اسناد و سرفصل‌ها بر اساس زمان آپلود یا نام"
+                    >
+                      <option value="upload-desc" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">🕒 جدیدترین زمان آپلود</option>
+                      <option value="upload-asc" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">⏳ قدیمی‌ترین زمان آپلود</option>
+                      <option value="updated-desc" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">📝 آخرین ویرایش</option>
+                      <option value="title-asc" className="bg-[var(--bg-secondary)] text-[var(--text-primary)]">🔤 بر اساس نام (الفبا)</option>
+                    </select>
+                  </div>
+
+                  {/* View Style Switcher */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setViewStyle('grid')}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        viewStyle === 'grid'
+                          ? 'bg-[var(--bg-secondary)] text-[#0061FF] shadow-xs border border-[var(--border-color)]'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                      }`}
+                      title="نمایش شبکه‌ای (کارت‌ها)"
+                    >
+                      <Grid className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewStyle('list')}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        viewStyle === 'list'
+                          ? 'bg-[var(--bg-secondary)] text-[#0061FF] shadow-xs border border-[var(--border-color)]'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                      }`}
+                      title="نمایش فهرستی"
+                    >
+                      <List className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewStyle('tree')}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        viewStyle === 'tree'
+                          ? 'bg-[var(--bg-secondary)] text-amber-400 shadow-xs border border-[var(--border-color)]'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                      }`}
+                      title="نمایش درخت سرفصل‌های آموزشی"
+                    >
+                      <FolderTree className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fetchCloud}
+                      className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors ms-1 cursor-pointer"
+                      title="بروزرسانی"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isCloudLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
+
+            {/* Folder / Course Filter Pills */}
+            {availableFolders.length > 1 && activeFilter !== 'permissions' && activeFilter !== 'cloud' && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs select-none">
+                <span className="text-[11px] font-bold text-[var(--text-muted)] flex items-center gap-1 me-1 shrink-0">
+                  <Folder className="w-3.5 h-3.5 text-amber-400" />
+                  <span>پوشه‌ها:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFolder(null)}
+                  className={`px-3 py-1 rounded-xl font-bold text-[11px] transition-all cursor-pointer shrink-0 ${
+                    selectedFolder === null
+                      ? 'bg-[#0061FF] text-white shadow-xs'
+                      : 'bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  همه پوشه‌ها ({documents.length})
+                </button>
+                {availableFolders.map((f) => {
+                  const isSelected = selectedFolder === f.name;
+                  const theme = getFolderTheme(f.name);
+                  return (
+                    <button
+                      key={f.name}
+                      type="button"
+                      onClick={() => setSelectedFolder(isSelected ? null : f.name)}
+                      className={`px-3 py-1 rounded-xl font-bold text-[11px] border transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                        isSelected
+                          ? `${theme.badge} ring-2 ring-offset-1 ring-[#0061FF] shadow-xs`
+                          : `${theme.badge} opacity-80 hover:opacity-100`
+                      }`}
+                    >
+                      <Folder className="w-3 h-3 shrink-0" />
+                      <span>{f.name}</span>
+                      <span className="opacity-80 font-mono text-[10px]">({f.count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* TAB: PERMISSIONS MATRIX VIEW */}
             {activeFilter === 'permissions' ? (
@@ -716,13 +808,14 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {/* Local Documents Cards */}
                 {activeFilter !== 'cloud' &&
-                  filteredLocalDocs.map((doc) => {
+                  sortedLocalDocs.map((doc) => {
                     const snippet = doc.content
                       .replace(/[#*`~\[\]]/g, '')
                       .replace(/\n+/g, ' ')
                       .trim()
                       .slice(0, 140);
-                    const updatedStr = new Date(doc.updatedAt).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US', {
+                    const uploadTime = getDocUploadTime(doc);
+                    const updatedStr = new Date(uploadTime).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US', {
                       month: 'short',
                       day: 'numeric',
                     });
@@ -928,6 +1021,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     <tr className="border-b border-[var(--border-color)] bg-[var(--bg-tertiary)]/40 text-[var(--text-muted)] font-bold">
                       <th className="py-3 px-4 text-start">نام سند</th>
                       <th className="py-3 px-4 text-start">پوشه / سرفصل</th>
+                      <th className="py-3 px-4 text-start">زمان ثبت / آپلود</th>
                       <th className="py-3 px-4 text-start">نویسنده</th>
                       <th className="py-3 px-4 text-center">نوع ذخیره</th>
                       <th className="py-3 px-4 text-center">عملیات</th>
@@ -936,9 +1030,16 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                   <tbody className="divide-y divide-[var(--border-color)] font-medium">
                     {/* Local Docs in List */}
                     {activeFilter !== 'cloud' &&
-                      filteredLocalDocs.map((doc) => {
+                      sortedLocalDocs.map((doc) => {
                         const folderName = getEffectiveFolderPath(doc.folderPath);
                         const theme = getFolderTheme(folderName);
+                        const uploadTime = getDocUploadTime(doc);
+                        const uploadStr = new Date(uploadTime).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        });
                         return (
                           <tr
                             key={doc.id}
@@ -958,6 +1059,9 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                                 <Folder className="w-2.5 h-2.5" />
                                 <span>{folderName}</span>
                               </span>
+                            </td>
+                            <td className="py-3 px-4 text-[var(--text-muted)] font-mono text-[11px]">
+                              {uploadStr}
                             </td>
                             <td className="py-3 px-4 text-[var(--text-muted)]">
                               {doc.cloudAuthor || 'محلی شما'}

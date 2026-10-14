@@ -44,6 +44,7 @@ import { SharedMarkdownFile } from './services/cloudApi';
 import { DocumentComments } from './components/DocumentComments';
 import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
+import { QuickSwitcherModal } from './components/QuickSwitcherModal';
 import { authApi } from './services/authApi';
 import { UserProfile } from './types';
 import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare, LayoutDashboard, ArrowRight } from 'lucide-react';
@@ -114,6 +115,7 @@ export default function App() {
   const [isOutlineOpen, setIsOutlineOpen] = useState(false);
   const [isCheatsheetOpen, setIsCheatsheetOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState(false);
   const [isBookletModalOpen, setIsBookletModalOpen] = useState(false);
   const [bookletConfig, setBookletConfig] = useState<BookletConfig | null>(null);
   const [isCommunityOpen, setIsCommunityOpen] = useState(false);
@@ -287,6 +289,18 @@ export default function App() {
       setActiveDocCommentsCount(0);
     }
   }, [activeDoc?.id, activeDoc?.isCloudShared]);
+
+  // Global keyboard shortcut: Ctrl+K or Cmd+K opens Quick Switcher Spotlight
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsQuickSwitcherOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   // Check URL query parameters for ?verify_token or ?reset_token or ?share=ID or ?file=ID
   useEffect(() => {
@@ -827,6 +841,7 @@ export default function App() {
             content: text,
             folderPath: folderPath || existing.folderPath,
             updatedAt: Date.now(),
+            uploadedAt: Date.now(),
           };
           lastActiveId = existing.id;
           // Clean up any other duplicates in state
@@ -842,6 +857,7 @@ export default function App() {
             folderPath,
             createdAt: Date.now(),
             updatedAt: Date.now(),
+            uploadedAt: Date.now(),
           };
           updatedList.unshift(newDoc);
           lastActiveId = newDoc.id;
@@ -1272,6 +1288,7 @@ export default function App() {
             pendingRequestsCount={pendingRequestsCount}
             onUpdateDocFolder={handleUpdateDocFolder}
             onDeleteDoc={handleDeleteDoc}
+            onOpenQuickSwitcher={() => setIsQuickSwitcherOpen(true)}
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">
@@ -1546,6 +1563,17 @@ export default function App() {
         onClose={() => setIsMyDocumentsModalOpen(false)}
         onOpenDocument={handleOpenMyDocument}
         userName={currentUser?.displayName}
+      />
+
+      {/* Quick Switcher Spotlight Modal (Ctrl+K) */}
+      <QuickSwitcherModal
+        isOpen={isQuickSwitcherOpen}
+        onClose={() => setIsQuickSwitcherOpen(false)}
+        documents={documents}
+        onSelectDoc={(docId, mode = 'split') => {
+          setActiveDocId(docId);
+          setViewMode(mode);
+        }}
       />
 
       {/* Cloud Toast Notice */}
