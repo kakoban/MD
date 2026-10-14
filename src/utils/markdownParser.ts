@@ -273,7 +273,7 @@ function createCustomRenderer() {
             </button>
           </div>
         </div>
-        <pre class="p-4 overflow-x-auto font-mono text-sm leading-relaxed text-neutral-200"><code class="language-${displayLang}">${highlighted}</code></pre>
+        <pre class="p-4 overflow-x-auto font-mono text-sm leading-relaxed text-neutral-200 text-left" dir="ltr"><code class="language-${displayLang}" dir="ltr">${highlighted}</code></pre>
         <div class="code-runner-output hidden border-t border-neutral-800 bg-neutral-950 p-4 text-xs font-mono"></div>
       </div>
     `;
