@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { MarkdownDoc, UserProfile } from '../types';
 import { SharedMarkdownFile } from '../services/cloudApi';
-import { buildDocTree, DocTreeNode, countTreeDocs } from '../utils/docTree';
+import { buildDocTree, DocTreeNode, countTreeDocs, getFolderTheme } from '../utils/docTree';
 
 interface SidebarProps {
   documents: MarkdownDoc[];
@@ -150,6 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {node.children.map((child) => {
           const isCollapsed = Boolean(collapsedFolders[child.fullPath]);
           const docCount = countTreeDocs(child);
+          const theme = getFolderTheme(child.name);
           return (
             <div key={child.fullPath} className="flex flex-col">
               <button
@@ -166,15 +167,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <ChevronDown className="w-3.5 h-3.5 shrink-0 text-gray-400" />
                   )}
                   {isCollapsed ? (
-                    <Folder className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                    <Folder className={`w-3.5 h-3.5 shrink-0 ${theme.icon}`} />
                   ) : (
-                    <FolderOpen className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                    <FolderOpen className={`w-3.5 h-3.5 shrink-0 ${theme.icon}`} />
                   )}
                   <span className="truncate font-semibold text-[11px] text-gray-200">
                     {child.name}
                   </span>
                 </div>
-                <span className="text-[10px] bg-white/10 text-gray-400 px-1.5 py-0.2 rounded-full font-mono shrink-0 ms-1">
+                <span className={`text-[10px] ${theme.badge} border px-1.5 py-0.2 rounded-full font-mono shrink-0 ms-1`}>
                   {docCount}
                 </span>
               </button>

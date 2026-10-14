@@ -22,6 +22,8 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+import { executeCode } from '../utils/codeRunner';
+import { escapeHtml } from '../utils/markdownParser';
 
 interface WalkthroughStep {
   id: number;
@@ -261,6 +263,92 @@ export const Preview: React.FC<PreviewProps> = ({
     };
     copyBtns.forEach((btn) => btn.addEventListener('click', handleCopyClick));
 
+    // 2.5 Code Runner buttons (HTML, Python, JS)
+    const runBtns = el.querySelectorAll<HTMLButtonElement>('button.code-run-btn');
+    const handleRunClick = async (e: MouseEvent) => {
+      e.stopPropagation();
+      const btn = (e.currentTarget || e.target) as HTMLButtonElement;
+      const encodedCode = btn.getAttribute('data-run-code');
+      const lang = btn.getAttribute('data-run-lang') || '';
+      if (!encodedCode || !lang) return;
+
+      const rawCode = decodeURIComponent(encodedCode);
+      const container = btn.closest('.code-block-container');
+      if (!container) return;
+
+      const outputEl = container.querySelector<HTMLElement>('.code-runner-output');
+      if (!outputEl) return;
+
+      outputEl.classList.remove('hidden');
+      outputEl.innerHTML = `
+        <div class="flex items-center gap-2 text-neutral-400 py-1">
+          <svg class="w-4 h-4 animate-spin text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <span class="runner-status-text">در حال اجرای کد (${lang})...</span>
+        </div>
+      `;
+
+      const statusSpan = outputEl.querySelector('.runner-status-text');
+
+      try {
+        const result = await executeCode(rawCode, lang, (status) => {
+          if (statusSpan) statusSpan.textContent = status;
+        });
+
+        if (result.lang === 'html' && result.htmlDoc) {
+          outputEl.innerHTML = `
+            <div class="flex items-center justify-between mb-2 pb-2 border-b border-neutral-800 text-xs">
+              <span class="font-bold text-emerald-400 flex items-center gap-1.5">
+                <span>🌐</span>
+                <span>پیش‌نمایش زنده خروجی HTML</span>
+              </span>
+              <button type="button" class="runner-close-btn text-neutral-400 hover:text-white px-2 py-0.5 rounded hover:bg-neutral-800 text-xs cursor-pointer">بستن خروجی ×</button>
+            </div>
+            <iframe class="runner-html-iframe w-full h-64 bg-white rounded border border-neutral-800" sandbox="allow-scripts"></iframe>
+          `;
+          const iframe = outputEl.querySelector<HTMLIFrameElement>('.runner-html-iframe');
+          if (iframe) iframe.srcdoc = result.htmlDoc;
+        } else {
+          const isErr = !result.success;
+          outputEl.innerHTML = `
+            <div class="flex items-center justify-between mb-2 pb-2 border-b border-neutral-800 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full ${isErr ? 'bg-rose-500' : 'bg-emerald-400'}"></span>
+                <span class="font-bold ${isErr ? 'text-rose-400' : 'text-emerald-400'}">
+                  ${isErr ? 'خطا در اجرا' : 'خروجی اجرا'}
+                </span>
+                <span class="text-[10px] text-neutral-500 font-mono">(${result.executionTimeMs} میلی‌ثانیه)</span>
+              </div>
+              <button type="button" class="runner-close-btn text-neutral-400 hover:text-white px-2 py-0.5 rounded hover:bg-neutral-800 text-xs cursor-pointer">بستن خروجی ×</button>
+            </div>
+            <pre class="p-3 rounded bg-neutral-900 border border-neutral-800/80 overflow-x-auto whitespace-pre-wrap leading-relaxed text-xs font-mono ${isErr ? 'text-rose-400' : 'text-emerald-300'}">${escapeHtml(result.error || result.output || '')}</pre>
+          `;
+        }
+
+        const closeBtn = outputEl.querySelector<HTMLButtonElement>('.runner-close-btn');
+        closeBtn?.addEventListener('click', () => {
+          outputEl.classList.add('hidden');
+          outputEl.innerHTML = '';
+        });
+      } catch (err: any) {
+        outputEl.innerHTML = `
+          <div class="flex items-center justify-between mb-2 pb-2 border-b border-neutral-800 text-xs">
+            <span class="font-bold text-rose-400">خطای غیرمنتظره</span>
+            <button type="button" class="runner-close-btn text-neutral-400 hover:text-white px-2 py-0.5 rounded hover:bg-neutral-800 text-xs cursor-pointer">بستن ×</button>
+          </div>
+          <pre class="p-3 rounded bg-neutral-900 text-rose-400 overflow-x-auto whitespace-pre-wrap text-xs font-mono leading-relaxed">${escapeHtml(err?.message || String(err))}</pre>
+        `;
+        const closeBtn = outputEl.querySelector<HTMLButtonElement>('.runner-close-btn');
+        closeBtn?.addEventListener('click', () => {
+          outputEl.classList.add('hidden');
+          outputEl.innerHTML = '';
+        });
+      }
+    };
+    runBtns.forEach((btn) => btn.addEventListener('click', handleRunClick));
+
     // 3. Click listener on existing highlight marks (<mark class="md-highlight">)
     const marks = el.querySelectorAll<HTMLElement>('mark.md-highlight');
     const handleMarkClick = (e: MouseEvent) => {
@@ -316,6 +404,7 @@ export const Preview: React.FC<PreviewProps> = ({
     return () => {
       checkboxes.forEach((cb) => cb.removeEventListener('change', handleCheckboxClick));
       copyBtns.forEach((btn) => btn.removeEventListener('click', handleCopyClick));
+      runBtns.forEach((btn) => btn.removeEventListener('click', handleRunClick));
       marks.forEach((m) => m.removeEventListener('click', handleMarkClick));
       stepElements.forEach((s) => s.removeEventListener('click', handleStepElementClick));
     };

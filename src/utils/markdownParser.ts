@@ -13,6 +13,7 @@ import 'prismjs/components/prism-markdown';
 import 'prismjs/components/prism-yaml';
 import katex from 'katex';
 import { DocStats, HeadingItem } from '../types';
+import { getRunnableLanguage } from './codeRunner';
 
 // Helper to escape HTML characters
 export function escapeHtml(str: string): string {
@@ -226,6 +227,24 @@ function createCustomRenderer() {
 
     const displayLang = lang || 'code';
     const lineCount = text.split('\n').length;
+    const runnableLang = getRunnableLanguage(lang);
+
+    const runBtn = runnableLang
+      ? `
+          <button
+            type="button"
+            data-run-code="${encodeURIComponent(text)}"
+            data-run-lang="${runnableLang}"
+            class="code-run-btn flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-all text-xs font-bold cursor-pointer active:scale-95 shadow-xs"
+            title="اجرای کد (${runnableLang})"
+          >
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span>اجرا</span>
+          </button>
+        `
+      : '';
 
     return `
       <div class="code-block-container my-6 rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950/80 shadow-md">
@@ -238,20 +257,24 @@ function createCustomRenderer() {
             <span class="text-neutral-600">·</span>
             <span class="text-neutral-500">${lineCount} خط</span>
           </div>
-          <button 
-            type="button" 
-            data-code="${encodeURIComponent(text)}" 
-            class="code-copy-btn flex items-center gap-1.5 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors text-xs cursor-pointer"
-            title="کپی کد"
-          >
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-            </svg>
-            <span>کپی</span>
-          </button>
+          <div class="flex items-center gap-2">
+            ${runBtn}
+            <button
+              type="button"
+              data-code="${encodeURIComponent(text)}"
+              class="code-copy-btn flex items-center gap-1.5 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors text-xs cursor-pointer"
+              title="کپی کد"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+              </svg>
+              <span>کپی</span>
+            </button>
+          </div>
         </div>
         <pre class="p-4 overflow-x-auto font-mono text-sm leading-relaxed text-neutral-200"><code class="language-${displayLang}">${highlighted}</code></pre>
+        <div class="code-runner-output hidden border-t border-neutral-800 bg-neutral-950 p-4 text-xs font-mono"></div>
       </div>
     `;
   };

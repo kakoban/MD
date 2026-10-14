@@ -38,7 +38,14 @@ import {
 import { MarkdownDoc, UserProfile } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
 import { useLanguage } from '../context/LanguageContext';
-import { buildDocTree, DocTreeNode, countTreeDocs, deduplicateDocs } from '../utils/docTree';
+import {
+  buildDocTree,
+  DocTreeNode,
+  countTreeDocs,
+  deduplicateDocs,
+  getFolderTheme,
+  getEffectiveFolderPath,
+} from '../utils/docTree';
 
 interface DocSendSpaceViewProps {
   documents: MarkdownDoc[];
@@ -157,15 +164,16 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
         {node.children.map((child) => {
           const isCollapsed = Boolean(collapsedFolders[child.fullPath]);
           const docCount = countTreeDocs(child);
+          const theme = getFolderTheme(child.name);
           return (
             <div
               key={child.fullPath}
-              className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden transition-all shadow-xs"
+              className={`rounded-2xl border ${theme.border} bg-[var(--bg-secondary)] overflow-hidden transition-all shadow-xs`}
             >
               <button
                 type="button"
                 onClick={() => toggleFolderCollapse(child.fullPath)}
-                className="w-full px-5 py-3.5 flex items-center justify-between bg-[var(--bg-tertiary)]/30 hover:bg-[var(--bg-tertiary)]/60 transition-colors cursor-pointer text-start"
+                className={`w-full px-5 py-3.5 flex items-center justify-between ${theme.headerBg} transition-colors cursor-pointer text-start`}
               >
                 <div className="flex items-center gap-2.5">
                   {isCollapsed ? (
@@ -174,16 +182,16 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
                   )}
                   {isCollapsed ? (
-                    <Folder className="w-4 h-4 text-amber-400" />
+                    <Folder className={`w-4 h-4 ${theme.icon}`} />
                   ) : (
-                    <FolderOpen className="w-4 h-4 text-amber-400" />
+                    <FolderOpen className={`w-4 h-4 ${theme.icon}`} />
                   )}
                   <span className="font-bold text-sm text-[var(--text-primary)]">
                     {child.name}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold font-mono">
+                  <span className={`text-[11px] px-2.5 py-0.5 rounded-full ${theme.badge} font-bold font-mono`}>
                     {docCount} سند آموزشی
                   </span>
                 </div>
@@ -206,16 +214,17 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                 .replace(/\n+/g, ' ')
                 .trim()
                 .slice(0, 100);
+              const docTheme = getFolderTheme(doc.folderPath || node.name);
               return (
                 <div
                   key={doc.id}
                   onClick={() => onOpenDoc(doc.id, 'split')}
-                  className="p-4 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] hover:border-[#0061FF]/40 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-36 group"
+                  className={`p-4 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] ${docTheme.cardBorder} hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-36 group`}
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-2 truncate">
-                        <FileText className="w-3.5 h-3.5 text-[#0061FF] shrink-0" />
+                        <FileText className={`w-3.5 h-3.5 ${docTheme.icon} shrink-0`} />
                         <h4 className="font-bold text-xs text-[var(--text-primary)] group-hover:text-[#0061FF] transition-colors truncate">
                           {doc.title || 'سند بدون عنوان'}
                         </h4>
@@ -718,11 +727,14 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       day: 'numeric',
                     });
 
+                    const folderName = getEffectiveFolderPath(doc.folderPath);
+                    const theme = getFolderTheme(folderName);
+
                     return (
                       <div
                         key={doc.id}
                         onClick={() => onOpenDoc(doc.id, 'split')}
-                        className="group p-5 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-[#0061FF]/40 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between h-48 relative overflow-hidden"
+                        className={`group p-5 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] ${theme.cardBorder} hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between h-48 relative overflow-hidden`}
                       >
                         {/* Top Row: Icon + Badges */}
                         <div>
@@ -731,7 +743,11 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                               <FileText className="w-4 h-4" />
                             </div>
 
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${theme.badge} flex items-center gap-1`}>
+                                <Folder className="w-2.5 h-2.5" />
+                                <span>{folderName}</span>
+                              </span>
                               {doc.isCloudShared && (
                                 <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 font-bold">
                                   ابری
@@ -911,6 +927,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                   <thead>
                     <tr className="border-b border-[var(--border-color)] bg-[var(--bg-tertiary)]/40 text-[var(--text-muted)] font-bold">
                       <th className="py-3 px-4 text-start">نام سند</th>
+                      <th className="py-3 px-4 text-start">پوشه / سرفصل</th>
                       <th className="py-3 px-4 text-start">نویسنده</th>
                       <th className="py-3 px-4 text-center">نوع ذخیره</th>
                       <th className="py-3 px-4 text-center">عملیات</th>
@@ -919,23 +936,32 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                   <tbody className="divide-y divide-[var(--border-color)] font-medium">
                     {/* Local Docs in List */}
                     {activeFilter !== 'cloud' &&
-                      filteredLocalDocs.map((doc) => (
-                        <tr
-                          key={doc.id}
-                          onClick={() => onOpenDoc(doc.id, 'split')}
-                          className="hover:bg-[var(--bg-tertiary)]/50 transition-colors cursor-pointer"
-                        >
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <FileText className="w-4 h-4 text-[#0061FF] shrink-0" />
-                              <span className="font-bold text-xs text-[var(--text-primary)] truncate max-w-sm">
-                                {doc.title || 'سند بدون عنوان'}
+                      filteredLocalDocs.map((doc) => {
+                        const folderName = getEffectiveFolderPath(doc.folderPath);
+                        const theme = getFolderTheme(folderName);
+                        return (
+                          <tr
+                            key={doc.id}
+                            onClick={() => onOpenDoc(doc.id, 'split')}
+                            className="hover:bg-[var(--bg-tertiary)]/50 transition-colors cursor-pointer"
+                          >
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2.5">
+                                <FileText className={`w-4 h-4 ${theme.icon} shrink-0`} />
+                                <span className="font-bold text-xs text-[var(--text-primary)] truncate max-w-sm">
+                                  {doc.title || 'سند بدون عنوان'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${theme.badge} inline-flex items-center gap-1`}>
+                                <Folder className="w-2.5 h-2.5" />
+                                <span>{folderName}</span>
                               </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-[var(--text-muted)]">
-                            {doc.cloudAuthor || 'محلی شما'}
-                          </td>
+                            </td>
+                            <td className="py-3 px-4 text-[var(--text-muted)]">
+                              {doc.cloudAuthor || 'محلی شما'}
+                            </td>
                           <td className="py-3 px-4 text-center">
                             {doc.isCloudShared ? (
                               <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">
@@ -991,7 +1017,8 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                             </div>
                           </td>
                         </tr>
-                      ))}
+                      );
+                    })}
 
                     {/* Cloud Files in List */}
                     {activeFilter !== 'my-docs' &&
@@ -1012,6 +1039,9 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                                 {file.title}
                               </span>
                             </div>
+                          </td>
+                          <td className="py-3 px-4 text-[var(--text-muted)] text-[10px]">
+                            —
                           </td>
                           <td className="py-3 px-4 text-[var(--text-muted)]">
                             {file.author_name} {file.author_username && `@${file.author_username}`}
