@@ -47,6 +47,7 @@ interface SidebarProps {
   pendingRequestsCount?: number;
   onBackToWorkspace?: () => void;
   onUpdateDocFolder?: (docId: string, folderPath?: string) => void;
+  onDeleteFolder?: (folderPath: string) => void;
   onSyncLocalDisk?: (forcePickNew?: boolean) => void;
   linkedLocalFolder?: string | null;
   isSyncingLocal?: boolean;
@@ -63,6 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onImportFiles,
   onRestoreSamples,
   onUpdateDocFolder,
+  onDeleteFolder,
   isOpen,
   onToggleOpen,
   currentUser,
@@ -183,9 +185,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {child.name}
                   </span>
                 </div>
-                <span className={`text-[10px] ${theme.badge} border px-1.5 py-0.2 rounded-full font-mono shrink-0 ms-1`}>
-                  {docCount}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0 ms-1">
+                  {onDeleteFolder && child.name !== 'عمومی' && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteFolder(child.fullPath);
+                      }}
+                      className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer"
+                      title={`حذف پوشه «${child.name}» و اسناد داخل آن`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </span>
+                  )}
+                  <span className={`text-[10px] ${theme.badge} border px-1.5 py-0.2 rounded-full font-mono`}>
+                    {docCount}
+                  </span>
+                </div>
               </button>
               {!isCollapsed && renderTreeNode(child, depth + 1)}
             </div>

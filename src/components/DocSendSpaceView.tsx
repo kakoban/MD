@@ -69,6 +69,7 @@ interface DocSendSpaceViewProps {
   onDeleteDoc?: (docId: string) => void;
   onOpenQuickSwitcher?: () => void;
   onRenameFolder?: (oldPath: string, newPath: string) => void;
+  onDeleteFolder?: (folderPath: string) => void;
   onSyncLocalDisk?: (forcePickNew?: boolean) => void;
   linkedLocalFolder?: string | null;
   linkedFolders?: LinkedFolderRecord[];
@@ -94,6 +95,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   onDeleteDoc,
   onOpenQuickSwitcher,
   onRenameFolder,
+  onDeleteFolder,
   onSyncLocalDisk,
   linkedLocalFolder,
   linkedFolders = [],
@@ -280,6 +282,17 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       title="تغییر نام پوشه برای تمام اسناد داخل آن"
                     >
                       <Edit3 className="w-3 h-3 text-amber-400" />
+                    </button>
+                  )}
+
+                  {onDeleteFolder && child.name !== 'عمومی' && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteFolder(child.fullPath)}
+                      className="p-1 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors cursor-pointer"
+                      title={`حذف پوشه «${child.name}» و اسناد داخل آن`}
+                    >
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   )}
 

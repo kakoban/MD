@@ -1064,6 +1064,48 @@ export default function App() {
     setTimeout(() => setCloudNotice(null), 3000);
   }, []);
 
+  const handleDeleteFolder = useCallback((folderPath: string) => {
+    const cleanPath = folderPath.trim();
+    if (!cleanPath) return;
+
+    const affected = documents.filter((d) => {
+      const cur = (d.folderPath || '').trim();
+      return cur === cleanPath || cur.startsWith(cleanPath + '/');
+    });
+
+    if (affected.length === 0) return;
+
+    const confirmed = confirm(
+      `آیا از حذف پوشه «${cleanPath}» و تمامی اسناد آن اطمینان دارید؟\nاین پوشه شامل ${affected.length} سند است و همه آنها حذف خواهند شد.`
+    );
+    if (!confirmed) return;
+
+    setDocuments((prev) => {
+      const remaining = prev.filter((d) => {
+        const cur = (d.folderPath || '').trim();
+        return !(cur === cleanPath || cur.startsWith(cleanPath + '/'));
+      });
+      return remaining.length > 0 ? remaining : SAMPLE_DOCUMENTS;
+    });
+
+    if (activeDoc && (activeDoc.folderPath || '').trim().startsWith(cleanPath)) {
+      const remaining = documents.filter((d) => {
+        const cur = (d.folderPath || '').trim();
+        return !(cur === cleanPath || cur.startsWith(cleanPath + '/'));
+      });
+      if (remaining.length > 0) {
+        setActiveDocId(remaining[0].id);
+      }
+    }
+
+    if (linkedFolders.some((f) => f.name.toLowerCase() === cleanPath.toLowerCase())) {
+      handleUnlinkLocalFolder(cleanPath);
+    }
+
+    setCloudNotice(`پوشه «${cleanPath}» و ${affected.length} سند داخل آن با موفقیت حذف شدند.`);
+    setTimeout(() => setCloudNotice(null), 3500);
+  }, [documents, activeDoc, linkedFolders, handleUnlinkLocalFolder]);
+
   // Interactive Task List Checkbox Click
   const handleToggleTask = useCallback((taskIndex: number) => {
     if (!activeDoc) return;
@@ -1425,6 +1467,7 @@ export default function App() {
             onSyncLocalDisk={handleSyncFromLocalDisk}
             linkedLocalFolder={linkedFolders.length > 0 ? (linkedFolders.length === 1 ? linkedFolders[0].name : `${linkedFolders.length} پوشه`) : null}
             isSyncingLocal={isSyncingLocal}
+            onDeleteFolder={handleDeleteFolder}
           />
         )}
 
@@ -1481,6 +1524,7 @@ export default function App() {
             onDeleteDoc={handleDeleteDoc}
             onOpenQuickSwitcher={() => setIsQuickSwitcherOpen(true)}
             onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
             onSyncLocalDisk={handleSyncFromLocalDisk}
             linkedLocalFolder={linkedFolders.length > 0 ? linkedFolders.map(f => f.name).join('، ') : null}
             linkedFolders={linkedFolders}
