@@ -1413,6 +1413,71 @@ app.post('/api/files/:id/star', async (req: Request, res: Response) => {
 });
 
 // =============================================================
+// AI COGNITIVE BRAIN SYNC (/api/brain/sync & /api/brain/documents)
+// =============================================================
+app.post('/api/brain/sync', async (req: Request, res: Response) => {
+  try {
+    const { documents } = req.body;
+    if (!Array.isArray(documents) || documents.length === 0) {
+      return res.status(400).json({ error: 'لیست اسناد جهت همگام‌سازی الزامی است.' });
+    }
+
+    const authUser = getAuthUser(req);
+    const userId = authUser ? authUser.id : null;
+    const authorName = authUser ? (authUser.displayName || authUser.username) : 'کاربر استودیو';
+
+    let syncedCount = 0;
+    for (const doc of documents) {
+      if (!doc.title || !doc.title.trim()) continue;
+      const cleanTitle = doc.title.trim();
+      const content = doc.content || '';
+      const folderPath = doc.folderPath || '🧠 مغز هوش مصنوعی';
+      const cleanTags = Array.from(new Set([...(doc.tags || []), 'ai-brain']));
+      const id = doc.id && !doc.id.startsWith('imported-') && !doc.id.startsWith('doc-') && !doc.id.startsWith('local-')
+        ? doc.id
+        : `brain-${generateFileId(cleanTitle)}`;
+
+      await pool.query(
+        `INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, is_public, folder_path, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, NOW(), NOW())
+         ON CONFLICT (id) DO UPDATE
+         SET title = EXCLUDED.title,
+             content = EXCLUDED.content,
+             folder_path = EXCLUDED.folder_path,
+             tags = EXCLUDED.tags,
+             updated_at = NOW()`,
+        [id, cleanTitle, content, `سند ثبت‌شده در مغز هوش مصنوعی`, authorName, userId, cleanTags, folderPath]
+      );
+      syncedCount++;
+    }
+
+    res.json({
+      success: true,
+      count: syncedCount,
+      message: `${syncedCount} سند با موفقیت در مغز هوش مصنوعی ذخیره و با سرور همگام شد.`,
+    });
+  } catch (error: any) {
+    console.error('Brain sync error:', error);
+    res.status(500).json({ error: 'خطا در همگام‌سازی مغز هوش مصنوعی', details: error.message });
+  }
+});
+
+app.get('/api/brain/documents', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, title, content, description, folder_path, tags, updated_at, created_at
+       FROM shared_markdown_files
+       WHERE 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%'
+       ORDER BY updated_at DESC
+       LIMIT 100`
+    );
+    res.json({ success: true, files: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در دریافت اسناد مغز هوش مصنوعی' });
+  }
+});
+
+// =============================================================
 // DOCUMENT COMMENTS (/api/files/:id/comments & /api/comments/:id)
 // =============================================================
 

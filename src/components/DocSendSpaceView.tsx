@@ -78,6 +78,8 @@ interface DocSendSpaceViewProps {
   onUnlinkLocalFolder?: (folderName?: string) => void;
   onAddLocalFolder?: () => void;
   onOpenTopology?: () => void;
+  onSyncAiBrain?: () => void;
+  isSyncingBrain?: boolean;
 }
 
 export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
@@ -104,9 +106,11 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   onUnlinkLocalFolder,
   onAddLocalFolder,
   onOpenTopology,
+  onSyncAiBrain,
+  isSyncingBrain = false,
 }) => {
   const { t, language } = useLanguage();
-  const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions' | 'ai-brain'>('all');
   const [viewStyle, setViewStyle] = useState<'grid' | 'list' | 'tree'>('grid');
   const [sortBy, setSortBy] = useState<DocSortOption>('upload-desc');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -115,6 +119,16 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedEmbedTitle, setCopiedEmbedTitle] = useState<string | null>(null);
+
+  const aiBrainCount = React.useMemo(() => {
+    const localCount = documents.filter((d) =>
+      Boolean(d.isAiBrain || d.folderPath?.includes('مغز') || d.folderPath?.includes('brain') || d.tags?.includes('ai-brain'))
+    ).length;
+    const cloudCount = cloudFiles.filter((f) =>
+      Boolean(f.tags?.includes('ai-brain') || f.folder_path?.includes('مغز') || f.folder_path?.includes('brain'))
+    ).length;
+    return localCount + cloudCount;
+  }, [documents, cloudFiles]);
 
   const handleCopyEmbedTag = (title: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -197,6 +211,9 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
       d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.content.toLowerCase().includes(searchQuery.toLowerCase());
     if (!matchesSearch) return false;
+    if (activeFilter === 'ai-brain') {
+      return Boolean(d.isAiBrain || d.folderPath?.includes('مغز') || d.folderPath?.includes('brain') || d.tags?.includes('ai-brain'));
+    }
     if (activeFilter === 'starred') return Boolean(d.isFavorite);
     if (activeFilter === 'cloud') return false;
     if (selectedFolder && getEffectiveFolderPath(d.folderPath) !== selectedFolder) {
@@ -213,6 +230,9 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
       (f.author_name && f.author_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (f.author_username && f.author_username.toLowerCase().includes(searchQuery.toLowerCase()));
     if (!matchesSearch) return false;
+    if (activeFilter === 'ai-brain') {
+      return Boolean(f.tags?.includes('ai-brain') || f.folder_path?.includes('مغز') || f.folder_path?.includes('brain'));
+    }
     if (activeFilter === 'my-docs') return false;
     if (activeFilter === 'starred') return false;
     return true;
@@ -586,6 +606,19 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
             </div>
           )}
 
+          {onSyncAiBrain && (
+            <button
+              type="button"
+              onClick={onSyncAiBrain}
+              disabled={isSyncingBrain}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-bold text-xs shadow-sm hover:shadow-md transition-all cursor-pointer shrink-0"
+              title="همگام‌سازی فوری اسناد مغز هوش مصنوعی با سرور ابری جهت دسترسی Claude و MCP"
+            >
+              <span className={isSyncingBrain ? 'animate-spin' : ''}>🧠</span>
+              <span className="hidden md:inline">{isSyncingBrain ? 'در حال همگام‌سازی مغز...' : 'سینک مغز AI'}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onCreateDoc()}
@@ -770,6 +803,22 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                   <span className="text-[10px] text-[var(--text-muted)]">معماری و APIها</span>
                 </div>
               </div>
+
+              {/* 6. AI Brain Note */}
+              <div
+                onClick={() => onCreateDoc('🧠 مغز هوش مصنوعی')}
+                className="group p-4 rounded-2xl bg-[var(--bg-secondary)] border border-fuchsia-500/40 hover:border-fuchsia-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-32"
+              >
+                <div className="w-10 h-10 rounded-xl bg-fuchsia-500/15 text-fuchsia-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-xl">🧠</span>
+                </div>
+                <div>
+                  <span className="font-bold text-xs text-[var(--text-primary)] block group-hover:text-fuchsia-400 transition-colors">
+                    سند مغز AI
+                  </span>
+                  <span className="text-[10px] text-[var(--text-muted)]">حافظه اختصاصی برای MCP</span>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -801,6 +850,19 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                   }`}
                 >
                   اسناد من ({documents.length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('ai-brain')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    activeFilter === 'ai-brain'
+                      ? 'bg-fuchsia-600 text-white shadow-xs'
+                      : 'text-fuchsia-400 hover:text-fuchsia-300 hover:bg-fuchsia-500/10'
+                  }`}
+                >
+                  <span>🧠</span>
+                  <span>مغز هوش مصنوعی ({aiBrainCount})</span>
                 </button>
 
                 <button

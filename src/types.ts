@@ -13,6 +13,7 @@ export interface MarkdownDoc {
   isForked?: boolean;
   wordGoal?: number;
   folderPath?: string;
+  isAiBrain?: boolean;
 }
 
 export type DocSortOption = 'upload-desc' | 'upload-asc' | 'updated-desc' | 'title-asc';

@@ -8,6 +8,7 @@ export interface DocTreeNode {
 }
 
 export const DEFAULT_FOLDER_NAME = "عمومی";
+export const AI_BRAIN_FOLDER = "🧠 مغز هوش مصنوعی";
 
 export function getDocUploadTime(doc: MarkdownDoc): number {
   return doc.uploadedAt || doc.createdAt || doc.updatedAt || 0;
@@ -95,12 +96,22 @@ export const FOLDER_THEMES: Record<string, FolderTheme> = {
     badge: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
     cardBorder: "hover:border-indigo-500/50",
   },
+  aiBrain: {
+    border: "border-fuchsia-500/40 hover:border-fuchsia-500/80 shadow-xs",
+    headerBg: "bg-gradient-to-r from-fuchsia-500/10 via-purple-500/10 to-transparent hover:bg-fuchsia-500/20",
+    icon: "text-fuchsia-400 animate-pulse",
+    badge: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40 shadow-xs",
+    cardBorder: "hover:border-fuchsia-500/70 hover:shadow-md hover:shadow-fuchsia-500/10",
+  },
 };
 
 const PALETTE_KEYS = ["blue", "emerald", "amber", "purple", "rose", "indigo"];
 
 export function getFolderTheme(folderName?: string): FolderTheme {
   const norm = (folderName || "").trim().toLowerCase();
+  if (norm.includes("مغز") || norm.includes("brain")) {
+    return FOLDER_THEMES.aiBrain;
+  }
   if (!norm || norm === DEFAULT_FOLDER_NAME || norm === "general" || norm === "سایر اسناد") {
     return FOLDER_THEMES.general;
   }

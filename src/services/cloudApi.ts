@@ -254,4 +254,21 @@ export const cloudApi = {
     });
     return safeJson(res, 'خطا در حذف نظر');
   },
+
+  // AI Brain Cloud Sync API
+  async syncAiBrainDocs(documents: any[]): Promise<{ success: boolean; count: number; message: string }> {
+    const res = await fetch('/api/brain/sync', {
+      method: 'POST',
+      headers: authApi.getAuthHeaders(),
+      body: JSON.stringify({ documents }),
+    });
+    return safeJson(res, 'خطا در همگام‌سازی مغز هوش مصنوعی با سرور');
+  },
+
+  async fetchAiBrainDocs(): Promise<{ success: boolean; files: SharedMarkdownFile[] }> {
+    const res = await fetch('/api/brain/documents', {
+      headers: authApi.getAuthHeaders(),
+    });
+    return safeJson(res, 'خطا در دریافت اسناد مغز هوش مصنوعی');
+  },
 };

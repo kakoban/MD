@@ -152,6 +152,7 @@ export default function App() {
   const [localSaveStatus, setLocalSaveStatus] = useState<CloudSyncStatus>('synced');
   const [linkedFolders, setLinkedFolders] = useState<LinkedFolderRecord[]>([]);
   const [isSyncingLocal, setIsSyncingLocal] = useState<boolean>(false);
+  const [isSyncingBrain, setIsSyncingBrain] = useState<boolean>(false);
   const localSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isFirstRenderRef = useRef<boolean>(true);
   const cloudSyncedStateRef = useRef<Record<string, { title: string; content: string }>>({});
@@ -425,7 +426,19 @@ export default function App() {
       setCloudSyncStatus('saving');
 
       try {
-        await cloudApi.updateFile(id, { title, content });
+        if (activeDoc?.isAiBrain || activeDoc?.folderPath?.includes('مغز')) {
+          await cloudApi.syncAiBrainDocs([
+            {
+              id,
+              title,
+              content,
+              folderPath: activeDoc?.folderPath || '🧠 مغز هوش مصنوعی',
+              tags: activeDoc?.tags,
+            },
+          ]);
+        } else {
+          await cloudApi.updateFile(id, { title, content });
+        }
         cloudSyncedStateRef.current[id] = { title, content };
         setCloudSyncStatus('synced');
 
@@ -449,9 +462,10 @@ export default function App() {
     []
   );
 
-  // Auto-Save Effect: Periodically debounces and pushes changes of shared documents to Neon database
+  // Auto-Save Effect: Periodically debounces and pushes changes of shared / AI Brain documents to Neon database
   useEffect(() => {
-    if (!activeDoc || !activeDoc.isCloudShared) {
+    const isBrainDoc = Boolean(activeDoc?.isAiBrain || activeDoc?.folderPath?.includes('مغز'));
+    if (!activeDoc || (!activeDoc.isCloudShared && !isBrainDoc)) {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
         autoSaveTimerRef.current = null;
@@ -1106,6 +1120,73 @@ export default function App() {
     setTimeout(() => setCloudNotice(null), 3500);
   }, [documents, activeDoc, linkedFolders, handleUnlinkLocalFolder]);
 
+  // Sync all AI Brain documents to Neon Cloud Database for Claude / MCP access
+  const handleSyncAiBrain = useCallback(async () => {
+    setIsSyncingBrain(true);
+    try {
+      let brainDocs = documents.filter((d) =>
+        Boolean(
+          d.isAiBrain ||
+            d.folderPath?.includes('مغز') ||
+            d.folderPath?.includes('brain') ||
+            d.tags?.includes('ai-brain')
+        )
+      );
+
+      if (brainDocs.length === 0) {
+        const confirmAll = confirm(
+          'هنوز سندی به صورت اختصاصی در «مغز هوش مصنوعی» ثبت نشده است.\nآیا مایلید تمام اسناد فعلی به مغز هوش مصنوعی برای دسترسی مستقیم Claude و کانکتور MCP افزوده شوند؟'
+        );
+        if (!confirmAll) {
+          setIsSyncingBrain(false);
+          return;
+        }
+        brainDocs = documents.map((d) => ({
+          ...d,
+          isAiBrain: true,
+          folderPath: d.folderPath || '🧠 مغز هوش مصنوعی',
+        }));
+        setDocuments(brainDocs);
+      }
+
+      const res = await cloudApi.syncAiBrainDocs(brainDocs);
+      setCloudNotice(`🧠 ${res.message || 'اسناد مغز هوش مصنوعی با سرور همگام شدند.'}`);
+      setTimeout(() => setCloudNotice(null), 4500);
+    } catch (err: any) {
+      console.error('Brain sync error:', err);
+      setCloudNotice('خطا در همگام‌سازی مغز هوش مصنوعی با سرور ابری.');
+      setTimeout(() => setCloudNotice(null), 3500);
+    } finally {
+      setIsSyncingBrain(false);
+    }
+  }, [documents]);
+
+  const handleToggleDocAiBrain = useCallback(() => {
+    if (!activeDoc) return;
+    const newIsBrain = !activeDoc.isAiBrain;
+    setDocuments((prev) =>
+      prev.map((d) =>
+        d.id === activeDoc.id
+          ? {
+              ...d,
+              isAiBrain: newIsBrain,
+              folderPath:
+                newIsBrain && (!d.folderPath || d.folderPath === 'عمومی')
+                  ? '🧠 مغز هوش مصنوعی'
+                  : d.folderPath,
+              updatedAt: Date.now(),
+            }
+          : d
+      )
+    );
+    setCloudNotice(
+      newIsBrain
+        ? '🧠 سند به مغز هوش مصنوعی (AI Brain) افزوده شد.'
+        : 'سند از مغز هوش مصنوعی خارج شد.'
+    );
+    setTimeout(() => setCloudNotice(null), 3000);
+  }, [activeDoc]);
+
   // Interactive Task List Checkbox Click
   const handleToggleTask = useCallback((taskIndex: number) => {
     if (!activeDoc) return;
@@ -1422,6 +1503,8 @@ export default function App() {
         linkedLocalFolder={linkedFolders.length > 0 ? (linkedFolders.length === 1 ? linkedFolders[0].name : `${linkedFolders.length} پوشه`) : null}
         isSyncingLocal={isSyncingLocal}
         onOpenTopology={() => setIsTopologyOpen(true)}
+        isAiBrain={activeDoc?.isAiBrain}
+        onToggleAiBrain={handleToggleDocAiBrain}
       />
 
       {/* Formatting Toolbar (shown only in split and editor modes) */}
@@ -1532,6 +1615,8 @@ export default function App() {
             isSyncingLocal={isSyncingLocal}
             onUnlinkLocalFolder={handleUnlinkLocalFolder}
             onOpenTopology={() => setIsTopologyOpen(true)}
+            onSyncAiBrain={handleSyncAiBrain}
+            isSyncingBrain={isSyncingBrain}
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">

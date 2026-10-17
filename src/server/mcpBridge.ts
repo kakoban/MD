@@ -14,13 +14,23 @@ export interface McpTool {
 
 export const MCP_TOOLS: McpTool[] = [
   {
+    name: 'hub_get_ai_brain_context',
+    description: 'دریافت تمام اسناد و محتوای ذخیره شده در «مغز هوش مصنوعی» کاربر (AI Brain Vault) به عنوان کانتکست و حافظه اصلی',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'حداکثر تعداد اسناد مغز هوش مصنوعی (پیش‌فرض ۱۰)' },
+      },
+    },
+  },
+  {
     name: 'hub_smart_search',
     description: 'جستجوی هوشمند در اسناد مارک‌دان بر اساس عنوان، تگ‌ها، محتوا یا نام پوشه (صرفه‌جویی ۹۰٪ توکن)',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'متن، عنوان یا کلمه کلیدی مورد جستجو' },
-        folder: { type: 'string', description: 'نام یا مسیر اختیاری پوشه برای محدود کردن جستجو (مانند pori یا عمومی)' },
+        folder: { type: 'string', description: 'نام یا مسیر اختیاری پوشه برای محدود کردن جستجو (مانند pori یا عمومی یا مغز هوش مصنوعی)' },
         limit: { type: 'number', description: 'حداکثر تعداد نتایج (پیش‌فرض ۱۰)' },
       },
       required: ['query'],
@@ -122,6 +132,33 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
     const args = params?.arguments || {};
 
     try {
+      if (toolName === 'hub_get_ai_brain_context') {
+        const limitNum = Math.min(Number(args.limit) || 10, 30);
+        const result = await pool.query(
+          `SELECT id, title, content, description, folder_path, author_name, tags, updated_at
+           FROM shared_markdown_files
+           WHERE 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%'
+           ORDER BY updated_at DESC
+           LIMIT $1`,
+          [limitNum]
+        );
+
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: result.rows.length > 0
+                  ? JSON.stringify({ space: 'مغز هوش مصنوعی (AI Brain)', totalDocs: result.rows.length, documents: result.rows }, null, 2)
+                  : 'هنوز سندی در فضای مغز هوش مصنوعی همگام‌سازی نشده است.',
+              },
+            ],
+          },
+        };
+      }
+
       if (toolName === 'hub_smart_search') {
         const queryStr = String(args.query || '').trim().toLowerCase();
         const folderStr = String(args.folder || '').trim().toLowerCase();
@@ -129,7 +166,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
 
         let sql = `SELECT id, title, description, folder_path, author_name, tags, updated_at
            FROM shared_markdown_files
-           WHERE is_public = true AND (
+           WHERE (is_public = true OR 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%') AND (
              LOWER(title) LIKE $1 OR
              LOWER(description) LIKE $1 OR
              LOWER(content) LIKE $1 OR
@@ -168,7 +205,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         const result = await pool.query(
           `SELECT id, title, description, folder_path, author_name, tags, updated_at
            FROM shared_markdown_files
-           WHERE is_public = true AND (
+           WHERE (is_public = true OR 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%') AND (
              LOWER(COALESCE(folder_path, '')) LIKE $1 OR
              LOWER(title) LIKE $1 OR
              $2 = ANY(tags)
@@ -244,7 +281,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         const result = await pool.query(
           `SELECT id, title, description, folder_path, author_name, tags, updated_at
            FROM shared_markdown_files
-           WHERE is_public = true
+           WHERE (is_public = true OR 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')
            ORDER BY updated_at DESC
            LIMIT $1`,
           [limitNum]

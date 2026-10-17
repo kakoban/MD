@@ -76,6 +76,8 @@ interface NavbarProps {
   linkedLocalFolder?: string | null;
   isSyncingLocal?: boolean;
   onOpenTopology?: () => void;
+  isAiBrain?: boolean;
+  onToggleAiBrain?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -121,6 +123,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   linkedLocalFolder,
   isSyncingLocal = false,
   onOpenTopology,
+  isAiBrain = false,
+  onToggleAiBrain,
 }: NavbarProps) => {
   const { language, setLanguage, t } = useLanguage();
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -209,6 +213,28 @@ export const Navbar: React.FC<NavbarProps> = ({
           <Folder className="w-3.5 h-3.5 text-amber-500" />
           <span className="truncate max-w-[140px]">{folderPath || 'عمومی'}</span>
         </button>
+
+        {onToggleAiBrain && (
+          <button
+            type="button"
+            onClick={onToggleAiBrain}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer shrink-0 ${
+              isAiBrain
+                ? 'bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-500/40 shadow-xs'
+                : 'bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#6b7280] border-[#d1d5db]'
+            }`}
+            title={
+              isAiBrain
+                ? 'این سند در مغز هوش مصنوعی ثبت است (کلیک برای خروج)'
+                : 'افزودن این سند به مغز هوش مصنوعی (AI Brain) برای اتصال به Claude و MCP'
+            }
+          >
+            <span>🧠</span>
+            <span className="hidden lg:inline font-bold">
+              {isAiBrain ? 'مغز هوش مصنوعی' : 'ثبت در مغز AI'}
+            </span>
+          </button>
+        )}
 
         <button
           type="button"
