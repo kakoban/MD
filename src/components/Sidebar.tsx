@@ -21,6 +21,8 @@ import {
   Upload,
   User,
   ArrowUpDown,
+  Link2,
+  Check,
 } from 'lucide-react';
 import { MarkdownDoc, UserProfile, DocSortOption } from '../types';
 import { SharedMarkdownFile } from '../services/cloudApi';
@@ -80,6 +82,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<DocSortOption>('upload-desc');
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
+  const [copiedEmbedTitle, setCopiedEmbedTitle] = useState<string | null>(null);
+
+  const handleCopyEmbedTag = (title: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(`![[${title}]]`);
+    setCopiedEmbedTitle(title);
+    setTimeout(() => setCopiedEmbedTitle(null), 2000);
+  };
 
   const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -230,6 +240,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="truncate text-[11px]">{doc.title || 'سند بدون عنوان'}</span>
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => handleCopyEmbedTag(doc.title, e)}
+                  className="p-1 text-gray-400 hover:text-[#0061FF] transition-colors cursor-pointer"
+                  title={`کپی تگ جاسازی (Embed): ![[${doc.title}]]`}
+                >
+                  {copiedEmbedTitle === doc.title ? (
+                    <Check className="w-3 h-3 text-emerald-400" />
+                  ) : (
+                    <Link2 className="w-3 h-3" />
+                  )}
+                </button>
                 {onToggleFavorite && (
                   <button
                     type="button"
@@ -506,6 +528,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 </span>
                               </div>
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCopyEmbedTag(doc.title, e)}
+                                  className="p-0.5 text-gray-400 hover:text-[#0061FF] cursor-pointer"
+                                  title={`کپی تگ جاسازی (Embed): ![[${doc.title}]]`}
+                                >
+                                  {copiedEmbedTitle === doc.title ? (
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                  ) : (
+                                    <Link2 className="w-3 h-3" />
+                                  )}
+                                </button>
                                 {onToggleFavorite && (
                                   <button
                                     type="button"

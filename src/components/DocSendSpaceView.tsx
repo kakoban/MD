@@ -37,6 +37,7 @@ import {
   ArrowUpDown,
   Edit3,
   Compass,
+  Link2,
 } from 'lucide-react';
 import { MarkdownDoc, UserProfile, DocSortOption } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
@@ -113,6 +114,15 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   const [cloudFiles, setCloudFiles] = useState<SharedMarkdownFile[]>([]);
   const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedEmbedTitle, setCopiedEmbedTitle] = useState<string | null>(null);
+
+  const handleCopyEmbedTag = (title: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const tag = `![[${title}]]`;
+    navigator.clipboard.writeText(tag);
+    setCopiedEmbedTitle(title);
+    setTimeout(() => setCopiedEmbedTitle(null), 2500);
+  };
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -361,6 +371,18 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyEmbedTag(doc.title, e)}
+                        className="p-1 rounded text-[var(--text-muted)] hover:text-[#0061FF] hover:bg-[#0061FF]/10 transition-colors cursor-pointer"
+                        title={`کپی تگ جاسازی زنده (Embed): ![[${doc.title}]]`}
+                      >
+                        {copiedEmbedTitle === doc.title ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        ) : (
+                          <Link2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1126,6 +1148,19 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                           <span className="text-[11px] text-[var(--text-muted)] font-mono">{updatedStr}</span>
 
                           <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyEmbedTag(doc.title, e)}
+                              className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[#0061FF] transition-colors cursor-pointer"
+                              title={`کپی تگ جاسازی زنده (Embed): ![[${doc.title}]]`}
+                            >
+                              {copiedEmbedTitle === doc.title ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              ) : (
+                                <Link2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+
                             {doc.isCloudShared && (
                               <button
                                 type="button"
@@ -1342,6 +1377,18 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                           </td>
                           <td className="py-3 px-4 text-center">
                             <div className="flex items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyEmbedTag(doc.title, e)}
+                                className="p-1 rounded text-[var(--text-muted)] hover:text-[#0061FF] hover:bg-[#0061FF]/10 transition-colors cursor-pointer"
+                                title={`کپی تگ جاسازی زنده (Embed): ![[${doc.title}]]`}
+                              >
+                                {copiedEmbedTitle === doc.title ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                ) : (
+                                  <Link2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
                               {doc.isCloudShared && (
                                 <button
                                   type="button"

@@ -210,6 +210,26 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="truncate max-w-[140px]">{folderPath || 'عمومی'}</span>
         </button>
 
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard.writeText(`![[${title}]]`);
+            setCopiedAction('embed_quick');
+            setTimeout(() => setCopiedAction(null), 2000);
+          }}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#374151] border border-[#d1d5db] transition-colors cursor-pointer shrink-0 font-mono"
+          title={`کپی تگ جاسازی زنده (Embed): ![[${title}]]`}
+        >
+          {copiedAction === 'embed_quick' ? (
+            <Check className="w-3.5 h-3.5 text-emerald-600" />
+          ) : (
+            <LinkIcon className="w-3.5 h-3.5 text-[#0061FF]" />
+          )}
+          <span className="text-[11px] font-bold">
+            {copiedAction === 'embed_quick' ? 'کپی شد!' : '![[...]]'}
+          </span>
+        </button>
+
         {onSyncLocalDisk && (
           <button
             type="button"
@@ -465,6 +485,31 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 {copiedAction === 'html' ? <Check className="w-4 h-4 text-[#0061FF]" /> : <Copy className="w-4 h-4 text-[#6b7280]" />}
                 <span>کپی کد HTML</span>
+              </button>
+              <div className="border-t border-[#e5e5e5] my-1" />
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`![[${title}]]`);
+                  setCopiedAction('embed');
+                  setTimeout(() => setCopiedAction(null), 2000);
+                  setShowExportMenu(false);
+                }}
+                className="w-full text-start flex items-center gap-2 px-3 py-2 hover:bg-[#f7f7f8] text-[#1a1a1a] text-xs transition-colors font-mono"
+              >
+                {copiedAction === 'embed' ? <Check className="w-4 h-4 text-emerald-600" /> : <LinkIcon className="w-4 h-4 text-[#0061FF]" />}
+                <span>کپی تگ جاسازی زنده (![[...]])</span>
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`[[${title}]]`);
+                  setCopiedAction('wiki');
+                  setTimeout(() => setCopiedAction(null), 2000);
+                  setShowExportMenu(false);
+                }}
+                className="w-full text-start flex items-center gap-2 px-3 py-2 hover:bg-[#f7f7f8] text-[#1a1a1a] text-xs transition-colors font-mono"
+              >
+                {copiedAction === 'wiki' ? <Check className="w-4 h-4 text-emerald-600" /> : <LinkIcon className="w-4 h-4 text-emerald-600" />}
+                <span>کپی پیوند سند ([[...]])</span>
               </button>
             </div>
           )}
