@@ -22,6 +22,7 @@ interface SharePublishModalProps {
   documentTitle: string;
   documentContent: string;
   defaultAuthor?: string;
+  folderPath?: string;
   onPublishedSuccess?: (shareId: string) => void;
   onOpenCommunity?: () => void;
 }
@@ -43,6 +44,7 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
   documentTitle,
   documentContent,
   defaultAuthor,
+  folderPath,
   onPublishedSuccess,
   onOpenCommunity,
 }) => {
@@ -121,6 +123,7 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
         tags,
         is_public: isPublic,
         customId: customId.trim() || undefined,
+        folderPath: folderPath?.trim() || undefined,
       });
 
       const fullShareUrl = `${window.location.origin}/?share=${res.file.id}`;

@@ -15,14 +15,27 @@ export interface McpTool {
 export const MCP_TOOLS: McpTool[] = [
   {
     name: 'hub_smart_search',
-    description: 'جستجوی هوشمند در اسناد مارک‌دان بر اساس عنوان، تگ‌ها یا متن (صرفه‌جویی ۹۰٪ توکن)',
+    description: 'جستجوی هوشمند در اسناد مارک‌دان بر اساس عنوان، تگ‌ها، محتوا یا نام پوشه (صرفه‌جویی ۹۰٪ توکن)',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'متن یا کلمه کلیدی مورد جستجو' },
+        query: { type: 'string', description: 'متن، عنوان یا کلمه کلیدی مورد جستجو' },
+        folder: { type: 'string', description: 'نام یا مسیر اختیاری پوشه برای محدود کردن جستجو (مانند pori یا عمومی)' },
         limit: { type: 'number', description: 'حداکثر تعداد نتایج (پیش‌فرض ۱۰)' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'hub_get_folder_documents',
+    description: 'دریافت فهرست و خلاصه تمام اسناد موجود در یک پوشه یا سرفصل آموزشی خاص (مثلاً پوشه pori، راهنمای آموزشی یا عمومی)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        folderName: { type: 'string', description: 'نام یا مسیر پوشه مورد نظر (مانند pori)' },
+        limit: { type: 'number', description: 'تعداد اسناد (پیش‌فرض ۲۰)' },
+      },
+      required: ['folderName'],
     },
   },
   {
@@ -38,7 +51,7 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'hub_list_documents',
-    description: 'دریافت فهرست تمام اسناد ثبت‌شده، سرفصل‌ها و خلاصه‌ها در مخزن ابری',
+    description: 'دریافت فهرست تمام اسناد ثبت‌شده، پوشه‌ها، سرفصل‌ها و خلاصه‌ها در مخزن ابری',
     inputSchema: {
       type: 'object',
       properties: {
@@ -111,20 +124,28 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
     try {
       if (toolName === 'hub_smart_search') {
         const queryStr = String(args.query || '').trim().toLowerCase();
+        const folderStr = String(args.folder || '').trim().toLowerCase();
         const limitNum = Math.min(Number(args.limit) || 10, 50);
 
-        const result = await pool.query(
-          `SELECT id, title, description, author_name, tags, updated_at
+        let sql = `SELECT id, title, description, folder_path, author_name, tags, updated_at
            FROM shared_markdown_files
            WHERE is_public = true AND (
              LOWER(title) LIKE $1 OR
              LOWER(description) LIKE $1 OR
-             LOWER(content) LIKE $1
-           )
-           ORDER BY updated_at DESC
-           LIMIT $2`,
-          [`%${queryStr}%`, limitNum]
-        );
+             LOWER(content) LIKE $1 OR
+             LOWER(COALESCE(folder_path, '')) LIKE $1
+           )`;
+        const paramsList: any[] = [`%${queryStr}%`];
+
+        if (folderStr) {
+          paramsList.push(`%${folderStr}%`);
+          sql += ` AND LOWER(COALESCE(folder_path, '')) LIKE $${paramsList.length}`;
+        }
+
+        paramsList.push(limitNum);
+        sql += ` ORDER BY updated_at DESC LIMIT $${paramsList.length}`;
+
+        const result = await pool.query(sql, paramsList);
 
         return {
           jsonrpc: '2.0',
@@ -134,6 +155,39 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
               {
                 type: 'text',
                 text: JSON.stringify(result.rows, null, 2),
+              },
+            ],
+          },
+        };
+      }
+
+      if (toolName === 'hub_get_folder_documents') {
+        const folderName = String(args.folderName || '').trim();
+        const limitNum = Math.min(Number(args.limit) || 20, 100);
+
+        const result = await pool.query(
+          `SELECT id, title, description, folder_path, author_name, tags, updated_at
+           FROM shared_markdown_files
+           WHERE is_public = true AND (
+             LOWER(COALESCE(folder_path, '')) LIKE $1 OR
+             LOWER(title) LIKE $1 OR
+             $2 = ANY(tags)
+           )
+           ORDER BY updated_at DESC
+           LIMIT $3`,
+          [`%${folderName.toLowerCase()}%`, folderName.toLowerCase(), limitNum]
+        );
+
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: result.rows.length > 0
+                  ? JSON.stringify({ folder: folderName, count: result.rows.length, documents: result.rows }, null, 2)
+                  : `هیچ سندی در پوشه «${folderName}» یافت نشد.`,
               },
             ],
           },
@@ -188,7 +242,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
       if (toolName === 'hub_list_documents') {
         const limitNum = Math.min(Number(args.limit) || 20, 100);
         const result = await pool.query(
-          `SELECT id, title, description, author_name, tags, updated_at
+          `SELECT id, title, description, folder_path, author_name, tags, updated_at
            FROM shared_markdown_files
            WHERE is_public = true
            ORDER BY updated_at DESC

@@ -136,6 +136,7 @@ async function initDatabase() {
         );
 
         ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS user_id VARCHAR(100);
+        ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS folder_path VARCHAR(255) DEFAULT '';
 
         CREATE INDEX IF NOT EXISTS idx_shared_files_created ON shared_markdown_files(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_shared_files_public ON shared_markdown_files(is_public);
@@ -1277,6 +1278,8 @@ app.post('/api/files', async (req: Request, res: Response) => {
       tags = [],
       is_public = true,
       customId,
+      folderPath,
+      folder_path,
     } = req.body;
 
     if (!title || !title.trim()) {
@@ -1308,13 +1311,15 @@ app.post('/api/files', async (req: Request, res: Response) => {
       ? tags.map((t: string) => t.trim()).filter(Boolean)
       : [];
 
+    const cleanFolder = (folder_path || folderPath || '').trim();
+
     const result = await pool.query(
       `
-      INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, is_public, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+      INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, is_public, folder_path, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
       RETURNING *
       `,
-      [id, title.trim(), content, description.trim(), resolvedAuthorName, resolvedUserId, cleanTags, Boolean(is_public)]
+      [id, title.trim(), content, description.trim(), resolvedAuthorName, resolvedUserId, cleanTags, Boolean(is_public), cleanFolder]
     );
 
     res.status(201).json({

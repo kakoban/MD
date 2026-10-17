@@ -17,6 +17,8 @@ export interface SharedMarkdownFile {
   content_length?: number;
   my_access_status?: 'pending' | 'approved' | 'rejected' | null;
   isLocked?: boolean;
+  folder_path?: string;
+  folderPath?: string;
 }
 
 export interface DocumentAccessRequest {
@@ -66,6 +68,8 @@ export interface PublishPayload {
   tags?: string[];
   is_public?: boolean;
   customId?: string;
+  folder_path?: string;
+  folderPath?: string;
 }
 
 async function safeJson<T = any>(res: Response, fallbackError = 'خطای ارتباط با سرور'): Promise<T> {

@@ -1744,6 +1744,7 @@ export default function App() {
         documentTitle={activeDoc?.title || ''}
         documentContent={activeDoc?.content || ''}
         defaultAuthor={currentUser?.displayName}
+        folderPath={activeDoc?.folderPath}
         onPublishedSuccess={(shareId) => {
           setCloudFilesCount((prev) => prev + 1);
           setDocuments((prev) =>
