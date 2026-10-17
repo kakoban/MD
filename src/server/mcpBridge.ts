@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import pg from 'pg';
+import crypto from 'crypto';
 
 export interface McpTool {
   name: string;
@@ -47,17 +48,34 @@ export const MCP_TOOLS: McpTool[] = [
   },
 ];
 
-export async function handleMcpJsonRpc(pool: pg.Pool, req: Request, res: Response): Promise<void> {
-  const { jsonrpc, id, method, params } = req.body || {};
+// Active SSE sessions for remote MCP clients (e.g. Claude.ai Connectors)
+const sseSessions = new Map<string, Response>();
 
-  if (jsonrpc !== '2.0') {
-    res.status(400).json({ jsonrpc: '2.0', id: id || null, error: { code: -32600, message: 'Invalid Request: jsonrpc must be 2.0' } });
-    return;
+export function setCorsHeaders(res: Response): void {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With');
+}
+
+export async function processMcpMessage(pool: pg.Pool, message: any): Promise<any | null> {
+  if (!message || typeof message !== 'object') {
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32600, message: 'Invalid Request: body must be a JSON object' },
+    };
+  }
+
+  const { id, method, params } = message;
+
+  // Notifications (no response needed)
+  if (!id && method && method.startsWith('notifications/')) {
+    return null;
   }
 
   // 1. Initialize MCP handshake
   if (method === 'initialize') {
-    res.json({
+    return {
       jsonrpc: '2.0',
       id,
       result: {
@@ -71,20 +89,18 @@ export async function handleMcpJsonRpc(pool: pg.Pool, req: Request, res: Respons
           version: '1.0.0',
         },
       },
-    });
-    return;
+    };
   }
 
   // 2. List tools
   if (method === 'tools/list') {
-    res.json({
+    return {
       jsonrpc: '2.0',
       id,
       result: {
         tools: MCP_TOOLS,
       },
-    });
-    return;
+    };
   }
 
   // 3. Call tool
@@ -110,7 +126,7 @@ export async function handleMcpJsonRpc(pool: pg.Pool, req: Request, res: Respons
           [`%${queryStr}%`, limitNum]
         );
 
-        res.json({
+        return {
           jsonrpc: '2.0',
           id,
           result: {
@@ -121,8 +137,7 @@ export async function handleMcpJsonRpc(pool: pg.Pool, req: Request, res: Respons
               },
             ],
           },
-        });
-        return;
+        };
       }
 
       if (toolName === 'hub_read_note_with_graph') {
@@ -136,22 +151,20 @@ export async function handleMcpJsonRpc(pool: pg.Pool, req: Request, res: Respons
         );
 
         if (result.rows.length === 0) {
-          res.json({
+          return {
             jsonrpc: '2.0',
             id,
             result: {
               content: [{ type: 'text', text: `سند با شناسه یا عنوان «${target}» یافت نشد.` }],
               isError: true,
             },
-          });
-          return;
+          };
         }
 
         const doc = result.rows[0];
-        // Parse inbound / outbound synapse links
         const linkMatches = [...doc.content.matchAll(/\[\[([^\]\n]+)\]\]/g)].map((m) => m[1]);
 
-        res.json({
+        return {
           jsonrpc: '2.0',
           id,
           result: {
@@ -169,8 +182,7 @@ export async function handleMcpJsonRpc(pool: pg.Pool, req: Request, res: Respons
               },
             ],
           },
-        });
-        return;
+        };
       }
 
       if (toolName === 'hub_list_documents') {
@@ -184,34 +196,110 @@ export async function handleMcpJsonRpc(pool: pg.Pool, req: Request, res: Respons
           [limitNum]
         );
 
-        res.json({
+        return {
           jsonrpc: '2.0',
           id,
           result: {
             content: [{ type: 'text', text: JSON.stringify(result.rows, null, 2) }],
           },
-        });
-        return;
+        };
       }
 
-      res.status(404).json({
+      return {
         jsonrpc: '2.0',
         id,
         error: { code: -32601, message: `Tool not found: ${toolName}` },
-      });
+      };
     } catch (err: any) {
-      res.status(500).json({
+      return {
         jsonrpc: '2.0',
         id,
         error: { code: -32000, message: err?.message || 'Server error executing tool' },
-      });
+      };
     }
-    return;
   }
 
-  res.status(404).json({
+  return {
     jsonrpc: '2.0',
     id,
     error: { code: -32601, message: `Method not found: ${method}` },
+  };
+}
+
+// Handler for HTTP POST (supports both direct JSON-RPC and SSE message forwarding)
+export async function handleMcpJsonRpc(pool: pg.Pool, req: Request, res: Response): Promise<void> {
+  setCorsHeaders(res);
+
+  const sessionId = (req.query.sessionId as string) || (req.body?.sessionId as string);
+  const sseTarget = sessionId ? sseSessions.get(sessionId) : null;
+
+  const response = await processMcpMessage(pool, req.body);
+
+  if (sseTarget) {
+    if (response) {
+      sseTarget.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
+    }
+    res.status(202).send('Accepted');
+    return;
+  }
+
+  // Direct HTTP response
+  if (response) {
+    res.json(response);
+  } else {
+    res.status(202).send('Accepted');
+  }
+}
+
+// Handler for GET / SSE transport (used by Claude Connectors, remote agents)
+export function handleMcpSse(req: Request, res: Response): void {
+  setCorsHeaders(res);
+
+  const isEventStream =
+    req.headers.accept?.includes('text/event-stream') ||
+    req.query.transport === 'sse' ||
+    req.path.endsWith('/sse');
+
+  if (!isEventStream) {
+    // Normal browser GET: return status info
+    res.json({
+      status: 'online',
+      protocol: 'model-context-protocol',
+      version: '2024-11-05',
+      endpoint: '/api/mcp',
+      sseEndpoint: '/api/mcp/sse',
+      tools: MCP_TOOLS.map((t) => t.name),
+      description: 'Markdown Studio Native Model Context Protocol (MCP) Server',
+      instructions: 'Enter this URL in Claude Connectors: https://markdown-studio-pro.onrender.com/api/mcp',
+    });
+    return;
+  }
+
+  // Establish SSE stream
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+
+  const sessionId = crypto.randomUUID();
+  sseSessions.set(sessionId, res);
+
+  const host = req.get('host') || 'markdown-studio-pro.onrender.com';
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  const postEndpoint = `${protocol}://${host}/api/mcp/messages?sessionId=${sessionId}`;
+
+  // Send initial endpoint event per MCP SSE spec
+  res.write(`event: endpoint\ndata: ${postEndpoint}\n\n`);
+
+  // Heartbeat ping every 15s to keep proxy/Render connection alive
+  const pingInterval = setInterval(() => {
+    res.write(': ping\n\n');
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(pingInterval);
+    sseSessions.delete(sessionId);
   });
 }
