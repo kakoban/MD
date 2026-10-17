@@ -80,6 +80,8 @@ interface DocSendSpaceViewProps {
   onOpenTopology?: () => void;
   onSyncAiBrain?: () => void;
   isSyncingBrain?: boolean;
+  onOpenBrainManager?: () => void;
+  onToggleFolderBrain?: (folderPath: string) => void;
 }
 
 export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
@@ -108,6 +110,8 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   onOpenTopology,
   onSyncAiBrain,
   isSyncingBrain = false,
+  onOpenBrainManager,
+  onToggleFolderBrain,
 }) => {
   const { t, language } = useLanguage();
   const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions' | 'ai-brain'>('all');
@@ -298,6 +302,30 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     <Plus className="w-3 h-3 text-[#0061FF]" />
                     <span className="hidden sm:inline">سند جدید</span>
                   </button>
+
+                  {onToggleFolderBrain && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleFolderBrain(child.fullPath)}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 border transition-colors cursor-pointer ${
+                        child.docs.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'))
+                          ? 'bg-fuchsia-500/25 text-fuchsia-300 border-fuchsia-500/50 shadow-xs'
+                          : 'bg-[var(--bg-secondary)] hover:bg-fuchsia-500/10 text-[var(--text-muted)] hover:text-fuchsia-300 border-[var(--border-color)]'
+                      }`}
+                      title={
+                        child.docs.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'))
+                          ? `این پوشه در مغز هوش مصنوعی قرار دارد (کلیک برای خروج)`
+                          : `افزودن اسناد پوشه «${child.name}» به مغز هوش مصنوعی`
+                      }
+                    >
+                      <span>🧠</span>
+                      <span className="hidden md:inline">
+                        {child.docs.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'))
+                          ? 'در مغز AI'
+                          : 'افزودن به مغز'}
+                      </span>
+                    </button>
+                  )}
 
                   {onRenameFolder && child.name !== 'عمومی' && (
                     <button
@@ -606,16 +634,17 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
             </div>
           )}
 
-          {onSyncAiBrain && (
+          {(onOpenBrainManager || onSyncAiBrain) && (
             <button
               type="button"
-              onClick={onSyncAiBrain}
+              onClick={() => (onOpenBrainManager ? onOpenBrainManager() : onSyncAiBrain?.())}
               disabled={isSyncingBrain}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-bold text-xs shadow-sm hover:shadow-md transition-all cursor-pointer shrink-0"
-              title="همگام‌سازی فوری اسناد مغز هوش مصنوعی با سرور ابری جهت دسترسی Claude و MCP"
+              title="مدیریت، انتخاب پوشه‌ها، تخلیه و همگام‌سازی مغز هوش مصنوعی برای Claude و MCP"
             >
               <span className={isSyncingBrain ? 'animate-spin' : ''}>🧠</span>
-              <span className="hidden md:inline">{isSyncingBrain ? 'در حال همگام‌سازی مغز...' : 'سینک مغز AI'}</span>
+              <span className="hidden md:inline">{isSyncingBrain ? 'در حال همگام‌سازی...' : 'مدیریت و سینک مغز AI'}</span>
+              <span className="md:hidden">مغز AI</span>
             </button>
           )}
 

@@ -47,10 +47,11 @@ import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
 import { QuickSwitcherModal } from './components/QuickSwitcherModal';
 import { NeuralTopologyModal } from './components/NeuralTopologyModal';
+import { AiBrainManagerModal } from './components/AiBrainManagerModal';
 import { authApi } from './services/authApi';
 import { UserProfile } from './types';
 import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare, LayoutDashboard, ArrowRight } from 'lucide-react';
-import { deduplicateDocs, normalizeDocKey } from './utils/docTree';
+import { deduplicateDocs, normalizeDocKey, getEffectiveFolderPath } from './utils/docTree';
 import {
   getAllStoredDirectoryHandles,
   addStoredDirectoryHandle,
@@ -130,6 +131,7 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState(false);
   const [isTopologyOpen, setIsTopologyOpen] = useState(false);
+  const [isBrainManagerOpen, setIsBrainManagerOpen] = useState(false);
   const [isBookletModalOpen, setIsBookletModalOpen] = useState(false);
   const [bookletConfig, setBookletConfig] = useState<BookletConfig | null>(null);
   const [isCommunityOpen, setIsCommunityOpen] = useState(false);
@@ -1121,32 +1123,22 @@ export default function App() {
   }, [documents, activeDoc, linkedFolders, handleUnlinkLocalFolder]);
 
   // Sync all AI Brain documents to Neon Cloud Database for Claude / MCP access
-  const handleSyncAiBrain = useCallback(async () => {
+  const handleSyncAiBrain = useCallback(async (customBrainDocs?: MarkdownDoc[]) => {
     setIsSyncingBrain(true);
     try {
-      let brainDocs = documents.filter((d) =>
+      let brainDocs = customBrainDocs || documents.filter((d) =>
         Boolean(
           d.isAiBrain ||
-            d.folderPath?.includes('مغز') ||
-            d.folderPath?.includes('brain') ||
+            getEffectiveFolderPath(d.folderPath).includes('مغز') ||
+            getEffectiveFolderPath(d.folderPath).includes('brain') ||
             d.tags?.includes('ai-brain')
         )
       );
 
       if (brainDocs.length === 0) {
-        const confirmAll = confirm(
-          'هنوز سندی به صورت اختصاصی در «مغز هوش مصنوعی» ثبت نشده است.\nآیا مایلید تمام اسناد فعلی به مغز هوش مصنوعی برای دسترسی مستقیم Claude و کانکتور MCP افزوده شوند؟'
-        );
-        if (!confirmAll) {
-          setIsSyncingBrain(false);
-          return;
-        }
-        brainDocs = documents.map((d) => ({
-          ...d,
-          isAiBrain: true,
-          folderPath: d.folderPath || '🧠 مغز هوش مصنوعی',
-        }));
-        setDocuments(brainDocs);
+        setIsSyncingBrain(false);
+        setIsBrainManagerOpen(true);
+        return;
       }
 
       const res = await cloudApi.syncAiBrainDocs(brainDocs);
@@ -1159,6 +1151,48 @@ export default function App() {
     } finally {
       setIsSyncingBrain(false);
     }
+  }, [documents]);
+
+  const handlePurgeServerBrain = useCallback(async () => {
+    try {
+      const res = await cloudApi.purgeAiBrain();
+      setCloudNotice(`🗑️ ${res.message || 'مغز هوش مصنوعی در سرور با موفقیت تخلیه شد.'}`);
+      setTimeout(() => setCloudNotice(null), 4000);
+    } catch (err: any) {
+      console.error('Brain purge error:', err);
+      setCloudNotice('خطا در تخلیه مغز هوش مصنوعی.');
+      setTimeout(() => setCloudNotice(null), 3000);
+    }
+  }, []);
+
+  const handleToggleFolderBrain = useCallback((folderPath: string) => {
+    const cleanPath = getEffectiveFolderPath(folderPath);
+    const affected = documents.filter((d) => getEffectiveFolderPath(d.folderPath) === cleanPath);
+    const anyInBrain = affected.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'));
+    const targetState = !anyInBrain;
+
+    setDocuments((prev) =>
+      prev.map((d) => {
+        if (getEffectiveFolderPath(d.folderPath) === cleanPath) {
+          return {
+            ...d,
+            isAiBrain: targetState,
+            tags: targetState
+              ? Array.from(new Set([...(d.tags || []), 'ai-brain']))
+              : (d.tags || []).filter((t) => t !== 'ai-brain'),
+            updatedAt: Date.now(),
+          };
+        }
+        return d;
+      })
+    );
+
+    setCloudNotice(
+      targetState
+        ? `🧠 تمام اسناد پوشه «${cleanPath}» به مغز هوش مصنوعی اضافه شدند.`
+        : `پوشه «${cleanPath}» از مغز هوش مصنوعی خارج شد.`
+    );
+    setTimeout(() => setCloudNotice(null), 3000);
   }, [documents]);
 
   const handleToggleDocAiBrain = useCallback(() => {
@@ -1551,6 +1585,7 @@ export default function App() {
             linkedLocalFolder={linkedFolders.length > 0 ? (linkedFolders.length === 1 ? linkedFolders[0].name : `${linkedFolders.length} پوشه`) : null}
             isSyncingLocal={isSyncingLocal}
             onDeleteFolder={handleDeleteFolder}
+            onToggleFolderBrain={handleToggleFolderBrain}
           />
         )}
 
@@ -1617,6 +1652,8 @@ export default function App() {
             onOpenTopology={() => setIsTopologyOpen(true)}
             onSyncAiBrain={handleSyncAiBrain}
             isSyncingBrain={isSyncingBrain}
+            onOpenBrainManager={() => setIsBrainManagerOpen(true)}
+            onToggleFolderBrain={handleToggleFolderBrain}
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">
@@ -1934,6 +1971,17 @@ export default function App() {
           setActiveDocId(docId);
           setViewMode('preview');
         }}
+      />
+
+      {/* AI Brain Vault Manager Modal (Empty / Populate / Select Folders) */}
+      <AiBrainManagerModal
+        isOpen={isBrainManagerOpen}
+        onClose={() => setIsBrainManagerOpen(false)}
+        documents={documents}
+        onUpdateDocuments={setDocuments}
+        onSyncBrainToServer={handleSyncAiBrain}
+        onPurgeServerBrain={handlePurgeServerBrain}
+        isSyncing={isSyncingBrain}
       />
 
       {/* Cloud Toast Notice */}

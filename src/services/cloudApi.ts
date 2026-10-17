@@ -271,4 +271,12 @@ export const cloudApi = {
     });
     return safeJson(res, 'خطا در دریافت اسناد مغز هوش مصنوعی');
   },
+
+  async purgeAiBrain(): Promise<{ success: boolean; message: string }> {
+    const res = await fetch('/api/brain/purge', {
+      method: 'DELETE',
+      headers: authApi.getAuthHeaders(),
+    });
+    return safeJson(res, 'خطا در تخلیه مغز هوش مصنوعی');
+  },
 };

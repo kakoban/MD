@@ -50,6 +50,7 @@ interface SidebarProps {
   onBackToWorkspace?: () => void;
   onUpdateDocFolder?: (docId: string, folderPath?: string) => void;
   onDeleteFolder?: (folderPath: string) => void;
+  onToggleFolderBrain?: (folderPath: string) => void;
   onSyncLocalDisk?: (forcePickNew?: boolean) => void;
   linkedLocalFolder?: string | null;
   isSyncingLocal?: boolean;
@@ -67,6 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRestoreSamples,
   onUpdateDocFolder,
   onDeleteFolder,
+  onToggleFolderBrain,
   isOpen,
   onToggleOpen,
   currentUser,
@@ -196,6 +198,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0 ms-1">
+                  {onToggleFolderBrain && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleFolderBrain(child.fullPath);
+                      }}
+                      className={`p-0.5 rounded transition-all cursor-pointer ${
+                        child.docs.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'))
+                          ? 'opacity-100 hover:scale-110'
+                          : 'opacity-0 group-hover:opacity-100 hover:scale-110 text-gray-400'
+                      }`}
+                      title={
+                        child.docs.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'))
+                          ? 'پوشه در مغز هوش مصنوعی است (کلیک برای خروج)'
+                          : 'افزودن این پوشه به مغز هوش مصنوعی'
+                      }
+                    >
+                      🧠
+                    </span>
+                  )}
                   {onDeleteFolder && child.name !== 'عمومی' && (
                     <span
                       onClick={(e) => {

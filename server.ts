@@ -1477,6 +1477,28 @@ app.get('/api/brain/documents', async (req: Request, res: Response) => {
   }
 });
 
+app.delete('/api/brain/purge', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (authUser) {
+      await pool.query(
+        `DELETE FROM shared_markdown_files
+         WHERE user_id = $1 AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')`,
+        [authUser.id]
+      );
+    } else {
+      await pool.query(
+        `DELETE FROM shared_markdown_files
+         WHERE 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%'`
+      );
+    }
+    res.json({ success: true, message: 'مخزن مغز هوش مصنوعی با موفقیت تخلیه شد.' });
+  } catch (err: any) {
+    console.error('Brain purge error:', err);
+    res.status(500).json({ error: 'خطا در تخلیه مغز هوش مصنوعی' });
+  }
+});
+
 // =============================================================
 // DOCUMENT COMMENTS (/api/files/:id/comments & /api/comments/:id)
 // =============================================================
