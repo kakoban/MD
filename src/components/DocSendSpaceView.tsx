@@ -36,6 +36,7 @@ import {
   ChevronRight,
   ArrowUpDown,
   Edit3,
+  Compass,
 } from 'lucide-react';
 import { MarkdownDoc, UserProfile, DocSortOption } from '../types';
 import { SharedMarkdownFile, cloudApi } from '../services/cloudApi';
@@ -50,6 +51,7 @@ import {
   sortDocs,
   getDocUploadTime,
 } from '../utils/docTree';
+import { LinkedFolderRecord } from '../utils/localSync';
 
 interface DocSendSpaceViewProps {
   documents: MarkdownDoc[];
@@ -69,8 +71,11 @@ interface DocSendSpaceViewProps {
   onRenameFolder?: (oldPath: string, newPath: string) => void;
   onSyncLocalDisk?: (forcePickNew?: boolean) => void;
   linkedLocalFolder?: string | null;
+  linkedFolders?: LinkedFolderRecord[];
   isSyncingLocal?: boolean;
-  onUnlinkLocalFolder?: () => void;
+  onUnlinkLocalFolder?: (folderName?: string) => void;
+  onAddLocalFolder?: () => void;
+  onOpenTopology?: () => void;
 }
 
 export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
@@ -91,8 +96,11 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   onRenameFolder,
   onSyncLocalDisk,
   linkedLocalFolder,
+  linkedFolders = [],
   isSyncingLocal = false,
   onUnlinkLocalFolder,
+  onAddLocalFolder,
+  onOpenTopology,
 }) => {
   const { t, language } = useLanguage();
   const [activeFilter, setActiveFilter] = useState<'all' | 'my-docs' | 'cloud' | 'starred' | 'permissions'>('all');
@@ -490,39 +498,52 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
             </button>
           )}
 
-          {/* 1-Click Sync from Local PC */}
+          {/* Multi-Folder 1-Click Sync from Local PC */}
           {onSyncLocalDisk && (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl p-0.5 shadow-xs">
               <button
                 type="button"
                 onClick={() => onSyncLocalDisk(false)}
                 disabled={isSyncingLocal}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-xs ${
-                  linkedLocalFolder
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                    : 'bg-[var(--bg-tertiary)] hover:bg-[#0061FF] hover:text-white border-[var(--border-color)] text-[var(--text-secondary)]'
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  linkedFolders.length > 0
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                    : 'hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                 }`}
                 title={
-                  linkedLocalFolder
-                    ? `بروزرسانی تغییرات فایل‌ها از پوشه «${linkedLocalFolder}» کامپیوتر شما بدون نیاز به آپلود مجدد`
-                    : 'اتصال به پوشه لوکال کامپیوتر برای همگام‌سازی و بروزرسانی خودکار با ۱ کلیک'
+                  linkedFolders.length > 0
+                    ? `بروزرسانی همزمان ${linkedFolders.length} پوشه متصل: ${linkedFolders.map((f) => f.name).join('، ')}`
+                    : 'اتصال به پوشه‌های کامپیوتر برای همگام‌سازی و بروزرسانی خودکار با ۱ کلیک'
                 }
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingLocal ? 'animate-spin text-emerald-500' : linkedLocalFolder ? 'text-emerald-500' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingLocal ? 'animate-spin text-emerald-500' : linkedFolders.length > 0 ? 'text-emerald-500' : ''}`} />
                 <span className="hidden sm:inline">
-                  {linkedLocalFolder ? `بروزرسانی از کامپیوتر (${linkedLocalFolder})` : 'اتصال به پوشه کامپیوتر'}
+                  {linkedFolders.length > 0
+                    ? `بروزرسانی (${linkedFolders.length} پوشه)`
+                    : 'اتصال به کامپیوتر'}
                 </span>
                 <span className="sm:hidden">
                   {isSyncingLocal ? 'در حال بروزرسانی...' : 'بروزرسانی'}
                 </span>
               </button>
 
-              {linkedLocalFolder && onUnlinkLocalFolder && (
+              {onAddLocalFolder && (
                 <button
                   type="button"
-                  onClick={onUnlinkLocalFolder}
+                  onClick={onAddLocalFolder}
+                  className="p-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer"
+                  title="افزودن یک پوشه دیگر از کامپیوتر (Multi-Folder Sync)"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {linkedFolders.length > 0 && onUnlinkLocalFolder && (
+                <button
+                  type="button"
+                  onClick={() => onUnlinkLocalFolder()}
                   className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                  title={`قطع اتصال پوشه لوکال (${linkedLocalFolder})`}
+                  title="قطع اتصال تمام پوشه‌های محلی کامپیوتر"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -634,34 +655,34 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                 <div
                   onClick={() => onSyncLocalDisk(false)}
                   className={`group p-4 rounded-2xl bg-[var(--bg-secondary)] border transition-all cursor-pointer flex flex-col justify-between h-32 ${
-                    linkedLocalFolder
+                    linkedFolders.length > 0
                       ? 'border-emerald-500/60 hover:border-emerald-400 hover:shadow-md'
                       : 'border-[var(--border-color)] hover:border-[#0061FF] hover:shadow-md'
                   }`}
                   title={
-                    linkedLocalFolder
-                      ? `بروزرسانی تغییرات فایل‌ها از پوشه «${linkedLocalFolder}» کامپیوتر شما بدون نیاز به آپلود مجدد`
+                    linkedFolders.length > 0
+                      ? `بروزرسانی همزمان ${linkedFolders.length} پوشه متصل: ${linkedFolders.map((f) => f.name).join('، ')}`
                       : 'اتصال به پوشه لوکال کامپیوتر برای همگام‌سازی و بروزرسانی خودکار با ۱ کلیک'
                   }
                 >
                   <div className="flex items-center justify-between">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${
-                      linkedLocalFolder ? 'bg-emerald-500/15 text-emerald-500' : 'bg-[#0061FF]/10 text-[#0061FF]'
+                      linkedFolders.length > 0 ? 'bg-emerald-500/15 text-emerald-500' : 'bg-[#0061FF]/10 text-[#0061FF]'
                     }`}>
                       <RefreshCw className={`w-5 h-5 ${isSyncingLocal ? 'animate-spin text-emerald-400' : ''}`} />
                     </div>
-                    {linkedLocalFolder && (
+                    {linkedFolders.length > 0 && (
                       <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-bold border border-emerald-500/20">
-                        متصل
+                        {linkedFolders.length} پوشه
                       </span>
                     )}
                   </div>
                   <div>
                     <span className="font-bold text-xs text-[var(--text-primary)] block transition-colors">
-                      {linkedLocalFolder ? 'بروزرسانی از کامپیوتر' : 'اتصال به کامپیوتر'}
+                      {linkedFolders.length > 0 ? 'بروزرسانی از کامپیوتر' : 'اتصال به کامپیوتر'}
                     </span>
                     <span className="text-[10px] text-[var(--text-muted)] truncate block">
-                      {linkedLocalFolder ? `پوشه: ${linkedLocalFolder}` : 'همگام‌سازی با ۱ کلیک'}
+                      {linkedFolders.length > 0 ? linkedFolders.map((f) => f.name).join(' · ') : 'همگام‌سازی با ۱ کلیک'}
                     </span>
                   </div>
                 </div>
@@ -841,6 +862,16 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     >
                       <FolderTree className="w-4 h-4" />
                     </button>
+                    {onOpenTopology && (
+                      <button
+                        type="button"
+                        onClick={onOpenTopology}
+                        className="p-1.5 rounded-lg transition-colors cursor-pointer text-[#60a5fa] hover:text-[#0061FF] hover:bg-[var(--bg-secondary)]"
+                        title="نمایش گراف عصبی اسناد (Neural Topology)"
+                      >
+                        <Compass className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={fetchCloud}
@@ -892,6 +923,47 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     </button>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Linked Local Folders Manager Bar (Multi-Folder Sync) */}
+            {linkedFolders.length > 0 && activeFilter !== 'permissions' && activeFilter !== 'cloud' && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs select-none">
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
+                  <RefreshCw className="w-3 h-3 text-emerald-500" />
+                  <span>پوشه‌های متصل کامپیوتر ({linkedFolders.length}):</span>
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {linkedFolders.map((f) => (
+                    <span
+                      key={f.id}
+                      className="px-2.5 py-0.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-medium text-[11px] flex items-center gap-1.5 shrink-0"
+                    >
+                      <span>📁 {f.name}</span>
+                      {onUnlinkLocalFolder && (
+                        <button
+                          type="button"
+                          onClick={() => onUnlinkLocalFolder(f.name)}
+                          className="hover:text-rose-400 text-neutral-400 transition-colors cursor-pointer"
+                          title={`قطع اتصال پوشه «${f.name}»`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                  {onAddLocalFolder && (
+                    <button
+                      type="button"
+                      onClick={onAddLocalFolder}
+                      className="px-2.5 py-0.5 rounded-xl border border-dashed border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                      title="اتصال یک پوشه مستقل دیگر از کامپیوتر"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>افزودن پوشه دیگر</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 

@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 3005;
 const JWT_SECRET = process.env.JWT_SECRET as string;
 if (!JWT_SECRET) {
   console.error("FATAL: JWT_SECRET is not set in environment variables.");
@@ -1735,6 +1735,31 @@ app.get('/api/access-requests/outgoing', async (req: Request, res: Response) => 
     console.error('Error fetching outgoing requests:', error);
     res.status(500).json({ error: 'خطا در دریافت وضعیت درخواست‌ها' });
   }
+});
+
+// =============================================================
+// NATIVE MODEL CONTEXT PROTOCOL (MCP) ENDPOINTS (/mcp & /api/mcp)
+// =============================================================
+app.post(['/mcp', '/api/mcp'], async (req: Request, res: Response) => {
+  try {
+    const { handleMcpJsonRpc } = await import('./src/server/mcpBridge.js');
+    await handleMcpJsonRpc(pool, req, res);
+  } catch (e: any) {
+    // Fallback to TS import in development tsx
+    const { handleMcpJsonRpc } = await import('./src/server/mcpBridge');
+    await handleMcpJsonRpc(pool, req, res);
+  }
+});
+
+app.get(['/mcp', '/api/mcp/info'], (req: Request, res: Response) => {
+  res.json({
+    status: 'online',
+    protocol: 'model-context-protocol',
+    version: '2024-11-05',
+    endpoint: '/api/mcp',
+    description: 'Markdown Studio Native MCP Cognitive Server',
+    instructions: 'Connect Claude Desktop, Cursor or any MCP client to this endpoint using JSON-RPC 2.0',
+  });
 });
 
 // -------------------------------------------------------------

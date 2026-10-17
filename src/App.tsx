@@ -18,6 +18,7 @@ import {
   calculateStats,
   detectDirection,
   toggleTaskInMarkdown,
+  slugify,
 } from './utils/markdownParser';
 import { Navbar } from './components/Navbar';
 import { Toolbar } from './components/Toolbar';
@@ -45,17 +46,21 @@ import { DocumentComments } from './components/DocumentComments';
 import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
 import { QuickSwitcherModal } from './components/QuickSwitcherModal';
+import { NeuralTopologyModal } from './components/NeuralTopologyModal';
 import { authApi } from './services/authApi';
 import { UserProfile } from './types';
 import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare, LayoutDashboard, ArrowRight } from 'lucide-react';
 import { deduplicateDocs, normalizeDocKey } from './utils/docTree';
 import {
-  getStoredDirectoryHandle,
-  storeDirectoryHandle,
-  clearStoredDirectoryHandle,
+  getAllStoredDirectoryHandles,
+  addStoredDirectoryHandle,
+  removeStoredDirectoryHandle,
+  clearAllStoredDirectoryHandles,
   verifyDirectoryPermission,
-  scanDirectoryHandle,
+  scanAllLinkedDirectories,
+  writeDocToAppropriateFolder,
   isFileSystemAccessSupported,
+  LinkedFolderRecord,
 } from './utils/localSync';
 
 const STORAGE_KEY_DOCS = 'markdown_studio_docs_v2';
@@ -124,6 +129,7 @@ export default function App() {
   const [isCheatsheetOpen, setIsCheatsheetOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState(false);
+  const [isTopologyOpen, setIsTopologyOpen] = useState(false);
   const [isBookletModalOpen, setIsBookletModalOpen] = useState(false);
   const [bookletConfig, setBookletConfig] = useState<BookletConfig | null>(null);
   const [isCommunityOpen, setIsCommunityOpen] = useState(false);
@@ -144,7 +150,7 @@ export default function App() {
   const [cloudNotice, setCloudNotice] = useState<string | null>(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('synced');
   const [localSaveStatus, setLocalSaveStatus] = useState<CloudSyncStatus>('synced');
-  const [linkedLocalFolder, setLinkedLocalFolder] = useState<string | null>(null);
+  const [linkedFolders, setLinkedFolders] = useState<LinkedFolderRecord[]>([]);
   const [isSyncingLocal, setIsSyncingLocal] = useState<boolean>(false);
   const localSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isFirstRenderRef = useRef<boolean>(true);
@@ -503,12 +509,22 @@ export default function App() {
     if (localSaveTimerRef.current) {
       clearTimeout(localSaveTimerRef.current);
     }
-    localSaveTimerRef.current = setTimeout(() => {
+    localSaveTimerRef.current = setTimeout(async () => {
       setLocalSaveStatus('saving');
+
+      // Write directly to local physical disk file (bidirectional Obsidian-like sync across multiple linked folders)
+      try {
+        if (linkedFolders.length > 0 && activeDoc) {
+          await writeDocToAppropriateFolder(linkedFolders, activeDoc);
+        }
+      } catch (err) {
+        console.warn('Auto-save to local disk error:', err);
+      }
+
       setTimeout(() => {
         setLocalSaveStatus('synced');
-      }, 500);
-    }, 600);
+      }, 400);
+    }, 700);
 
     return () => {
       if (localSaveTimerRef.current) {
@@ -642,11 +658,11 @@ export default function App() {
     setTimeout(() => setCloudNotice(null), 4000);
   };
 
-  // Re-parse markdown to HTML whenever active document content changes
+  // Re-parse markdown to HTML whenever active document content or documents list changes
   useEffect(() => {
     let isCancelled = false;
     if (activeDoc) {
-      parseMarkdownToHtml(activeDoc.content).then((html) => {
+      parseMarkdownToHtml(activeDoc.content, documents).then((html) => {
         if (!isCancelled) {
           setRenderedHtml(html);
         }
@@ -655,7 +671,7 @@ export default function App() {
     return () => {
       isCancelled = true;
     };
-  }, [activeDoc?.content]);
+  }, [activeDoc?.content, documents]);
 
   // Compute stats and headings
   const stats: DocStats = useMemo(() => {
@@ -914,19 +930,17 @@ export default function App() {
     );
   }, []);
 
-  // Check stored local directory handle on mount
+  // Load all stored local directory handles on mount
   useEffect(() => {
     if (isFileSystemAccessSupported()) {
-      getStoredDirectoryHandle().then((handle) => {
-        if (handle) {
-          setLinkedLocalFolder(handle.name);
-        }
+      getAllStoredDirectoryHandles().then((records) => {
+        setLinkedFolders(records);
       });
     }
   }, []);
 
-  // 1-Click Sync from Local Computer Disk
-  const handleSyncFromLocalDisk = useCallback(async (forcePickNew = false) => {
+  // Multi-Folder 1-Click Sync
+  const handleSyncFromLocalDisk = useCallback(async (forceAddNew = false) => {
     if (!isFileSystemAccessSupported()) {
       alert('مرورگر شما از دسترسی مستقیم به فایل‌های سیستمی پشتیبانی نمی‌کند. لطفاً از دکمه آپلود پوشه استفاده فرمایید.');
       return;
@@ -934,34 +948,43 @@ export default function App() {
 
     setIsSyncingLocal(true);
     try {
-      let handle = forcePickNew ? null : await getStoredDirectoryHandle();
+      let foldersToSync = [...linkedFolders];
 
-      if (!handle) {
+      // If user requested to add another folder OR no folders are linked yet
+      if (forceAddNew || foldersToSync.length === 0) {
         // @ts-ignore
-        handle = await window.showDirectoryPicker({
-          id: 'markdown_studio_notes_dir',
-          mode: 'read',
-        });
-        if (handle) {
-          await storeDirectoryHandle(handle);
-          setLinkedLocalFolder(handle.name);
+        let newHandle: FileSystemDirectoryHandle | null = null;
+        try {
+          // @ts-ignore
+          newHandle = await window.showDirectoryPicker({
+            id: 'md_sync_dir',
+            mode: 'readwrite',
+          });
+        } catch (pickerErr: any) {
+          if (pickerErr.name === 'AbortError') throw pickerErr;
+          // Fallback if browser is strict about id
+          // @ts-ignore
+          newHandle = await window.showDirectoryPicker({
+            mode: 'readwrite',
+          });
+        }
+
+        if (newHandle) {
+          const updated = await addStoredDirectoryHandle(newHandle);
+          foldersToSync = updated;
+          setLinkedFolders(updated);
         }
       }
 
-      if (!handle) {
+      if (foldersToSync.length === 0) {
         setIsSyncingLocal(false);
         return;
       }
 
-      const hasPermission = await verifyDirectoryPermission(handle);
-      if (!hasPermission) {
-        setIsSyncingLocal(false);
-        return;
-      }
+      const { files, successCount, errorsCount } = await scanAllLinkedDirectories(foldersToSync);
 
-      const files = await scanDirectoryHandle(handle);
       if (files.length === 0) {
-        setCloudNotice(`پوشه «${handle.name}» متصل شد اما فایل مارک‌دان یا متنی در آن یافت نشد.`);
+        setCloudNotice(`پوشه‌های متصل بررسی شدند اما فایل مارک‌دانی در آن‌ها یافت نشد.`);
         setTimeout(() => setCloudNotice(null), 4000);
         setIsSyncingLocal(false);
         return;
@@ -1014,24 +1037,30 @@ export default function App() {
       });
 
       setCloudNotice(
-        `✅ همگام‌سازی از کامپیوتر انجام شد: ${files.length} سند بررسی شد (${updatedCount} به‌روزرسانی محتوا، ${newCount} سند جدید)`
+        `✅ همگام‌سازی ${successCount} پوشه انجام شد (${files.length} سند بررسی شد: ${updatedCount} به‌روزرسانی، ${newCount} جدید)`
       );
       setTimeout(() => setCloudNotice(null), 4500);
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         console.error('Local disk sync failed:', err);
-        setCloudNotice('خطا در همگام‌سازی پوشه محلی کامپیوتر.');
+        setCloudNotice('خطا در همگام‌سازی پوشه‌های محلی کامپیوتر.');
         setTimeout(() => setCloudNotice(null), 3500);
       }
     } finally {
       setIsSyncingLocal(false);
     }
-  }, []);
+  }, [linkedFolders]);
 
-  const handleUnlinkLocalFolder = useCallback(async () => {
-    await clearStoredDirectoryHandle();
-    setLinkedLocalFolder(null);
-    setCloudNotice('اتصال به پوشه کامپیوتر لغو گردید.');
+  const handleUnlinkLocalFolder = useCallback(async (folderName?: string) => {
+    if (folderName) {
+      const updated = await removeStoredDirectoryHandle(folderName);
+      setLinkedFolders(updated);
+      setCloudNotice(`اتصال به پوشه «${folderName}» لغو گردید.`);
+    } else {
+      await clearAllStoredDirectoryHandles();
+      setLinkedFolders([]);
+      setCloudNotice('اتصال به تمام پوشه‌های کامپیوتر لغو گردید.');
+    }
     setTimeout(() => setCloudNotice(null), 3000);
   }, []);
 
@@ -1348,8 +1377,9 @@ export default function App() {
         folderPath={activeDoc?.folderPath}
         onUpdateFolder={(newFolder) => activeDoc && handleUpdateDocFolder(activeDoc.id, newFolder)}
         onSyncLocalDisk={handleSyncFromLocalDisk}
-        linkedLocalFolder={linkedLocalFolder}
+        linkedLocalFolder={linkedFolders.length > 0 ? (linkedFolders.length === 1 ? linkedFolders[0].name : `${linkedFolders.length} پوشه`) : null}
         isSyncingLocal={isSyncingLocal}
+        onOpenTopology={() => setIsTopologyOpen(true)}
       />
 
       {/* Formatting Toolbar (shown only in split and editor modes) */}
@@ -1393,7 +1423,7 @@ export default function App() {
             onBackToWorkspace={() => setViewMode('workspace')}
             onUpdateDocFolder={handleUpdateDocFolder}
             onSyncLocalDisk={handleSyncFromLocalDisk}
-            linkedLocalFolder={linkedLocalFolder}
+            linkedLocalFolder={linkedFolders.length > 0 ? (linkedFolders.length === 1 ? linkedFolders[0].name : `${linkedFolders.length} پوشه`) : null}
             isSyncingLocal={isSyncingLocal}
           />
         )}
@@ -1452,9 +1482,12 @@ export default function App() {
             onOpenQuickSwitcher={() => setIsQuickSwitcherOpen(true)}
             onRenameFolder={handleRenameFolder}
             onSyncLocalDisk={handleSyncFromLocalDisk}
-            linkedLocalFolder={linkedLocalFolder}
+            linkedLocalFolder={linkedFolders.length > 0 ? linkedFolders.map(f => f.name).join('، ') : null}
+            linkedFolders={linkedFolders}
+            onAddLocalFolder={() => handleSyncFromLocalDisk(true)}
             isSyncingLocal={isSyncingLocal}
             onUnlinkLocalFolder={handleUnlinkLocalFolder}
+            onOpenTopology={() => setIsTopologyOpen(true)}
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">
@@ -1550,6 +1583,25 @@ export default function App() {
                 onToggleComments={handleOpenCommentsClick}
                 commentsCount={activeDocCommentsCount}
                 onBackToWorkspace={() => setViewMode('workspace')}
+                onNavigateToDoc={(target, heading) => {
+                  const found = documents.find(
+                    (d) =>
+                      d.id === target ||
+                      d.title.trim().toLowerCase() === target.trim().toLowerCase()
+                  );
+                  if (found) {
+                    setActiveDocId(found.id);
+                    if (heading) {
+                      setTimeout(() => {
+                        const anchor = document.getElementById(slugify(heading));
+                        if (anchor) anchor.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    }
+                  } else {
+                    setCloudNotice(`سند با عنوان «${target}» یافت نشد.`);
+                    setTimeout(() => setCloudNotice(null), 3000);
+                  }
+                }}
               />
             </div>
           )}
@@ -1739,6 +1791,18 @@ export default function App() {
         onSelectDoc={(docId, mode = 'split') => {
           setActiveDocId(docId);
           setViewMode(mode);
+        }}
+      />
+
+      {/* Neural Topology Interactive Graph Modal */}
+      <NeuralTopologyModal
+        isOpen={isTopologyOpen}
+        onClose={() => setIsTopologyOpen(false)}
+        documents={documents}
+        activeDocId={activeDocId}
+        onSelectDoc={(docId) => {
+          setActiveDocId(docId);
+          setViewMode('preview');
         }}
       />
 

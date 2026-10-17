@@ -29,6 +29,7 @@ import {
   Link as LinkIcon,
   MessageSquare,
   RefreshCw,
+  Compass,
 } from 'lucide-react';
 import { ViewMode, AppTheme, FontFamily, TextDirection, CloudSyncStatus, UserProfile } from '../types';
 
@@ -74,6 +75,7 @@ interface NavbarProps {
   onSyncLocalDisk?: (forcePickNew?: boolean) => void;
   linkedLocalFolder?: string | null;
   isSyncingLocal?: boolean;
+  onOpenTopology?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -118,6 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSyncLocalDisk,
   linkedLocalFolder,
   isSyncingLocal = false,
+  onOpenTopology,
 }: NavbarProps) => {
   const { language, setLanguage, t } = useLanguage();
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -316,6 +319,17 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <ListTree className="w-4 h-4" />
         </button>
+
+        {onOpenTopology && (
+          <button
+            type="button"
+            onClick={onOpenTopology}
+            className="p-2 rounded-lg hover:bg-[#f7f7f8] text-[#0061FF] transition-colors"
+            title="گراف عصبی و اتصالات اسناد (Neural Topology)"
+          >
+            <Compass className="w-4 h-4" />
+          </button>
+        )}
 
         <button
           type="button"

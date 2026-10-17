@@ -12,8 +12,10 @@ import 'prismjs/components/prism-sql';
 import 'prismjs/components/prism-markdown';
 import 'prismjs/components/prism-yaml';
 import katex from 'katex';
-import { DocStats, HeadingItem } from '../types';
+import { DocStats, HeadingItem, MarkdownDoc } from '../types';
 import { getRunnableLanguage } from './codeRunner';
+import { resolveTransclusions, renderSynapseLinks } from './synapseEngine';
+import { renderDataBlockHtml } from './dataBlocksEngine';
 
 // Helper to escape HTML characters
 export function escapeHtml(str: string): string {
@@ -172,7 +174,7 @@ function postprocessHtml(html: string, mathBlocks: string[], mathInlines: string
 }
 
 // Custom marked renderer for headings, code blocks, tables, links
-function createCustomRenderer() {
+function createCustomRenderer(allDocs: MarkdownDoc[] = []) {
   const renderer = new marked.Renderer();
 
   // Headings with anchor IDs
@@ -188,8 +190,12 @@ function createCustomRenderer() {
     `;
   };
 
-  // Code blocks with syntax highlighting and copy button
+  // Code blocks with syntax highlighting, live DataBlocks, and copy button
   renderer.code = function ({ text, lang }) {
+    if (lang === 'studio-query' || lang === 'datablock') {
+      return renderDataBlockHtml(text, allDocs);
+    }
+
     const validLang = lang && Prism.languages[lang] ? lang : null;
     let highlighted: string;
 
@@ -307,19 +313,25 @@ function createCustomRenderer() {
 }
 
 // Main parser function
-export async function parseMarkdownToHtml(markdown: string): Promise<string> {
+export async function parseMarkdownToHtml(markdown: string, allDocs: MarkdownDoc[] = []): Promise<string> {
   if (!markdown) return '';
 
-  const { processed, mathBlocks, mathInlines } = preprocessMarkdown(markdown);
+  // 0. Resolve live block/heading embeds (![[Doc#Heading]])
+  const withTransclusions = allDocs.length > 0 ? resolveTransclusions(markdown, allDocs) : markdown;
+
+  const { processed, mathBlocks, mathInlines } = preprocessMarkdown(withTransclusions);
 
   marked.setOptions({
     gfm: true,
     breaks: true,
-    renderer: createCustomRenderer(),
+    renderer: createCustomRenderer(allDocs),
   });
 
   const parsed = await marked.parse(processed);
-  return postprocessHtml(parsed, mathBlocks, mathInlines);
+  const postprocessed = postprocessHtml(parsed, mathBlocks, mathInlines);
+
+  // Convert [[Doc#Heading|Label]] to clickable links
+  return renderSynapseLinks(postprocessed);
 }
 
 // Extract headings for Table of Contents / Outline

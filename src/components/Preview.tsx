@@ -32,6 +32,7 @@ interface PreviewProps {
   onToggleComments?: () => void;
   commentsCount?: number;
   onBackToWorkspace?: () => void;
+  onNavigateToDoc?: (docTitle: string, heading?: string) => void;
 }
 
 const HIGHLIGHT_COLORS: { id: HighlightColor; name: string; bg: string; dot: string; hover: string }[] = [
@@ -55,6 +56,7 @@ export const Preview: React.FC<PreviewProps> = ({
   onToggleComments,
   commentsCount = 0,
   onBackToWorkspace,
+  onNavigateToDoc,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRef = scrollRef || containerRef;
@@ -236,10 +238,28 @@ export const Preview: React.FC<PreviewProps> = ({
     };
     runBtns.forEach((btn) => btn.addEventListener('click', handleRunClick));
 
+    // 2.7 Synapse Bi-directional Wiki Links & Transclusion source clicks
+    const synapseLinks = el.querySelectorAll<HTMLElement>('.synapse-wiki-link, [data-synapse-target]');
+    const handleSynapseClick = (e: MouseEvent) => {
+      e.preventDefault();
+      const target = (e.currentTarget || e.target) as HTMLElement;
+      const title = target.getAttribute('data-synapse-title');
+      const heading = target.getAttribute('data-synapse-heading') || undefined;
+      const docId = target.getAttribute('data-synapse-target');
+
+      if (title && onNavigateToDoc) {
+        onNavigateToDoc(title, heading);
+      } else if (docId && onNavigateToDoc) {
+        onNavigateToDoc(docId, heading);
+      }
+    };
+    synapseLinks.forEach((link) => link.addEventListener('click', handleSynapseClick));
+
     return () => {
       checkboxes.forEach((cb) => cb.removeEventListener('change', handleCheckboxClick));
       copyBtns.forEach((btn) => btn.removeEventListener('click', handleCopyClick));
       runBtns.forEach((btn) => btn.removeEventListener('click', handleRunClick));
+      synapseLinks.forEach((link) => link.removeEventListener('click', handleSynapseClick));
     };
   }, [html, onToggleTask, activeRef]);
 
