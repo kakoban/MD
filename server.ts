@@ -137,6 +137,7 @@ async function initDatabase() {
 
         ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS user_id VARCHAR(100);
         ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS folder_path VARCHAR(255) DEFAULT '';
+        ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
 
         CREATE INDEX IF NOT EXISTS idx_shared_files_created ON shared_markdown_files(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_shared_files_public ON shared_markdown_files(is_public);
@@ -1445,6 +1446,7 @@ app.post('/api/brain/sync', async (req: Request, res: Response) => {
              content = EXCLUDED.content,
              folder_path = EXCLUDED.folder_path,
              tags = EXCLUDED.tags,
+             version = COALESCE(shared_markdown_files.version, 1) + 1,
              updated_at = NOW()`,
         [id, cleanTitle, content, `سند ثبت‌شده در مغز هوش مصنوعی`, authorName, userId, cleanTags, folderPath]
       );
