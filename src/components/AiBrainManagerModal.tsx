@@ -307,23 +307,23 @@ export const AiBrainManagerModal: React.FC<AiBrainManagerModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-[var(--border-color)] bg-[var(--bg-tertiary)]/40 flex items-center justify-between gap-3 shrink-0 flex-wrap">
+        <div className="p-3 sm:p-4 border-t border-[var(--border-color)] bg-[var(--bg-tertiary)]/40 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0">
           <button
             type="button"
             onClick={handlePurge}
             disabled={isPurging}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-500 hover:text-white hover:bg-rose-500 transition-colors border border-rose-500/30 cursor-pointer disabled:opacity-50"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-500 hover:text-white hover:bg-rose-500 transition-colors border border-rose-500/30 cursor-pointer disabled:opacity-50"
             title="تخلیه کامل اسناد مغز هوش مصنوعی از سرور ابری"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>{isPurging ? 'در حال تخلیه...' : 'تخلیه کامل مغز هوش مصنوعی'}</span>
           </button>
 
-          <div className="flex items-center gap-2 ms-auto">
+          <div className="flex items-center gap-2 justify-end sm:ms-auto">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition-colors cursor-pointer"
+              className="flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition-colors cursor-pointer text-center"
             >
               بستن
             </button>
@@ -332,10 +332,10 @@ export const AiBrainManagerModal: React.FC<AiBrainManagerModalProps> = ({
               type="button"
               onClick={handleSyncNow}
               disabled={isSyncing}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer disabled:opacity-50"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 sm:px-5 py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'در حال ارسال به سرور...' : `همگام‌سازی با مغز AI (${totalBrainDocsCount})`}</span>
+              <span>{isSyncing ? 'در حال ارسال...' : `همگام‌سازی (${totalBrainDocsCount})`}</span>
             </button>
           </div>
         </div>

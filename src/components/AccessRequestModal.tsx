@@ -69,7 +69,7 @@ export const AccessRequestModal: React.FC<AccessRequestModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl shadow-2xl overflow-hidden flex flex-col text-[var(--text-primary)]"
+        className="relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-3xl shadow-2xl flex flex-col text-[var(--text-primary)]"
         onClick={(e) => e.stopPropagation()}
         dir="rtl"
       >

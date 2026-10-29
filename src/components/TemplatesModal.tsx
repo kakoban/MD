@@ -121,10 +121,10 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
           </div>
         </div>
 
-        {/* Body: Split View (List of templates + Preview pane) */}
-        <div className="flex-1 flex overflow-hidden">
+        {/* Body: Responsive View (Full list on mobile, Split View on desktop) */}
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           {/* List */}
-          <div className="w-1/2 border-e border-[var(--border-color)] overflow-y-auto p-4 space-y-2.5">
+          <div className="w-full md:w-1/2 border-e border-[var(--border-color)] overflow-y-auto p-4 space-y-2.5">
             {filteredTemplates.map((template) => {
               const isSelected = selectedTemplate.id === template.id;
               return (
@@ -162,23 +162,36 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
                     {template.description}
                   </p>
 
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {template.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="px-1.5 py-0.2 rounded text-[10px] bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
-                      >
-                        #{t}
-                      </span>
-                    ))}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 mt-1">
+                    <div className="flex flex-wrap gap-1">
+                      {template.tags.map((t) => (
+                        <span
+                          key={t}
+                          className="px-1.5 py-0.2 rounded text-[10px] bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
+                        >
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectTemplate(template);
+                        onClose();
+                      }}
+                      className="md:hidden px-3 py-1 rounded-xl bg-amber-500 text-neutral-950 font-bold text-xs shadow-xs"
+                    >
+                      استفاده از الگو
+                    </button>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Preview Pane */}
-          <div className="w-1/2 flex flex-col bg-[var(--bg-primary)]/50 overflow-hidden">
+          {/* Preview Pane (Desktop) */}
+          <div className="hidden md:flex md:w-1/2 flex-col bg-[var(--bg-primary)]/50 overflow-hidden">
             <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between shrink-0 bg-[var(--bg-primary)]">
               <div>
                 <h3 className="font-bold text-xs text-[var(--text-primary)]">

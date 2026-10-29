@@ -99,9 +99,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   ];
 
   return (
-    <div className="toolbar-container flex flex-wrap items-center gap-1 px-3 py-1.5 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] backdrop-blur-sm select-none z-20 text-[var(--text-secondary)] text-xs">
+    <div className="toolbar-container flex items-center gap-1 px-2 sm:px-3 py-1.5 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] backdrop-blur-sm select-none z-20 text-[var(--text-secondary)] text-xs overflow-x-auto no-scrollbar flex-nowrap shrink-0">
       {/* Undo / Redo */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
         <button
           type="button"
           onClick={onUndo}
@@ -123,7 +123,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Headings Dropdown */}
-      <div className="relative pe-1 border-e border-[var(--border-color)]" ref={headingRef}>
+      <div className="relative pe-1 border-e border-[var(--border-color)] shrink-0" ref={headingRef}>
         <button
           type="button"
           onClick={() => setShowHeadingMenu(!showHeadingMenu)}
@@ -184,7 +184,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Basic Text Formatting */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
         <button
           type="button"
           onClick={() => onInsertMarkdown('**', '**', 'متن پررنگ')}
@@ -212,7 +212,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* HIGHLIGHT TOOL (Key User Feature) */}
-      <div className="relative pe-1.5 border-e border-[var(--border-color)]" ref={highlightRef}>
+      <div className="relative pe-1.5 border-e border-[var(--border-color)] shrink-0" ref={highlightRef}>
         <div className="flex items-center bg-amber-500/15 rounded-md border border-amber-500/30 overflow-hidden">
           <button
             type="button"
@@ -258,7 +258,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Code Tools */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
         <button
           type="button"
           onClick={() => onInsertMarkdown('`', '`', 'کد درون‌خطی')}
@@ -278,7 +278,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Lists & Checklists */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
         <button
           type="button"
           onClick={() => onInsertMarkdown('- ', '', 'مورد لیست')}
@@ -306,7 +306,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Admonitions / Callouts */}
-      <div className="relative pe-1 border-e border-[var(--border-color)]" ref={calloutRef}>
+      <div className="relative pe-1 border-e border-[var(--border-color)] shrink-0" ref={calloutRef}>
         <button
           type="button"
           onClick={() => setShowCalloutMenu(!showCalloutMenu)}
@@ -338,7 +338,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Tables Dropdown */}
-      <div className="relative pe-1 border-e border-[var(--border-color)]" ref={tableRef}>
+      <div className="relative pe-1 border-e border-[var(--border-color)] shrink-0" ref={tableRef}>
         <button
           type="button"
           onClick={() => setShowTableMenu(!showTableMenu)}
@@ -390,7 +390,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Math, Quotes, Links, Images */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
         <button
           type="button"
           onClick={() => onInsertMarkdown('$', '$', 'E = mc^2')}
@@ -458,7 +458,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <button
         type="button"
         onClick={onOpenCheatsheet}
-        className="ms-auto flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)] transition-colors"
+        className="ms-auto shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)] transition-colors cursor-pointer"
         title="راهنمای نشانه‌گذاری مارک‌دان"
       >
         <HelpCircle className="w-3.5 h-3.5 text-amber-500" />

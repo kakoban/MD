@@ -50,7 +50,7 @@ export const SearchReplaceModal: React.FC<SearchReplaceModalProps> = ({
   };
 
   return (
-    <div className="absolute top-14 end-6 z-30 w-96 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl p-4 text-xs text-[var(--text-primary)]">
+    <div className="absolute top-14 end-2 sm:end-6 z-30 w-[calc(100vw-1rem)] sm:w-96 max-w-sm rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl p-3.5 sm:p-4 text-xs text-[var(--text-primary)] animate-in fade-in duration-150">
       <div className="flex items-center justify-between mb-3 border-b border-[var(--border-color)] pb-2">
         <div className="flex items-center gap-2 font-semibold text-[var(--text-primary)]">
           <Search className="w-4 h-4 text-amber-500" />

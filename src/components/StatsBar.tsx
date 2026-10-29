@@ -127,7 +127,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
 
   return (
     <footer
-      className={`status-bar select-none relative px-4 py-1.5 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] backdrop-blur-sm text-[11px] text-[var(--text-muted)] flex flex-wrap items-center justify-between gap-4 z-10 transition-all duration-300 ${
+      className={`status-bar select-none relative px-2.5 sm:px-4 py-1 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] backdrop-blur-sm text-[11px] text-[var(--text-muted)] flex items-center justify-between gap-2 sm:gap-4 z-10 transition-all duration-300 overflow-x-auto no-scrollbar whitespace-nowrap shrink-0 ${
         isSaving
           ? 'is-saving status-bar-saving'
           : isPending
@@ -360,20 +360,20 @@ export const StatsBar: React.FC<StatsBarProps> = ({
         )}
 
         {/* Character count */}
-        <div className="flex items-center gap-1.5" title="تعداد کاراکترها">
+        <div className="hidden sm:flex items-center gap-1.5 shrink-0" title="تعداد کاراکترها">
           <span className="text-neutral-600">·</span>
           <span>{stats.chars.toLocaleString('fa-IR')} کاراکتر</span>
         </div>
 
         {/* Line count */}
-        <div className="flex items-center gap-1.5" title="تعداد خطوط">
+        <div className="hidden md:flex items-center gap-1.5 shrink-0" title="تعداد خطوط">
           <span className="text-neutral-600">·</span>
           <AlignLeft className="w-3.5 h-3.5 text-neutral-500" />
           <span>{stats.lines.toLocaleString('fa-IR')} خط</span>
         </div>
 
         {/* Reading time */}
-        <div className="flex items-center gap-1.5" title="مدت زمان تقریبی مطالعه">
+        <div className="hidden sm:flex items-center gap-1.5 shrink-0" title="مدت زمان تقریبی مطالعه">
           <span className="text-neutral-600">·</span>
           <Clock className="w-3.5 h-3.5 text-neutral-500" />
           <span>حدود {stats.readingTimeMin.toLocaleString('fa-IR')} دقیقه خواندن</span>
@@ -381,7 +381,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
 
         {/* Selection Stats */}
         {selectionStats && selectionStats.chars > 0 && (
-          <div className="flex items-center gap-1.5 text-amber-400 font-medium bg-amber-500/10 px-2 py-0.5 rounded">
+          <div className="flex items-center gap-1.5 text-amber-400 font-medium bg-amber-500/10 px-2 py-0.5 rounded shrink-0">
             <span>
               انتخاب: {selectionStats.words} کلمه ({selectionStats.chars} کاراکتر)
             </span>
@@ -390,7 +390,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
       </div>
 
       {/* Right items: Auto-save status, Task progress & cursor position */}
-      <div className="flex items-center gap-3 md:gap-4">
+      <div className="flex items-center gap-2 sm:gap-3 md:gap-4 shrink-0">
         {/* Auto-save & Sync Status Indicator */}
         {syncStatus && (
           <div
@@ -441,7 +441,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
         )}
 
         {taskProgress !== null && (
-          <div className="flex items-center gap-2" title="وضعیت پیشرفت چک‌لیست">
+          <div className="hidden sm:flex items-center gap-2 shrink-0" title="وضعیت پیشرفت چک‌لیست">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
             <div className="flex items-center gap-1.5">
               <span>
@@ -459,14 +459,14 @@ export const StatsBar: React.FC<StatsBarProps> = ({
         )}
 
         {cursorPos && (
-          <div className="flex items-center gap-1 text-neutral-500 font-mono">
+          <div className="hidden md:flex items-center gap-1 text-neutral-500 font-mono shrink-0">
             <span>
               خط {cursorPos.line} : ستون {cursorPos.col}
             </span>
           </div>
         )}
 
-        <div className="flex items-center gap-1 text-neutral-500 uppercase font-mono">
+        <div className="hidden sm:flex items-center gap-1 text-neutral-500 uppercase font-mono shrink-0">
           <span>{direction}</span>
         </div>
       </div>

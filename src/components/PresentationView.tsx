@@ -333,7 +333,7 @@ export const PresentationView: React.FC<PresentationViewProps> = ({
       )}
 
       {/* TOP BAR: Title, Slide counter, Pro controls */}
-      <div className="no-print flex items-center justify-between px-6 py-3 bg-neutral-900/80 border-b border-neutral-800/80 backdrop-blur-md z-30">
+      <div className="no-print flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3 bg-neutral-900/80 border-b border-neutral-800/80 backdrop-blur-md z-30 gap-2 overflow-x-auto no-scrollbar shrink-0">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -553,16 +553,16 @@ export const PresentationView: React.FC<PresentationViewProps> = ({
       </div>
 
       {/* MAIN SLIDE VIEW CONTAINER */}
-      <div className="flex-1 relative flex items-center justify-center p-4 sm:p-6 md:p-12 overflow-hidden">
+      <div className="flex-1 relative flex items-center justify-center p-2 sm:p-6 md:p-12 overflow-hidden">
         {/* Previous Slide Navigation Overlay Button */}
         <button
           type="button"
           onClick={prevSlide}
           disabled={currentSlide === 0}
-          className="absolute start-4 top-1/2 -translate-y-1/2 z-20 p-3 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900/90 text-neutral-400 hover:text-white disabled:opacity-20 disabled:hover:bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-xs transition-all shadow-xl hover:scale-105"
+          className="absolute start-2 sm:start-4 top-1/2 -translate-y-1/2 z-20 p-2 sm:p-3 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900/90 text-neutral-400 hover:text-white disabled:opacity-20 disabled:hover:bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-xs transition-all shadow-xl hover:scale-105 cursor-pointer"
           title="اسلاید قبلی"
         >
-          {direction === 'rtl' ? <ChevronRight className="w-6 h-6" /> : <ChevronLeft className="w-6 h-6" />}
+          {direction === 'rtl' ? <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" /> : <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />}
         </button>
 
         {/* Next Slide Navigation Overlay Button */}
@@ -570,17 +570,17 @@ export const PresentationView: React.FC<PresentationViewProps> = ({
           type="button"
           onClick={nextSlide}
           disabled={currentSlide === totalSlides - 1}
-          className="absolute end-4 top-1/2 -translate-y-1/2 z-20 p-3 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900/90 text-neutral-400 hover:text-white disabled:opacity-20 disabled:hover:bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-xs transition-all shadow-xl hover:scale-105"
+          className="absolute end-2 sm:end-4 top-1/2 -translate-y-1/2 z-20 p-2 sm:p-3 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900/90 text-neutral-400 hover:text-white disabled:opacity-20 disabled:hover:bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-xs transition-all shadow-xl hover:scale-105 cursor-pointer"
           title="اسلاید بعدی (Space)"
         >
-          {direction === 'rtl' ? <ChevronLeft className="w-6 h-6" /> : <ChevronRight className="w-6 h-6" />}
+          {direction === 'rtl' ? <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" /> : <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />}
         </button>
 
         {/* Slide Canvas / Card with Crystal Clear High Contrast */}
         <div
           key={currentSlide}
           ref={slideCardRef}
-          className={`w-full max-w-5xl min-h-[500px] max-h-[86vh] overflow-y-auto rounded-3xl border shadow-2xl p-6 sm:p-10 md:p-14 flex flex-col justify-start animate-in fade-in zoom-in-95 duration-200 presentation-slide-card ${
+          className={`w-full max-w-5xl min-h-[280px] sm:min-h-[500px] max-h-[86vh] overflow-y-auto rounded-3xl border shadow-2xl p-4 sm:p-10 md:p-14 flex flex-col justify-start animate-in fade-in zoom-in-95 duration-200 presentation-slide-card ${
             slideTheme === 'light'
               ? 'slide-card-light bg-white text-slate-900 border-slate-200'
               : 'slide-card-dark bg-zinc-900 text-slate-100 border-zinc-700'

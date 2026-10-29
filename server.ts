@@ -1126,7 +1126,8 @@ app.get('/api/files', async (req: Request, res: Response) => {
       FROM shared_markdown_files f
       LEFT JOIN users u ON f.user_id = u.id
       LEFT JOIN document_access_requests ar ON ar.file_id = f.id AND ar.requester_id = $1
-      WHERE 1=1
+      WHERE (f.is_public = true OR (f.user_id IS NOT NULL AND f.user_id = $1))
+        AND NOT ('ai-brain' = ANY(f.tags) AND (f.user_id IS NULL OR f.user_id != $1))
     `;
     const params: any[] = [authUser ? authUser.id : null];
     let paramIndex = 2;
@@ -1418,14 +1419,18 @@ app.post('/api/files/:id/star', async (req: Request, res: Response) => {
 // =============================================================
 app.post('/api/brain/sync', async (req: Request, res: Response) => {
   try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'برای ذخیره و همگام‌سازی اسناد در مغز هوش مصنوعی باید ابتدا وارد حساب کاربری شوید.' });
+    }
+
     const { documents } = req.body;
     if (!Array.isArray(documents) || documents.length === 0) {
       return res.status(400).json({ error: 'لیست اسناد جهت همگام‌سازی الزامی است.' });
     }
 
-    const authUser = getAuthUser(req);
-    const userId = authUser ? authUser.id : null;
-    const authorName = authUser ? (authUser.displayName || authUser.username) : 'کاربر استودیو';
+    const userId = authUser.id;
+    const authorName = authUser.displayName || authUser.username || 'کاربر استودیو';
 
     let syncedCount = 0;
     for (const doc of documents) {
@@ -1436,7 +1441,7 @@ app.post('/api/brain/sync', async (req: Request, res: Response) => {
       const cleanTags = Array.from(new Set([...(doc.tags || []), 'ai-brain']));
       const id = doc.id && !doc.id.startsWith('imported-') && !doc.id.startsWith('doc-') && !doc.id.startsWith('local-')
         ? doc.id
-        : `brain-${generateFileId(cleanTitle)}`;
+        : `brain-${userId.slice(0, 8)}-${generateFileId(cleanTitle)}`;
 
       await pool.query(
         `INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, is_public, folder_path, created_at, updated_at)
@@ -1456,7 +1461,7 @@ app.post('/api/brain/sync', async (req: Request, res: Response) => {
     res.json({
       success: true,
       count: syncedCount,
-      message: `${syncedCount} سند با موفقیت در مغز هوش مصنوعی ذخیره و با سرور همگام شد.`,
+      message: `${syncedCount} سند با موفقیت در مغز اختصاصی شما ذخیره و با سرور همگام شد.`,
     });
   } catch (error: any) {
     console.error('Brain sync error:', error);
@@ -1466,12 +1471,18 @@ app.post('/api/brain/sync', async (req: Request, res: Response) => {
 
 app.get('/api/brain/documents', async (req: Request, res: Response) => {
   try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'مغز هوش مصنوعی یک فضای اختصاصی است و برای مشاهده آن باید وارد حساب کاربری خود شوید.' });
+    }
+
     const result = await pool.query(
       `SELECT id, title, content, description, folder_path, tags, updated_at, created_at
        FROM shared_markdown_files
-       WHERE 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%'
+       WHERE user_id = $1 AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')
        ORDER BY updated_at DESC
-       LIMIT 100`
+       LIMIT 100`,
+      [authUser.id]
     );
     res.json({ success: true, files: result.rows });
   } catch (error: any) {
@@ -1482,19 +1493,16 @@ app.get('/api/brain/documents', async (req: Request, res: Response) => {
 app.delete('/api/brain/purge', async (req: Request, res: Response) => {
   try {
     const authUser = getAuthUser(req);
-    if (authUser) {
-      await pool.query(
-        `DELETE FROM shared_markdown_files
-         WHERE user_id = $1 AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')`,
-        [authUser.id]
-      );
-    } else {
-      await pool.query(
-        `DELETE FROM shared_markdown_files
-         WHERE 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%'`
-      );
+    if (!authUser) {
+      return res.status(401).json({ error: 'برای تخلیه مغز هوش مصنوعی باید وارد حساب شوید.' });
     }
-    res.json({ success: true, message: 'مخزن مغز هوش مصنوعی با موفقیت تخلیه شد.' });
+
+    await pool.query(
+      `DELETE FROM shared_markdown_files
+       WHERE user_id = $1 AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')`,
+      [authUser.id]
+    );
+    res.json({ success: true, message: 'مخزن مغز هوش مصنوعی اختصاصی شما با موفقیت تخلیه شد.' });
   } catch (err: any) {
     console.error('Brain purge error:', err);
     res.status(500).json({ error: 'خطا در تخلیه مغز هوش مصنوعی' });

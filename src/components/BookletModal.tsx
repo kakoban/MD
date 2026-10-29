@@ -50,8 +50,8 @@ export const BookletModal: React.FC<BookletModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 select-none">
-      <div className="w-full max-w-lg rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl p-6 space-y-5 text-[var(--text-primary)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 select-none">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl p-4 sm:p-6 space-y-4 sm:space-y-5 text-[var(--text-primary)]">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3">
           <div className="flex items-center gap-2.5">
@@ -172,22 +172,22 @@ export const BookletModal: React.FC<BookletModalProps> = ({
         </div>
 
         {/* Footer buttons */}
-        <div className="flex items-center justify-between pt-2 border-t border-[var(--border-color)]">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[var(--border-color)]">
           <span className="text-[11px] text-[var(--text-muted)]">
             برای ذخیره به عنوان فایل PDF، در پنجره باز شده گزینه "Save as PDF" را انتخاب نمایید.
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-xs text-[var(--text-secondary)] transition-colors"
+              className="px-3 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-xs text-[var(--text-secondary)] transition-colors cursor-pointer"
             >
               انصراف
             </button>
             <button
               type="button"
               onClick={handlePrint}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs shadow-md transition-all"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs shadow-md transition-all cursor-pointer"
             >
               <Printer className="w-4 h-4" />
               <span>پیش‌نمایش چاپ و ایجاد PDF</span>

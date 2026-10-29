@@ -129,11 +129,11 @@ export const AccessRequestsManagerModal: React.FC<AccessRequestsManagerModalProp
         </div>
 
         {/* Filter Tabs */}
-        <div className="flex items-center gap-1 px-6 py-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)]/40 text-xs">
+        <div className="flex items-center gap-1 px-4 sm:px-6 py-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)]/40 text-xs overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setFilter('pending')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap shrink-0 ${
               filter === 'pending'
                 ? 'bg-amber-500 text-neutral-950 font-bold shadow-xs'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
@@ -144,7 +144,7 @@ export const AccessRequestsManagerModal: React.FC<AccessRequestsManagerModalProp
           <button
             type="button"
             onClick={() => setFilter('approved')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap shrink-0 ${
               filter === 'approved'
                 ? 'bg-emerald-500 text-neutral-950 font-bold shadow-xs'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
@@ -155,7 +155,7 @@ export const AccessRequestsManagerModal: React.FC<AccessRequestsManagerModalProp
           <button
             type="button"
             onClick={() => setFilter('rejected')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap shrink-0 ${
               filter === 'rejected'
                 ? 'bg-rose-500 text-white font-bold shadow-xs'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
@@ -166,7 +166,7 @@ export const AccessRequestsManagerModal: React.FC<AccessRequestsManagerModalProp
           <button
             type="button"
             onClick={() => setFilter('all')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap shrink-0 ${
               filter === 'all'
                 ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-bold'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
@@ -258,16 +258,16 @@ export const AccessRequestsManagerModal: React.FC<AccessRequestsManagerModalProp
                   </div>
 
                   {/* Requester Info */}
-                  <div className="p-2.5 rounded-xl bg-[var(--bg-tertiary)]/70 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-500 font-bold flex items-center justify-center text-xs">
+                  <div className="p-2.5 rounded-xl bg-[var(--bg-tertiary)]/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-500 font-bold flex items-center justify-center text-xs shrink-0">
                         {req.requester_name ? req.requester_name.slice(0, 1).toUpperCase() : 'U'}
                       </div>
-                      <div>
-                        <div className="font-semibold text-xs text-[var(--text-primary)]">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-xs text-[var(--text-primary)] truncate">
                           {req.requester_name || 'کاربر متقاضی'}
                         </div>
-                        <div className="text-[10px] text-[var(--text-muted)] font-mono" dir="ltr">
+                        <div className="text-[10px] text-[var(--text-muted)] font-mono truncate" dir="ltr">
                           @{req.requester_username || 'user'}
                           {req.requester_email && !req.requester_email.endsWith('@local.user') && (
                             <span className="ms-2 text-neutral-400">({req.requester_email})</span>
@@ -277,7 +277,7 @@ export const AccessRequestsManagerModal: React.FC<AccessRequestsManagerModalProp
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
                       {req.status !== 'approved' && (
                         <button
                           type="button"

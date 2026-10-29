@@ -290,17 +290,17 @@ export const Preview: React.FC<PreviewProps> = ({
       </div>
 
       {/* Floating Toolbar: Teacher Pen, Layout Width & Zoom Controls */}
-      <div className="absolute top-4 end-5 z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-md backdrop-blur-md opacity-95 hover:opacity-100 transition-opacity select-none">
+      <div className="absolute top-2 end-2 sm:top-4 sm:end-5 z-20 flex items-center gap-1 sm:gap-1.5 p-1 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-md backdrop-blur-md opacity-95 hover:opacity-100 transition-opacity select-none max-w-[calc(100vw-1rem)] overflow-x-auto no-scrollbar">
         {/* Back to Workspace Dashboard Button */}
         {onBackToWorkspace && (
           <button
             type="button"
             onClick={onBackToWorkspace}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-[#0061FF] text-white hover:bg-[#0052cc] shadow-xs transition-all cursor-pointer"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-lg text-xs font-bold bg-[#0061FF] text-white hover:bg-[#0052cc] shadow-xs transition-all cursor-pointer shrink-0"
             title="بازگشت به صفحه اصلی و داشبورد اسناد"
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
-            <span>داشبورد اسناد</span>
+            <span className="hidden sm:inline">داشبورد اسناد</span>
           </button>
         )}
 
@@ -309,7 +309,7 @@ export const Preview: React.FC<PreviewProps> = ({
           <button
             type="button"
             onClick={onToggleComments}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0061FF]/10 hover:bg-[#0061FF]/20 text-[#0061FF] transition-all cursor-pointer"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0061FF]/10 hover:bg-[#0061FF]/20 text-[#0061FF] transition-all cursor-pointer shrink-0"
             title="مشاهده و ثبت نظرات این سند"
           >
             <MessageSquare className="w-3.5 h-3.5 text-[#0061FF]" />
@@ -321,11 +321,11 @@ export const Preview: React.FC<PreviewProps> = ({
         )}
 
         {/* TEACHER HIGHLIGHTER PEN BUTTON */}
-        <div className="relative flex items-center">
+        <div className="relative flex items-center shrink-0">
           <button
             type="button"
             onClick={() => setTeacherPenActive(!teacherPenActive)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
               teacherPenActive
                 ? 'bg-amber-500 text-neutral-950 shadow-md ring-2 ring-amber-400/50'
                 : 'hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
@@ -348,7 +348,7 @@ export const Preview: React.FC<PreviewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowPenColorMenu(!showPenColorMenu)}
-                className="w-5 h-5 rounded-full border border-neutral-400/40 flex items-center justify-center p-0.5 hover:scale-110 transition-transform"
+                className="w-5 h-5 rounded-full border border-neutral-400/40 flex items-center justify-center p-0.5 hover:scale-110 transition-transform cursor-pointer"
                 style={{
                   backgroundColor:
                     activePenColor === 'yellow'
@@ -375,7 +375,7 @@ export const Preview: React.FC<PreviewProps> = ({
                         setActivePenColor(c.id);
                         setShowPenColorMenu(false);
                       }}
-                      className={`w-5 h-5 rounded-full ${c.dot} hover:scale-125 transition-transform ${
+                      className={`w-5 h-5 rounded-full ${c.dot} hover:scale-125 transition-transform cursor-pointer ${
                         activePenColor === c.id ? 'ring-2 ring-offset-1 ring-amber-500' : ''
                       }`}
                       title={c.name}
@@ -387,55 +387,57 @@ export const Preview: React.FC<PreviewProps> = ({
           )}
         </div>
 
-        <div className="w-[1px] h-4 bg-[var(--border-color)] mx-0.5" />
-
-        {/* Width Toggle (Medium / Wide / Full) */}
-        <button
-          type="button"
-          onClick={() => {
-            setLayoutWidth((current) =>
-              current === 'wide' ? 'full' : current === 'full' ? 'comfortable' : 'wide'
-            );
-          }}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-[11px]"
-          title="تغییر عرض صفحه (عریض / تمام‌صفحه / استاندارد)"
-        >
-          <MoveHorizontal className="w-3.5 h-3.5 text-amber-500" />
-          <span>{layoutWidth === 'wide' ? 'عریض' : layoutWidth === 'full' ? 'تمام‌صفحه' : 'متوسط'}</span>
-        </button>
-
-        <div className="w-[1px] h-4 bg-[var(--border-color)] mx-0.5" />
-
-        {/* Zoom Controls */}
-        <button
-          type="button"
-          onClick={() => setZoomLevel((z) => Math.max(80, z - 10))}
-          className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-          title="کاهش اندازه قلم"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </button>
-        <span className="text-[11px] font-mono text-[var(--text-muted)] px-1 select-none">
-          {zoomLevel}%
-        </span>
-        <button
-          type="button"
-          onClick={() => setZoomLevel((z) => Math.min(150, z + 10))}
-          className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-          title="افزایش اندازه قلم"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-        {zoomLevel !== 100 && (
+        {/* Width Toggle (Medium / Wide / Full) - Hidden on Mobile */}
+        <div className="hidden sm:flex items-center">
+          <div className="w-[1px] h-4 bg-[var(--border-color)] mx-1" />
           <button
             type="button"
-            onClick={() => setZoomLevel(100)}
-            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-amber-500 transition-colors"
-            title="بازنشانی اندازه قلم"
+            onClick={() => {
+              setLayoutWidth((current) =>
+                current === 'wide' ? 'full' : current === 'full' ? 'comfortable' : 'wide'
+              );
+            }}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-[11px] cursor-pointer"
+            title="تغییر عرض صفحه (عریض / تمام‌صفحه / استاندارد)"
           >
-            <RotateCcw className="w-3 h-3" />
+            <MoveHorizontal className="w-3.5 h-3.5 text-amber-500" />
+            <span>{layoutWidth === 'wide' ? 'عریض' : layoutWidth === 'full' ? 'تمام‌صفحه' : 'متوسط'}</span>
           </button>
-        )}
+        </div>
+
+        {/* Zoom Controls - Hidden on Mobile (Native pinch zoom is used) */}
+        <div className="hidden sm:flex items-center">
+          <div className="w-[1px] h-4 bg-[var(--border-color)] mx-1" />
+          <button
+            type="button"
+            onClick={() => setZoomLevel((z) => Math.max(80, z - 10))}
+            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            title="کاهش اندازه قلم"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <span className="text-[11px] font-mono text-[var(--text-muted)] px-1 select-none">
+            {zoomLevel}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoomLevel((z) => Math.min(150, z + 10))}
+            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            title="افزایش اندازه قلم"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          {zoomLevel !== 100 && (
+            <button
+              type="button"
+              onClick={() => setZoomLevel(100)}
+              className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-amber-500 transition-colors cursor-pointer"
+              title="بازنشانی اندازه قلم"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Preview Container */}
@@ -445,7 +447,7 @@ export const Preview: React.FC<PreviewProps> = ({
           onScroll={handleScroll}
           onMouseUp={handleMouseUp}
           dir={direction}
-          className={`flex-1 overflow-y-auto p-6 md:p-12 lg:p-14 text-[var(--text-primary)] ${fontClass} ${
+          className={`flex-1 overflow-y-auto p-3.5 sm:p-6 md:p-12 lg:p-14 pt-14 sm:pt-16 text-[var(--text-primary)] ${fontClass} ${
             teacherPenActive ? 'cursor-text select-text' : ''
           }`}
         >

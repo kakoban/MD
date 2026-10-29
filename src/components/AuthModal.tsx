@@ -161,6 +161,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         if (googleButtonContainerRef.current) {
           googleButtonContainerRef.current.innerHTML = '';
+          const buttonWidth = Math.min(370, Math.max(220, Math.min(window.innerWidth - 64, 370)));
           window.google.accounts.id.renderButton(googleButtonContainerRef.current, {
             type: 'standard',
             theme: 'outline',
@@ -168,7 +169,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             text: 'continue_with',
             shape: 'rectangular',
             logo_alignment: 'center',
-            width: 370,
+            width: buttonWidth,
           });
         }
       } catch (e) {
@@ -360,7 +361,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-[420px] bg-white border border-[#e5e5e5] rounded-2xl shadow-2xl overflow-hidden flex flex-col text-[#1a1a1a]"
+        className="relative w-full max-w-[420px] max-h-[92vh] overflow-y-auto bg-white border border-[#e5e5e5] rounded-2xl shadow-2xl flex flex-col text-[#1a1a1a]"
         onClick={(e) => e.stopPropagation()}
         dir="rtl"
       >

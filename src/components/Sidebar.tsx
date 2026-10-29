@@ -320,11 +320,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside
-      className={`relative h-full flex flex-col bg-[#1a1a2e] border-e border-[#2a2a4a] shrink-0 z-30 transition-all duration-200 select-none ${
-        isOpen ? 'w-64' : 'w-16'
-      }`}
-    >
+    <>
+      {/* Mobile Drawer Backdrop */}
+      {isOpen && (
+        <div
+          onClick={onToggleOpen}
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 md:hidden transition-opacity"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`h-full flex flex-col bg-[#1a1a2e] border-e border-[#2a2a4a] select-none transition-all duration-200 ${
+          isOpen
+            ? 'fixed inset-y-0 start-0 z-50 w-72 max-w-[85vw] shadow-2xl md:relative md:inset-auto md:w-64 md:shadow-none'
+            : 'hidden md:flex md:relative md:w-16'
+        }`}
+      >
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -702,5 +714,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
     </aside>
+    </>
   );
 };

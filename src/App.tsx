@@ -1539,6 +1539,8 @@ export default function App() {
         onOpenTopology={() => setIsTopologyOpen(true)}
         isAiBrain={activeDoc?.isAiBrain}
         onToggleAiBrain={handleToggleDocAiBrain}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        isSidebarOpen={isSidebarOpen}
       />
 
       {/* Formatting Toolbar (shown only in split and editor modes) */}
@@ -1657,25 +1659,27 @@ export default function App() {
           />
         ) : (
           <main className="flex-1 flex overflow-hidden relative">
-          {/* Editor Pane */}
+          {/* Editor Pane (on mobile in split mode, desktop gets split view while mobile gets full view) */}
           {(viewMode === 'split' || viewMode === 'editor') && (
-            <Editor
-              ref={editorRef}
-              value={activeDoc?.content || ''}
-              onChange={handleContentChange}
-              fontFamily={fontFamily}
-              direction={effectiveDirection}
-              showLineNumbers={true}
-              onCursorChange={(line, col) => setCursorPos({ line, col })}
-              onSelectionChange={setSelectionStats}
-              onOpenSearch={() => setIsSearchOpen(true)}
-              onSave={handleExportMarkdown}
-            />
+            <div className={`h-full ${viewMode === 'split' ? 'hidden md:flex flex-1' : 'flex-1 flex'} overflow-hidden`}>
+              <Editor
+                ref={editorRef}
+                value={activeDoc?.content || ''}
+                onChange={handleContentChange}
+                fontFamily={fontFamily}
+                direction={effectiveDirection}
+                showLineNumbers={true}
+                onCursorChange={(line, col) => setCursorPos({ line, col })}
+                onSelectionChange={setSelectionStats}
+                onOpenSearch={() => setIsSearchOpen(true)}
+                onSave={handleExportMarkdown}
+              />
+            </div>
           )}
 
           {/* Divider in Split Mode */}
           {viewMode === 'split' && (
-            <div className="w-[1px] bg-[var(--border-color)] shrink-0 select-none relative group">
+            <div className="hidden md:block w-[1px] bg-[var(--border-color)] shrink-0 select-none relative group">
               <div className="absolute inset-y-0 -start-1 -end-1 cursor-col-resize hover:bg-[#0061FF]/20" />
             </div>
           )}
@@ -1685,7 +1689,7 @@ export default function App() {
             <div className="flex-1 flex flex-col h-full overflow-hidden relative">
               {/* Shared Doc Reader Mode Banner (DocSend Clean Style) */}
               {activeDoc?.isCloudShared && (
-                <div className="no-print mx-4 mt-2 px-3 py-1.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-between gap-2 text-xs shrink-0 shadow-xs">
+                <div className="no-print mx-2 sm:mx-4 mt-2 px-3 py-1.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-between gap-2 text-xs shrink-0 shadow-xs overflow-x-auto no-scrollbar">
                   <div className="flex items-center gap-2">
                     <button
                       type="button"

@@ -13,7 +13,22 @@
     -webkit-font-smoothing: antialiased;
     background-color: var(--bg-primary, #f8fafc);
     color: var(--text-primary, #0f172a);
+    max-width: 100vw;
+    overflow-x: hidden;
   }
+  html {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+}
+
+/* Hide scrollbar for clean mobile horizontal sliding */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Custom Scrollbars */

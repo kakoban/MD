@@ -262,27 +262,31 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
               key={child.fullPath}
               className={`rounded-2xl border ${theme.border} bg-[var(--bg-secondary)] overflow-hidden transition-all shadow-xs`}
             >
-              <button
-                type="button"
+              <div
                 onClick={() => toggleFolderCollapse(child.fullPath)}
-                className={`w-full px-5 py-3.5 flex items-center justify-between ${theme.headerBg} transition-colors cursor-pointer text-start`}
+                className={`w-full px-3.5 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${theme.headerBg} transition-colors cursor-pointer text-start`}
               >
-                <div className="flex items-center gap-2.5">
-                  {isCollapsed ? (
-                    <ChevronRight className="w-4 h-4 text-[var(--text-muted)] rtl:rotate-180" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
-                  )}
-                  {isCollapsed ? (
-                    <Folder className={`w-4 h-4 ${theme.icon}`} />
-                  ) : (
-                    <FolderOpen className={`w-4 h-4 ${theme.icon}`} />
-                  )}
-                  <span className="font-bold text-sm text-[var(--text-primary)]">
-                    {child.name}
+                <div className="flex items-center justify-between w-full sm:w-auto">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isCollapsed ? (
+                      <ChevronRight className="w-4 h-4 text-[var(--text-muted)] rtl:rotate-180 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
+                    )}
+                    {isCollapsed ? (
+                      <Folder className={`w-4 h-4 ${theme.icon} shrink-0`} />
+                    ) : (
+                      <FolderOpen className={`w-4 h-4 ${theme.icon} shrink-0`} />
+                    )}
+                    <span className="font-bold text-xs sm:text-sm text-[var(--text-primary)] truncate">
+                      {child.name}
+                    </span>
+                  </div>
+                  <span className={`sm:hidden text-[10px] px-2 py-0.5 rounded-full ${theme.badge} font-bold font-mono shrink-0`}>
+                    {docCount} سند
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1.5 self-end sm:self-auto overflow-x-auto no-scrollbar shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
                     onClick={(e) => handleUploadToSpecificFolder(child.fullPath, e)}
@@ -354,11 +358,11 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                     </button>
                   )}
 
-                  <span className={`text-[11px] px-2.5 py-0.5 rounded-full ${theme.badge} font-bold font-mono`}>
+                  <span className={`hidden sm:inline text-[11px] px-2.5 py-0.5 rounded-full ${theme.badge} font-bold font-mono`}>
                     {docCount} سند آموزشی
                   </span>
                 </div>
-              </button>
+              </div>
 
               {!isCollapsed && (
                 <div className="p-4 space-y-3 bg-[var(--bg-secondary)]/50">
@@ -519,30 +523,62 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
         }}
       />
 
-      {/* 1. TOP HEADER: Clean Google Docs / Notion Style */}
-      <header className="h-16 border-b border-[var(--border-color)] px-4 sm:px-8 flex items-center justify-between bg-[var(--bg-secondary)] shrink-0 z-30">
-        {/* Brand */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-[#0061FF] text-white flex items-center justify-center font-black text-sm shadow-md">
-            M
+      {/* 1. TOP HEADER: Clean Google Docs / Notion Style (Responsive Mobile & Desktop) */}
+      <header className="h-auto py-2.5 sm:h-16 border-b border-[var(--border-color)] px-3 sm:px-8 flex flex-col md:flex-row items-stretch md:items-center justify-between bg-[var(--bg-secondary)] shrink-0 z-30 gap-2.5 md:gap-4">
+        {/* Top bar on mobile: Brand + Quick Actions */}
+        <div className="flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#0061FF] text-white flex items-center justify-center font-black text-xs sm:text-sm shadow-md">
+              M
+            </div>
+            <div>
+              <h1 className="text-xs sm:text-sm font-extrabold text-[var(--text-primary)] tracking-tight">
+                Markdown Studio
+              </h1>
+              <p className="text-[9px] sm:text-[10px] text-[var(--text-muted)] font-medium">Workspace & Cloud Docs</p>
+            </div>
           </div>
-          <div className="hidden sm:block">
-            <h1 className="text-sm font-extrabold text-[var(--text-primary)] tracking-tight">
-              Markdown Studio
-            </h1>
-            <p className="text-[10px] text-[var(--text-muted)] font-medium">Workspace & Cloud Docs</p>
+
+          {/* Quick Actions for Mobile (< md) */}
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => onCreateDoc()}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#0061FF] text-white font-bold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>سند جدید</span>
+            </button>
+            {currentUser ? (
+              <button
+                type="button"
+                onClick={onOpenProfile}
+                className="w-7 h-7 rounded-full bg-[#0061FF]/15 text-[#0061FF] border border-[#0061FF]/30 flex items-center justify-center font-bold text-xs cursor-pointer"
+                title={`پروفایل: ${currentUser.displayName || currentUser.username}`}
+              >
+                {userInitials}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenAuth}
+                className="px-2.5 py-1 rounded-xl border border-[var(--border-color)] text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] cursor-pointer"
+              >
+                ورود
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Global Search Bar (Google Docs style with Ctrl+K trigger) */}
-        <div className="flex-1 max-w-xl mx-4 sm:mx-8 relative">
+        {/* Global Search Bar (Full width on mobile, max-w-xl on desktop) */}
+        <div className="flex-1 w-full md:max-w-xl md:mx-4 relative">
           <Search className="w-4 h-4 text-[var(--text-muted)] absolute start-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="جستجو در تمام اسناد، متن‌ها و سرفصل‌ها..."
-            className="w-full ps-10 pe-24 py-2 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] focus:border-[#0061FF] focus:bg-[var(--bg-secondary)] focus:outline-none text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-all shadow-inner"
+            className="w-full ps-10 pe-20 sm:pe-24 py-2 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] focus:border-[#0061FF] focus:bg-[var(--bg-secondary)] focus:outline-none text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-all shadow-inner"
           />
           <div className="absolute end-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
             {searchQuery && (
@@ -566,8 +602,8 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
           </div>
         </div>
 
-        {/* Right Section: Actions & User */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Right Section: Desktop Actions & User */}
+        <div className="hidden md:flex items-center gap-2.5 shrink-0">
           {pendingRequestsCount > 0 && onOpenAccessRequestsManager && (
             <button
               type="button"
@@ -634,7 +670,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
             </div>
           )}
 
-          {(onOpenBrainManager || onSyncAiBrain) && (
+          {currentUser && (onOpenBrainManager || onSyncAiBrain) && (
             <button
               type="button"
               onClick={() => (onOpenBrainManager ? onOpenBrainManager() : onSyncAiBrain?.())}
@@ -833,21 +869,23 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                 </div>
               </div>
 
-              {/* 6. AI Brain Note */}
-              <div
-                onClick={() => onCreateDoc('🧠 مغز هوش مصنوعی')}
-                className="group p-4 rounded-2xl bg-[var(--bg-secondary)] border border-fuchsia-500/40 hover:border-fuchsia-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-32"
-              >
-                <div className="w-10 h-10 rounded-xl bg-fuchsia-500/15 text-fuchsia-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <span className="text-xl">🧠</span>
+              {/* 6. AI Brain Note (visible only after login) */}
+              {currentUser && (
+                <div
+                  onClick={() => onCreateDoc('🧠 مغز هوش مصنوعی')}
+                  className="group p-4 rounded-2xl bg-[var(--bg-secondary)] border border-fuchsia-500/40 hover:border-fuchsia-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-32"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-fuchsia-500/15 text-fuchsia-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <span className="text-xl">🧠</span>
+                  </div>
+                  <div>
+                    <span className="font-bold text-xs text-[var(--text-primary)] block group-hover:text-fuchsia-400 transition-colors">
+                      سند مغز AI
+                    </span>
+                    <span className="text-[10px] text-[var(--text-muted)]">حافظه اختصاصی برای MCP</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="font-bold text-xs text-[var(--text-primary)] block group-hover:text-fuchsia-400 transition-colors">
-                    سند مغز AI
-                  </span>
-                  <span className="text-[10px] text-[var(--text-muted)]">حافظه اختصاصی برای MCP</span>
-                </div>
-              </div>
+              )}
             </div>
           </section>
 
@@ -856,7 +894,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
             {/* Filter and View Style Controls */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border-color)] pb-3">
               {/* Tab Filters */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setActiveFilter('all')}
@@ -881,18 +919,20 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                   اسناد من ({documents.length})
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveFilter('ai-brain')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                    activeFilter === 'ai-brain'
-                      ? 'bg-fuchsia-600 text-white shadow-xs'
-                      : 'text-fuchsia-400 hover:text-fuchsia-300 hover:bg-fuchsia-500/10'
-                  }`}
-                >
-                  <span>🧠</span>
-                  <span>مغز هوش مصنوعی ({aiBrainCount})</span>
-                </button>
+                {currentUser && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilter('ai-brain')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                      activeFilter === 'ai-brain'
+                        ? 'bg-fuchsia-600 text-white shadow-xs'
+                        : 'text-fuchsia-400 hover:text-fuchsia-300 hover:bg-fuchsia-500/10'
+                    }`}
+                  >
+                    <span>🧠</span>
+                    <span>مغز هوش مصنوعی ({aiBrainCount})</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -933,7 +973,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
 
               {/* View Toggle & Sorting Controls */}
               {activeFilter !== 'permissions' && (
-                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end shrink-0 flex-wrap">
                   {/* Sort Order Selector */}
                   <div className="flex items-center gap-1.5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl px-2.5 py-1 shadow-xs">
                     <ArrowUpDown className="w-3.5 h-3.5 text-[#0061FF] shrink-0" />
@@ -1013,7 +1053,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
 
             {/* Folder / Course Filter Pills */}
             {availableFolders.length > 1 && activeFilter !== 'permissions' && activeFilter !== 'cloud' && (
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs select-none">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-xs select-none">
                 <span className="text-[11px] font-bold text-[var(--text-muted)] flex items-center gap-1 me-1 shrink-0">
                   <Folder className="w-3.5 h-3.5 text-amber-400" />
                   <span>پوشه‌ها:</span>
@@ -1054,7 +1094,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
 
             {/* Linked Local Folders Manager Bar (Multi-Folder Sync) */}
             {linkedFolders.length > 0 && activeFilter !== 'permissions' && activeFilter !== 'cloud' && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs select-none">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 text-xs select-none">
                 <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
                   <RefreshCw className="w-3 h-3 text-emerald-500" />
                   <span>پوشه‌های متصل کامپیوتر ({linkedFolders.length}):</span>
@@ -1398,17 +1438,17 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                 {renderDashboardTreeNode(docTree, 0)}
               </div>
             ) : (
-              /* LIST VIEW (Clean Notion Table) */
-              <div className="rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] overflow-hidden shadow-xs">
+              /* LIST VIEW (Clean Notion Table - Responsive) */
+              <div className="rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] overflow-hidden shadow-xs overflow-x-auto no-scrollbar">
                 <table className="w-full text-xs text-start">
                   <thead>
                     <tr className="border-b border-[var(--border-color)] bg-[var(--bg-tertiary)]/40 text-[var(--text-muted)] font-bold">
-                      <th className="py-3 px-4 text-start">نام سند</th>
-                      <th className="py-3 px-4 text-start">پوشه / سرفصل</th>
-                      <th className="py-3 px-4 text-start">زمان ثبت / آپلود</th>
-                      <th className="py-3 px-4 text-start">نویسنده</th>
-                      <th className="py-3 px-4 text-center">نوع ذخیره</th>
-                      <th className="py-3 px-4 text-center">عملیات</th>
+                      <th className="py-3 px-3 sm:px-4 text-start">نام سند</th>
+                      <th className="py-3 px-2 sm:px-4 text-start">پوشه / سرفصل</th>
+                      <th className="hidden sm:table-cell py-3 px-3 sm:px-4 text-start">زمان ثبت / آپلود</th>
+                      <th className="hidden md:table-cell py-3 px-3 sm:px-4 text-start">نویسنده</th>
+                      <th className="hidden sm:table-cell py-3 px-2 sm:px-4 text-center">نوع ذخیره</th>
+                      <th className="py-3 px-2 sm:px-4 text-center">عملیات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border-color)] font-medium">
@@ -1430,100 +1470,100 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                             onClick={() => onOpenDoc(doc.id, 'split')}
                             className="hover:bg-[var(--bg-tertiary)]/50 transition-colors cursor-pointer"
                           >
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-2.5">
+                            <td className="py-3 px-3 sm:px-4">
+                              <div className="flex items-center gap-2 sm:gap-2.5">
                                 <FileText className={`w-4 h-4 ${theme.icon} shrink-0`} />
-                                <span className="font-bold text-xs text-[var(--text-primary)] truncate max-w-sm">
+                                <span className="font-bold text-xs text-[var(--text-primary)] truncate max-w-[120px] xs:max-w-xs sm:max-w-sm">
                                   {doc.title || 'سند بدون عنوان'}
                                 </span>
                               </div>
                             </td>
-                            <td className="py-3 px-4">
+                            <td className="py-3 px-2 sm:px-4">
                               <span
                                 onClick={(e) => handlePromptChangeDocFolder(doc, e)}
                                 className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${theme.badge} inline-flex items-center gap-1 cursor-pointer hover:ring-2 hover:ring-[#0061FF] transition-all`}
                                 title="کلیک برای تغییر پوشه یا جابه‌جایی این سند"
                               >
                                 <Folder className="w-2.5 h-2.5" />
-                                <span>{folderName}</span>
+                                <span className="truncate max-w-[70px] sm:max-w-none">{folderName}</span>
                                 <Edit3 className="w-2 h-2 opacity-60" />
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-[var(--text-muted)] font-mono text-[11px]">
+                            <td className="hidden sm:table-cell py-3 px-3 sm:px-4 text-[var(--text-muted)] font-mono text-[11px]">
                               {uploadStr}
                             </td>
-                            <td className="py-3 px-4 text-[var(--text-muted)]">
+                            <td className="hidden md:table-cell py-3 px-3 sm:px-4 text-[var(--text-muted)]">
                               {doc.cloudAuthor || 'محلی شما'}
                             </td>
-                          <td className="py-3 px-4 text-center">
-                            {doc.isCloudShared ? (
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">
-                                ابری
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full bg-neutral-500/15 text-[var(--text-muted)] text-[10px]">
-                                محلی
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                type="button"
-                                onClick={(e) => handleCopyEmbedTag(doc.title, e)}
-                                className="p-1 rounded text-[var(--text-muted)] hover:text-[#0061FF] hover:bg-[#0061FF]/10 transition-colors cursor-pointer"
-                                title={`کپی تگ جاسازی زنده (Embed): ![[${doc.title}]]`}
-                              >
-                                {copiedEmbedTitle === doc.title ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                ) : (
-                                  <Link2 className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                              {doc.isCloudShared && (
+                            <td className="hidden sm:table-cell py-3 px-2 sm:px-4 text-center">
+                              {doc.isCloudShared ? (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">
+                                  ابری
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full bg-neutral-500/15 text-[var(--text-muted)] text-[10px]">
+                                  محلی
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-2 sm:px-4 text-center">
+                              <div className="flex items-center justify-center gap-1 sm:gap-2">
                                 <button
                                   type="button"
-                                  onClick={(e) => handleCopyLink(doc.id, e)}
-                                  className="p-1 rounded text-[var(--text-muted)] hover:text-[#0061FF]"
-                                  title="کپی لینک"
+                                  onClick={(e) => handleCopyEmbedTag(doc.title, e)}
+                                  className="hidden sm:inline-flex p-1 rounded text-[var(--text-muted)] hover:text-[#0061FF] hover:bg-[#0061FF]/10 transition-colors cursor-pointer"
+                                  title={`کپی تگ جاسازی زنده (Embed): ![[${doc.title}]]`}
                                 >
-                                  {copiedId === doc.id ? (
-                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  {copiedEmbedTitle === doc.title ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
                                   ) : (
-                                    <Share2 className="w-3.5 h-3.5" />
+                                    <Link2 className="w-3.5 h-3.5" />
                                   )}
                                 </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenDoc(doc.id, 'split');
-                                }}
-                                className="px-2.5 py-1 rounded bg-[#0061FF]/10 text-[#0061FF] hover:bg-[#0061FF]/20 font-bold text-[11px]"
-                              >
-                                ویرایش
-                              </button>
-                              {onDeleteDoc && (
+                                {doc.isCloudShared && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleCopyLink(doc.id, e)}
+                                    className="p-1 rounded text-[var(--text-muted)] hover:text-[#0061FF]"
+                                    title="کپی لینک"
+                                  >
+                                    {copiedId === doc.id ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    ) : (
+                                      <Share2 className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (confirm(`آیا از حذف «${doc.title}» اطمینان دارید؟`)) {
-                                      onDeleteDoc(doc.id);
-                                    }
+                                    onOpenDoc(doc.id, 'split');
                                   }}
-                                  className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400 transition-colors"
-                                  title="حذف سند"
+                                  className="px-2 sm:px-2.5 py-1 rounded bg-[#0061FF]/10 text-[#0061FF] hover:bg-[#0061FF]/20 font-bold text-[11px]"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  ویرایش
                                 </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                                {onDeleteDoc && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (confirm(`آیا از حذف «${doc.title}» اطمینان دارید؟`)) {
+                                        onDeleteDoc(doc.id);
+                                      }
+                                    }}
+                                    className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400 transition-colors"
+                                    title="حذف سند"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
 
                     {/* Cloud Files in List */}
                     {activeFilter !== 'my-docs' &&
@@ -1533,31 +1573,37 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                           onClick={() => onOpenCloudDoc(file)}
                           className="hover:bg-[var(--bg-tertiary)]/50 transition-colors cursor-pointer"
                         >
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2.5">
+                          <td className="py-3 px-3 sm:px-4">
+                            <div className="flex items-center gap-2 sm:gap-2.5">
                               {file.is_public ? (
                                 <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
                               ) : (
                                 <Lock className="w-4 h-4 text-amber-500 shrink-0" />
                               )}
-                              <span className="font-bold text-xs text-[var(--text-primary)] truncate max-w-sm">
+                              <span className="font-bold text-xs text-[var(--text-primary)] truncate max-w-[120px] xs:max-w-xs sm:max-w-sm">
                                 {file.title}
                               </span>
                             </div>
                           </td>
-                          <td className="py-3 px-4 text-[var(--text-muted)] text-[10px]">
+                          <td className="py-3 px-2 sm:px-4 text-[var(--text-muted)] text-[10px]">
                             —
                           </td>
-                          <td className="py-3 px-4 text-[var(--text-muted)]">
+                          <td className="hidden sm:table-cell py-3 px-3 sm:px-4 text-[var(--text-muted)] font-mono text-[11px]">
+                            {new Date(file.created_at).toLocaleDateString(language === 'fa' ? 'fa-IR' : 'en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </td>
+                          <td className="hidden md:table-cell py-3 px-3 sm:px-4 text-[var(--text-muted)]">
                             {file.author_name} {file.author_username && `@${file.author_username}`}
                           </td>
-                          <td className="py-3 px-4 text-center">
+                          <td className="hidden sm:table-cell py-3 px-2 sm:px-4 text-center">
                             <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">
                               {file.is_public ? 'ابری عمومی' : 'محرمانه'}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-2">
+                          <td className="py-3 px-2 sm:px-4 text-center">
+                            <div className="flex items-center justify-center gap-1 sm:gap-2">
                               <button
                                 type="button"
                                 onClick={(e) => handleCopyLink(file.id, e)}
@@ -1573,7 +1619,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => onOpenCloudDoc(file)}
-                                className="px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 font-bold text-[11px]"
+                                className="px-2 sm:px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 font-bold text-[11px]"
                               >
                                 {file.is_public ? 'مطالعه' : 'مجوز'}
                               </button>

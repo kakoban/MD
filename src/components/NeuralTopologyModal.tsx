@@ -315,6 +315,61 @@ export const NeuralTopologyModal: React.FC<NeuralTopologyModalProps> = ({
     isDraggingCanvasRef.current = false;
   };
 
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = touch.clientX - rect.left;
+      const mouseY = touch.clientY - rect.top;
+      const coords = {
+        x: (mouseX - simTransformRef.current.x) / simTransformRef.current.scale,
+        y: (mouseY - simTransformRef.current.y) / simTransformRef.current.scale,
+      };
+      const clicked = simNodesRef.current.find((n) => {
+        const dx = n.x - coords.x;
+        const dy = n.y - coords.y;
+        return Math.sqrt(dx * dx + dy * dy) <= n.radius + 8;
+      });
+      if (clicked) {
+        draggedNodeRef.current = clicked;
+      } else {
+        isDraggingCanvasRef.current = true;
+        dragStartRef.current = { x: touch.clientX, y: touch.clientY };
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = touch.clientX - rect.left;
+      const mouseY = touch.clientY - rect.top;
+      const coords = {
+        x: (mouseX - simTransformRef.current.x) / simTransformRef.current.scale,
+        y: (mouseY - simTransformRef.current.y) / simTransformRef.current.scale,
+      };
+
+      if (draggedNodeRef.current) {
+        draggedNodeRef.current.x = coords.x;
+        draggedNodeRef.current.y = coords.y;
+        return;
+      }
+
+      if (isDraggingCanvasRef.current) {
+        const dx = touch.clientX - dragStartRef.current.x;
+        const dy = touch.clientY - dragStartRef.current.y;
+        dragStartRef.current = { x: touch.clientX, y: touch.clientY };
+        simTransformRef.current.x += dx;
+        simTransformRef.current.y += dy;
+      }
+    }
+  };
+
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.12 : 0.88;
@@ -391,10 +446,13 @@ export const NeuralTopologyModal: React.FC<NeuralTopologyModalProps> = ({
         <div className="flex-1 relative overflow-hidden bg-[#070a0f] cursor-grab active:cursor-grabbing">
           <canvas
             ref={canvasRef}
-            className="w-full h-full block"
+            className="w-full h-full block touch-none"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleMouseUp}
             onWheel={handleWheel}
             onClick={handleCanvasClick}
           />
