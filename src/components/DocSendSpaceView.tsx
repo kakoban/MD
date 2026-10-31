@@ -164,12 +164,30 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
 
   const availableFolders = React.useMemo(() => {
     const counts: Record<string, number> = {};
-    deduplicateDocs(documents).forEach((d) => {
+    const relevantDocs = deduplicateDocs(documents).filter((d) => {
+      if (activeFilter === 'ai-brain') {
+        return Boolean(
+          d.isAiBrain ||
+          d.folderPath?.includes('مغز') ||
+          d.folderPath?.includes('brain') ||
+          d.tags?.includes('ai-brain')
+        );
+      }
+      if (activeFilter === 'my-docs') {
+        return !d.isPublic;
+      }
+      if (activeFilter === 'starred') {
+        return Boolean(d.isFavorite);
+      }
+      return true;
+    });
+
+    relevantDocs.forEach((d) => {
       const f = getEffectiveFolderPath(d.folderPath);
       counts[f] = (counts[f] || 0) + 1;
     });
     return Object.entries(counts).map(([name, count]) => ({ name, count }));
-  }, [documents]);
+  }, [documents, activeFilter]);
 
   const toggleFolderCollapse = (path: string) => {
     setCollapsedFolders((prev) => ({
@@ -215,12 +233,22 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
       d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.content.toLowerCase().includes(searchQuery.toLowerCase());
     if (!matchesSearch) return false;
+
     if (activeFilter === 'ai-brain') {
-      return Boolean(d.isAiBrain || d.folderPath?.includes('مغز') || d.folderPath?.includes('brain') || d.tags?.includes('ai-brain'));
+      const isBrain = Boolean(
+        d.isAiBrain ||
+        d.folderPath?.includes('مغز') ||
+        d.folderPath?.includes('brain') ||
+        d.tags?.includes('ai-brain')
+      );
+      if (!isBrain) return false;
+    } else if (activeFilter === 'starred') {
+      if (!d.isFavorite) return false;
+    } else if (activeFilter === 'cloud') {
+      return false;
     }
-    if (activeFilter === 'starred') return Boolean(d.isFavorite);
-    if (activeFilter === 'cloud') return false;
-    if (selectedFolder && getEffectiveFolderPath(d.folderPath) !== selectedFolder) {
+
+    if (selectedFolder && getEffectiveFolderPath(d.folderPath).toLowerCase() !== selectedFolder.toLowerCase()) {
       return false;
     }
     return true;
@@ -234,11 +262,21 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
       (f.author_name && f.author_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (f.author_username && f.author_username.toLowerCase().includes(searchQuery.toLowerCase()));
     if (!matchesSearch) return false;
+
     if (activeFilter === 'ai-brain') {
-      return Boolean(f.tags?.includes('ai-brain') || f.folder_path?.includes('مغز') || f.folder_path?.includes('brain'));
+      const isBrain = Boolean(
+        f.tags?.includes('ai-brain') ||
+        f.folder_path?.includes('مغز') ||
+        f.folder_path?.includes('brain')
+      );
+      if (!isBrain) return false;
+    } else if (activeFilter === 'my-docs' || activeFilter === 'starred') {
+      return false;
     }
-    if (activeFilter === 'my-docs') return false;
-    if (activeFilter === 'starred') return false;
+
+    if (selectedFolder && getEffectiveFolderPath(f.folder_path).toLowerCase() !== selectedFolder.toLowerCase()) {
+      return false;
+    }
     return true;
   });
 
@@ -1067,10 +1105,10 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       : 'bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                   }`}
                 >
-                  همه پوشه‌ها ({documents.length})
+                  همه پوشه‌ها ({availableFolders.reduce((acc, curr) => acc + curr.count, 0)})
                 </button>
                 {availableFolders.map((f) => {
-                  const isSelected = selectedFolder === f.name;
+                  const isSelected = selectedFolder?.toLowerCase() === f.name.toLowerCase();
                   const theme = getFolderTheme(f.name);
                   return (
                     <button

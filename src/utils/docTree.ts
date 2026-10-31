@@ -31,10 +31,21 @@ export function sortDocs(docs: MarkdownDoc[], sortBy: DocSortOption = 'upload-de
 }
 
 export function getEffectiveFolderPath(folderPath?: string): string {
-  const clean = (folderPath || "")
+  let clean = (folderPath || "")
     .trim()
     .replace(/\\/g, "/")
     .replace(/^\/+|\/+$/g, "");
+
+  // 1. Strip Windows drive letters (e.g. "D:/", "C:\", "D:", "c:")
+  clean = clean.replace(/^[a-zA-Z]:(\/|\\)?/i, "");
+  clean = clean.replace(/^\/+|\/+$/g, "").trim();
+
+  // 2. Strip redundant top-level root prefixes (e.g. "MIND/motion" -> "motion", "mind/Notes" -> "Notes")
+  clean = clean.replace(/^(MIND|mind|مایند)\//i, "");
+  if (/^(MIND|mind|مایند)$/i.test(clean)) {
+    clean = "";
+  }
+
   return clean || DEFAULT_FOLDER_NAME;
 }
 

@@ -208,8 +208,9 @@ export async function scanAllLinkedDirectories(
         errorsCount++;
         continue;
       }
-      // Scan root folder, using f.name as top-level folderPath
-      const folderFiles = await scanDirectoryHandle(f.handle, f.name);
+      // If only 1 root folder is linked, scan relative to it (no redundant root name prefix)
+      const rootPrefix = folders.length > 1 ? f.name : '';
+      const folderFiles = await scanDirectoryHandle(f.handle, rootPrefix);
       allFiles.push(...folderFiles);
       successCount++;
     } catch (err) {
