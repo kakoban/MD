@@ -179,21 +179,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 type="button"
                 onClick={() => toggleFolderCollapse(child.fullPath)}
                 style={{ paddingInlineStart: `${Math.max(8, depth * 12 + 6)}px` }}
-                className="flex items-center justify-between py-1.5 px-2 text-xs text-[#8b8fa3] hover:text-white hover:bg-white/5 rounded-lg transition-colors group cursor-pointer text-start w-full"
+                className="flex items-center justify-between py-1.5 px-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--tile-hover)] rounded-lg transition-colors group cursor-pointer text-start w-full"
                 title={child.fullPath}
               >
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   {isCollapsed ? (
-                    <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-400 rtl:rotate-180" />
+                    <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)] rtl:rotate-180" />
                   ) : (
-                    <ChevronDown className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                    <ChevronDown className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
                   )}
                   {isCollapsed ? (
                     <Folder className={`w-3.5 h-3.5 shrink-0 ${theme.icon}`} />
                   ) : (
                     <FolderOpen className={`w-3.5 h-3.5 shrink-0 ${theme.icon}`} />
                   )}
-                  <span className="truncate font-semibold text-[11px] text-gray-200">
+                  <span className="truncate font-semibold text-[11px] text-[var(--text-primary)]">
                     {child.name}
                   </span>
                 </div>
@@ -248,15 +248,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => onSelectDoc(doc.id)}
               className={`group flex items-center justify-between py-1.5 px-2 rounded-lg text-xs cursor-pointer transition-colors ${
                 isActive
-                  ? 'bg-[#0061FF]/20 text-white font-medium border-e-2 border-[#0061FF]'
-                  : 'text-gray-300 hover:text-white hover:bg-white/5'
+                  ? 'bg-[var(--tile-active)] text-[#0061FF] dark:text-blue-400 font-bold border-e-2 border-[#0061FF] shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--tile-hover)]'
               }`}
               title={doc.title}
             >
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <FileText
                   className={`w-3.5 h-3.5 shrink-0 ${
-                    isActive ? 'text-[#0061FF]' : 'text-gray-400'
+                    isActive ? 'text-[#0061FF] dark:text-blue-400' : 'text-[var(--text-muted)]'
                   }`}
                 />
                 <span className="truncate text-[11px]">{doc.title || 'سند بدون عنوان'}</span>
@@ -331,7 +331,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`h-full flex flex-col bg-[#1a1a2e] border-e border-[#2a2a4a] select-none transition-all duration-200 ${
+        className={`h-full flex flex-col frosted-sidebar text-[var(--text-primary)] select-none transition-all duration-200 ${
           isOpen
             ? 'fixed inset-y-0 start-0 z-50 w-72 max-w-[85vw] shadow-2xl md:relative md:inset-auto md:w-64 md:shadow-none'
             : 'hidden md:flex md:relative md:w-16'
@@ -359,7 +359,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* 1. Logo Area */}
       <div
-        className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors border-b border-[#2a2a4a]/50"
+        className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-[var(--tile-hover)] transition-colors border-b border-[var(--glass-border)]"
         onClick={() => {
           if (onBackToWorkspace) onBackToWorkspace();
           else onToggleOpen();
@@ -373,8 +373,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {isOpen && (
             <div className="ms-2.5 flex-1 overflow-hidden">
-              <div className="text-white font-bold text-xs truncate">MD Studio</div>
-              <div className="text-[#8b8fa3] text-[10px] truncate">داشبورد و سرفصل‌ها</div>
+              <div className="text-[var(--text-primary)] font-bold text-xs truncate">MD Studio</div>
+              <div className="text-[var(--text-muted)] text-[10px] truncate">داشبورد و سرفصل‌ها</div>
             </div>
           )}
         </div>
@@ -386,7 +386,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               e.stopPropagation();
               onToggleOpen();
             }}
-            className="text-gray-400 hover:text-white p-1 rounded-md cursor-pointer"
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-md cursor-pointer transition-colors"
             title="بستن سایدبار"
           >
             <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
@@ -395,7 +395,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* 2. Navigation Items (Compact Header) */}
-      <div className="px-2 py-2 border-b border-[#2a2a4a]/50 flex flex-col gap-1">
+      <div className="px-2 py-2 border-b border-[var(--glass-border)] flex flex-col gap-1">
         {navItems.map((item) => {
           const isActive = activeNavItem === item.id;
           return (
@@ -404,12 +404,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               type="button"
               onClick={item.onClick}
               title={!isOpen ? item.label : undefined}
-              className={`relative flex items-center w-full transition-colors rounded-lg cursor-pointer ${
+              className={`relative flex items-center w-full transition-all rounded-lg cursor-pointer ${
                 isOpen ? 'px-3 py-2' : 'justify-center py-2.5'
               } ${
                 isActive
-                  ? 'bg-[#0061FF]/20 text-white font-medium'
-                  : 'text-[#8b8fa3] hover:bg-white/5 hover:text-white'
+                  ? 'bg-[var(--tile-active)] text-[#0061FF] dark:text-blue-400 font-bold border-e-2 border-[#0061FF] shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--tile-hover)] hover:text-[var(--text-primary)]'
               }`}
             >
               <div className="flex-shrink-0 relative">
@@ -455,7 +455,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg transition-colors cursor-pointer"
+                  className="p-1.5 bg-[var(--tile)] hover:bg-[var(--tile-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--glass-border)] rounded-lg transition-colors cursor-pointer"
                   title="آپلود فایل‌های مارک‌دان"
                 >
                   <Upload className="w-3.5 h-3.5" />
@@ -463,7 +463,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => folderInputRef.current?.click()}
-                  className="p-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 rounded-lg transition-colors border border-amber-500/20 cursor-pointer"
+                  className="p-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-500 rounded-lg transition-colors border border-amber-500/20 cursor-pointer"
                   title="آپلود پوشه / درخت سرفصل‌های آموزشی"
                 >
                   <FolderUp className="w-3.5 h-3.5" />
@@ -473,7 +473,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     type="button"
                     onClick={() => onSyncLocalDisk(false)}
                     disabled={isSyncingLocal}
-                    className="p-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 rounded-lg transition-colors border border-blue-500/20 cursor-pointer"
+                    className="p-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-500 rounded-lg transition-colors border border-blue-500/20 cursor-pointer"
                     title={
                       linkedLocalFolder
                         ? `بروزرسانی تغییرات فایل‌ها از پوشه «${linkedLocalFolder}» کامپیوتر`
@@ -494,7 +494,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         : 'upload-desc'
                     )
                   }
-                  className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg transition-colors cursor-pointer"
+                  className="p-1.5 bg-[var(--tile)] hover:bg-[var(--tile-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--glass-border)] rounded-lg transition-colors cursor-pointer"
                   title={`مرتب‌سازی سرفصل‌ها: ${
                     sortBy === 'upload-desc'
                       ? 'جدیدترین زمان آپلود'
@@ -509,21 +509,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {/* Search Inside Tree */}
               <div className="relative mb-2.5">
-                <Search className="w-3 h-3 text-gray-400 absolute start-2 top-1/2 -translate-y-1/2" />
+                <Search className="w-3 h-3 text-[var(--text-muted)] absolute start-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="جستجوی سرفصل و درس..."
-                  className="w-full ps-7 pe-6 py-1 rounded-md bg-[#121224] border border-[#2a2a4a] focus:border-[#0061FF] text-[11px] text-gray-200 placeholder-gray-500 focus:outline-none"
+                  className="w-full ps-8 pe-6 py-1.5 rounded-lg bg-[var(--tile)] border border-[var(--glass-border)] focus:border-[#0061FF] text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none transition-colors"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute end-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white cursor-pointer"
+                    className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
                   >
-                    <X className="w-2.5 h-2.5" />
+                    <X className="w-3 h-3" />
                   </button>
                 )}
               </div>
@@ -661,14 +661,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         ) : activeNavItem === 'settings' && isOpen ? (
           <div className="p-4 space-y-3 text-xs">
-            <div className="font-bold text-white mb-2 flex items-center gap-1.5">
+            <div className="font-bold text-[var(--text-primary)] mb-2 flex items-center gap-1.5">
               <Settings className="w-4 h-4 text-[#0061FF]" />
               <span>تنظیمات اسناد</span>
             </div>
             <button
               type="button"
               onClick={onRestoreSamples}
-              className="w-full py-2 px-3 rounded-xl bg-[#121224] hover:bg-[#1f1f3a] border border-[#2a2a4a] text-gray-300 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
+              className="w-full py-2 px-3 rounded-xl bg-[var(--tile)] hover:bg-[var(--tile-hover)] border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-2 transition-colors cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5 text-blue-400" />
               <span>بازیابی اسناد و سرفصل‌های نمونه</span>
@@ -678,32 +678,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* 4. User Section */}
-      <div className="border-t border-[#2a2a4a] p-3 flex flex-col gap-2">
+      <div className="border-t border-[var(--glass-border)] p-3 flex flex-col gap-2">
         {!isOpen && (
-          <button 
+          <button
             onClick={onToggleOpen}
-            className="w-full flex justify-center text-[#8b8fa3] hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors mb-2"
+            className="w-full flex justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] p-2 rounded-lg hover:bg-[var(--tile-hover)] transition-colors mb-2 cursor-pointer"
           >
             <ChevronLeft className="w-5 h-5 rtl:rotate-180" />
           </button>
         )}
-        
+
         {currentUser ? (
           <div className={`flex items-center ${isOpen ? 'justify-start' : 'justify-center'} gap-3`}>
-            <div className="w-10 h-10 rounded-full bg-gray-700 border border-gray-600 flex items-center justify-center text-white font-bold flex-shrink-0">
+            <div className="w-10 h-10 rounded-full bg-[var(--tile)] border border-[var(--glass-border)] flex items-center justify-center text-[var(--text-primary)] font-bold flex-shrink-0 shadow-xs">
               {getInitials(currentUser.username || currentUser.email)}
             </div>
             {isOpen && (
               <div className="flex-1 overflow-hidden">
-                <div className="text-white text-sm font-medium truncate">{currentUser.username || 'کاربر'}</div>
-                <div className="text-[#8b8fa3] text-xs truncate">{currentUser.email}</div>
+                <div className="text-[var(--text-primary)] text-sm font-medium truncate">{currentUser.username || 'کاربر'}</div>
+                <div className="text-[var(--text-muted)] text-xs truncate">{currentUser.email}</div>
               </div>
             )}
           </div>
         ) : (
           <button
             type="button"
-            className={`flex items-center justify-center rounded-lg border border-[#2a2a4a] text-[#8b8fa3] hover:text-white hover:bg-white/5 transition-colors ${
+            className={`flex items-center justify-center rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--tile-hover)] transition-colors ${
               isOpen ? 'w-full py-2 px-3 gap-2' : 'w-10 h-10 p-0'
             }`}
             title="ورود به حساب"

@@ -62,6 +62,12 @@ import {
   writeDocToAppropriateFolder,
   isFileSystemAccessSupported,
   LinkedFolderRecord,
+  getPendingDiskWrites,
+  subscribeToPendingQueue,
+  checkFoldersPermissionStatus,
+  requestPermissionAndFlushQueue,
+  createStandardBrainFolders,
+  PendingDiskWriteItem,
 } from './utils/localSync';
 
 const STORAGE_KEY_DOCS = 'markdown_studio_docs_v2';
@@ -155,6 +161,8 @@ export default function App() {
   const [linkedFolders, setLinkedFolders] = useState<LinkedFolderRecord[]>([]);
   const [isSyncingLocal, setIsSyncingLocal] = useState<boolean>(false);
   const [isSyncingBrain, setIsSyncingBrain] = useState<boolean>(false);
+  const [pendingDiskWritesCount, setPendingDiskWritesCount] = useState<number>(0);
+  const [diskPermissionNeedsPrompt, setDiskPermissionNeedsPrompt] = useState<boolean>(false);
   const localSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isFirstRenderRef = useRef<boolean>(true);
   const cloudSyncedStateRef = useRef<Record<string, { title: string; content: string }>>({});
@@ -519,7 +527,7 @@ export default function App() {
       isFirstRenderRef.current = false;
       return;
     }
-    if (!activeDoc || activeDoc.isCloudShared) return;
+    if (!activeDoc) return;
 
     setLocalSaveStatus('pending');
     if (localSaveTimerRef.current) {
@@ -547,7 +555,7 @@ export default function App() {
         clearTimeout(localSaveTimerRef.current);
       }
     };
-  }, [activeDoc?.title, activeDoc?.content, activeDoc?.isCloudShared]);
+  }, [activeDoc?.title, activeDoc?.content, linkedFolders]);
 
   const effectiveSyncStatus = activeDoc?.isCloudShared ? cloudSyncStatus : localSaveStatus;
 
@@ -946,13 +954,24 @@ export default function App() {
     );
   }, []);
 
-  // Load all stored local directory handles on mount
+  // Load all stored local directory handles on mount & monitor permissions
   useEffect(() => {
     if (isFileSystemAccessSupported()) {
       getAllStoredDirectoryHandles().then((records) => {
         setLinkedFolders(records);
+        if (records.length > 0) {
+          checkFoldersPermissionStatus(records).then((status) => {
+            setDiskPermissionNeedsPrompt(status.needsPrompt);
+          });
+        }
       });
     }
+
+    const unsubscribe = subscribeToPendingQueue((queue) => {
+      setPendingDiskWritesCount(queue.length);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Multi-Folder 1-Click Sync
@@ -1121,6 +1140,145 @@ export default function App() {
     setCloudNotice(`پوشه «${cleanPath}» و ${affected.length} سند داخل آن با موفقیت حذف شدند.`);
     setTimeout(() => setCloudNotice(null), 3500);
   }, [documents, activeDoc, linkedFolders, handleUnlinkLocalFolder]);
+
+  // 1-Click user gesture to grant readwrite disk permissions and flush pending writes
+  const handleGrantDiskPermission = useCallback(async () => {
+    if (linkedFolders.length === 0) return;
+    try {
+      const res = await requestPermissionAndFlushQueue(linkedFolders);
+      if (res.success) {
+        setDiskPermissionNeedsPrompt(false);
+        setCloudNotice(`✅ مجوز نوشتن روی دیسک تأیید شد و ${res.writtenCount} سند معوقه روی هارد کامپیوتر ذخیره شدند.`);
+        setTimeout(() => setCloudNotice(null), 4000);
+      } else {
+        setCloudNotice(res.error || 'خطا در اخذ مجوز نوشتن روی دیسک');
+        setTimeout(() => setCloudNotice(null), 3000);
+      }
+    } catch (err: any) {
+      console.warn('Grant permission error:', err);
+    }
+  }, [linkedFolders]);
+
+  // Fetch AI Brain docs created/updated by Claude / MCP in Neon cloud database and merge locally & write to disk
+  const handleFetchAndMergeAiBrainDocs = useCallback(async (isSilent = false) => {
+    try {
+      const res = await cloudApi.fetchAiBrainDocs();
+      if (!res.success || !Array.isArray(res.files) || res.files.length === 0) {
+        if (!isSilent) {
+          setCloudNotice('اسناد جدیدی در مغز هوش مصنوعی یافت نشد.');
+          setTimeout(() => setCloudNotice(null), 3000);
+        }
+        return;
+      }
+
+      let newOrUpdatedCount = 0;
+      const filesToWriteToDisk: { title: string; content: string; folderPath?: string }[] = [];
+
+      setDocuments((prev) => {
+        let updatedList = [...prev];
+
+        res.files.forEach((remoteFile) => {
+          const remoteTitle = remoteFile.title || 'سند کلود';
+          const remoteContent = remoteFile.content || '';
+          const remoteFolder = remoteFile.folder_path || remoteFile.folderPath || '🧠 مغز هوش مصنوعی';
+          const remoteUpdatedAt = remoteFile.updated_at ? new Date(remoteFile.updated_at).getTime() : Date.now();
+          const targetKey = normalizeDocKey(remoteTitle, remoteFolder);
+
+          const existingIdx = updatedList.findIndex(
+            (d) => d.id === remoteFile.id || normalizeDocKey(d.title, d.folderPath) === targetKey
+          );
+
+          if (existingIdx !== -1) {
+            const existing = updatedList[existingIdx];
+            if (existing.content !== remoteContent || existing.title !== remoteTitle) {
+              newOrUpdatedCount++;
+              filesToWriteToDisk.push({
+                title: remoteTitle,
+                content: remoteContent,
+                folderPath: remoteFolder,
+              });
+              updatedList[existingIdx] = {
+                ...existing,
+                title: remoteTitle,
+                content: remoteContent,
+                folderPath: remoteFolder,
+                isAiBrain: true,
+                tags: Array.from(new Set([...(existing.tags || []), 'ai-brain', ...(remoteFile.tags || [])])),
+                updatedAt: remoteUpdatedAt,
+              };
+            }
+          } else {
+            // New file from Claude / MCP
+            newOrUpdatedCount++;
+            filesToWriteToDisk.push({
+              title: remoteTitle,
+              content: remoteContent,
+              folderPath: remoteFolder,
+            });
+            const newDoc: MarkdownDoc = {
+              id: remoteFile.id || `brain-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              title: remoteTitle,
+              content: remoteContent,
+              folderPath: remoteFolder,
+              isAiBrain: true,
+              tags: Array.from(new Set(['ai-brain', ...(remoteFile.tags || [])])),
+              createdAt: remoteFile.created_at ? new Date(remoteFile.created_at).getTime() : Date.now(),
+              updatedAt: remoteUpdatedAt,
+            };
+            updatedList.unshift(newDoc);
+          }
+        });
+
+        return deduplicateDocs(updatedList);
+      });
+
+      // Write newly fetched or modified documents to user's local disk
+      if (filesToWriteToDisk.length > 0 && linkedFolders.length > 0) {
+        (async () => {
+          for (const item of filesToWriteToDisk) {
+            await writeDocToAppropriateFolder(linkedFolders, item).catch(() => {});
+          }
+        })();
+      } else if (filesToWriteToDisk.length > 0 && linkedFolders.length === 0) {
+        setCloudNotice(`🧠 سند «${filesToWriteToDisk[0].title}» از Claude دریافت شد. برای ذخیره روی هارد، لطفاً یک پوشه محلی متصل کنید.`);
+        setTimeout(() => setCloudNotice(null), 5000);
+      }
+
+      if (newOrUpdatedCount > 0) {
+        setCloudNotice(`🧠 ${newOrUpdatedCount} سند جدید/به‌روزرسانی‌شده از Claude و سرور ابری دریافت و همگام شد.`);
+        setTimeout(() => setCloudNotice(null), 4000);
+      } else if (!isSilent) {
+        setCloudNotice('تمام اسناد مغز هوش مصنوعی شما با سرور ابری کاملاً همگام است.');
+        setTimeout(() => setCloudNotice(null), 3000);
+      }
+    } catch (err: any) {
+      if (!isSilent) {
+        console.warn('Fetch AI Brain docs error:', err);
+      }
+    }
+  }, [linkedFolders]);
+
+  // Periodic intelligent background polling (every 4s) when tab is active and on focus
+  useEffect(() => {
+    // Fetch immediately on mount / tab change
+    handleFetchAndMergeAiBrainDocs(true);
+
+    const onFocus = () => {
+      handleFetchAndMergeAiBrainDocs(true);
+    };
+    window.addEventListener('focus', onFocus);
+
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        handleFetchAndMergeAiBrainDocs(true);
+      }
+    }, 4000);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(pollInterval);
+    };
+  }, [handleFetchAndMergeAiBrainDocs]);
 
   // Sync all AI Brain documents to Neon Cloud Database for Claude / MCP access
   const handleSyncAiBrain = useCallback(async (customBrainDocs?: MarkdownDoc[]) => {
@@ -1543,6 +1701,28 @@ export default function App() {
         isSidebarOpen={isSidebarOpen}
       />
 
+      {/* Disk Permission Recovery Banner (Visible when Chromium restricts write permission after refresh) */}
+      {(diskPermissionNeedsPrompt || pendingDiskWritesCount > 0) && linkedFolders.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-600/90 via-orange-600/90 to-amber-700/90 text-white px-4 py-2 text-xs flex items-center justify-between gap-3 shadow-md border-b border-amber-500/40 z-30 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="text-base animate-pulse">⚠️</span>
+            <span className="font-semibold">
+              {pendingDiskWritesCount > 0
+                ? `${pendingDiskWritesCount} فایل دریافتی از Claude / مغز هوش مصنوعی منتظر ذخیره روی هارد هستند.`
+                : 'دسترسی نوشتن روی هارد دیسک پس از رفرش مرورگر نیازمند تأیید است.'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleGrantDiskPermission}
+            className="px-3 py-1 bg-white text-amber-900 hover:bg-amber-100 font-bold rounded-lg shadow-xs transition-colors cursor-pointer shrink-0 text-[11px] flex items-center gap-1.5"
+          >
+            <span>🔓</span>
+            <span>تأیید دسترسی و ذخیره خودکار فایل‌ها روی کامپیوتر</span>
+          </button>
+        </div>
+      )}
+
       {/* Formatting Toolbar (shown only in split and editor modes) */}
       {viewMode !== 'preview' && viewMode !== 'workspace' && (
         <Toolbar
@@ -1673,6 +1853,7 @@ export default function App() {
                 onSelectionChange={setSelectionStats}
                 onOpenSearch={() => setIsSearchOpen(true)}
                 onSave={handleExportMarkdown}
+                allDocs={documents}
               />
             </div>
           )}
@@ -1753,6 +1934,8 @@ export default function App() {
                 onToggleComments={handleOpenCommentsClick}
                 commentsCount={activeDocCommentsCount}
                 onBackToWorkspace={() => setViewMode('workspace')}
+                allDocs={documents}
+                activeDocTitle={activeDoc?.title}
                 onNavigateToDoc={(target, heading) => {
                   const found = documents.find(
                     (d) =>
@@ -1986,6 +2169,10 @@ export default function App() {
         onSyncBrainToServer={handleSyncAiBrain}
         onPurgeServerBrain={handlePurgeServerBrain}
         isSyncing={isSyncingBrain}
+        onFetchFromCloud={() => handleFetchAndMergeAiBrainDocs(false)}
+        linkedFolders={linkedFolders}
+        onGrantDiskPermission={handleGrantDiskPermission}
+        onSyncLocalDisk={() => handleSyncFromLocalDisk(true)}
       />
 
       {/* Cloud Toast Notice */}

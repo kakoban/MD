@@ -62,10 +62,10 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150 select-none">
-      <div className="w-full max-w-4xl h-[82vh] rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl flex flex-col overflow-hidden text-[var(--text-primary)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-150 select-none">
+      <div className="w-full max-w-4xl h-[82vh] rounded-3xl frosted-glass border border-[var(--glass-border)] shadow-2xl flex flex-col overflow-hidden text-[var(--text-primary)]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-color)] bg-[var(--bg-primary)] shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--glass-border)] bg-[var(--tile)] shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
               <Sparkles className="w-5 h-5" />
@@ -82,14 +82,14 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            className="p-2 rounded-xl hover:bg-[var(--tile-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Filter bar */}
-        <div className="px-6 py-3 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs">
+        <div className="px-6 py-3 border-b border-[var(--glass-border)] bg-[var(--tile)] flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs">
           {/* Categories */}
           <div className="flex items-center gap-1.5 overflow-x-auto">
             {categories.map((cat) => (

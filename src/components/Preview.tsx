@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { executeCode } from '../utils/codeRunner';
 import { escapeHtml } from '../utils/markdownParser';
+import { MarkdownDoc } from '../types';
+import { getInboundSynapses } from '../utils/synapseEngine';
 
 interface PreviewProps {
   html: string;
@@ -33,6 +35,8 @@ interface PreviewProps {
   commentsCount?: number;
   onBackToWorkspace?: () => void;
   onNavigateToDoc?: (docTitle: string, heading?: string) => void;
+  allDocs?: MarkdownDoc[];
+  activeDocTitle?: string;
 }
 
 const HIGHLIGHT_COLORS: { id: HighlightColor; name: string; bg: string; dot: string; hover: string }[] = [
@@ -57,9 +61,17 @@ export const Preview: React.FC<PreviewProps> = ({
   commentsCount = 0,
   onBackToWorkspace,
   onNavigateToDoc,
+  allDocs = [],
+  activeDocTitle = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRef = scrollRef || containerRef;
+
+  // Inbound Backlinks for current active document
+  const inboundBacklinks = React.useMemo(() => {
+    if (!activeDocTitle || !allDocs || allDocs.length === 0) return [];
+    return getInboundSynapses(activeDocTitle, allDocs);
+  }, [activeDocTitle, allDocs]);
 
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [readingProgress, setReadingProgress] = useState<number>(0);
@@ -290,45 +302,16 @@ export const Preview: React.FC<PreviewProps> = ({
       </div>
 
       {/* Floating Toolbar: Teacher Pen, Layout Width & Zoom Controls */}
-      <div className="absolute top-2 end-2 sm:top-4 sm:end-5 z-20 flex items-center gap-1 sm:gap-1.5 p-1 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-md backdrop-blur-md opacity-95 hover:opacity-100 transition-opacity select-none max-w-[calc(100vw-1rem)] overflow-x-auto no-scrollbar">
-        {/* Back to Workspace Dashboard Button */}
-        {onBackToWorkspace && (
-          <button
-            type="button"
-            onClick={onBackToWorkspace}
-            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-lg text-xs font-bold bg-[#0061FF] text-white hover:bg-[#0052cc] shadow-xs transition-all cursor-pointer shrink-0"
-            title="بازگشت به صفحه اصلی و داشبورد اسناد"
-          >
-            <LayoutDashboard className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">داشبورد اسناد</span>
-          </button>
-        )}
-
-        {/* Comments Button */}
-        {onToggleComments && (
-          <button
-            type="button"
-            onClick={onToggleComments}
-            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0061FF]/10 hover:bg-[#0061FF]/20 text-[#0061FF] transition-all cursor-pointer shrink-0"
-            title="مشاهده و ثبت نظرات این سند"
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-[#0061FF]" />
-            <span className="hidden sm:inline font-bold">نظرات</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-[#0061FF] text-white font-black text-[10px]">
-              {commentsCount}
-            </span>
-          </button>
-        )}
-
+      <div className="absolute top-2 end-2 sm:top-3 sm:end-4 z-20 flex items-center gap-1 sm:gap-1.5 p-1 rounded-2xl frosted-glass border border-[var(--glass-border)] shadow-md select-none">
         {/* TEACHER HIGHLIGHTER PEN BUTTON */}
         <div className="relative flex items-center shrink-0">
           <button
             type="button"
             onClick={() => setTeacherPenActive(!teacherPenActive)}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               teacherPenActive
                 ? 'bg-amber-500 text-neutral-950 shadow-md ring-2 ring-amber-400/50'
-                : 'hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                : 'hover:bg-[var(--tile-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
             }`}
             title={
               teacherPenActive
@@ -337,8 +320,8 @@ export const Preview: React.FC<PreviewProps> = ({
             }
           >
             <Highlighter className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">قلم هایلایت مدرس</span>
-            <span className="sm:hidden">هایلایتر</span>
+            <span className="hidden sm:inline">قلم مدرس</span>
+            <span className="sm:hidden">قلم</span>
             {teacherPenActive && <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />}
           </button>
 
@@ -456,6 +439,37 @@ export const Preview: React.FC<PreviewProps> = ({
             style={{ fontSize: `${zoomLevel}%` }}
             dangerouslySetInnerHTML={{ __html: html }}
           />
+
+          {/* Inbound Backlinks Section (Synapse Engine Integration) */}
+          {inboundBacklinks.length > 0 && (
+            <div className={`${widthContainerClass} mt-12 pt-6 border-t border-[var(--border-color)] space-y-3`}>
+              <div className="flex items-center gap-2 text-xs font-bold text-[#0061FF]">
+                <span>🔗</span>
+                <span>پیوندهای ورودی به این سند (Backlinks - {inboundBacklinks.length})</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {inboundBacklinks.map((link, idx) => (
+                  <div
+                    key={`${link.sourceDoc.id}-${idx}`}
+                    onClick={() => onNavigateToDoc?.(link.sourceDoc.title)}
+                    className="p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-[#0061FF]/40 hover:bg-[#0061FF]/5 transition-all cursor-pointer group space-y-1 shadow-2xs"
+                  >
+                    <div className="flex items-center justify-between text-xs font-bold text-[var(--text-primary)] group-hover:text-[#0061FF]">
+                      <span className="truncate">📄 {link.sourceDoc.title}</span>
+                      <span className="text-[10px] text-[var(--text-muted)] font-normal">
+                        {link.sourceDoc.folderPath || 'عمومی'}
+                      </span>
+                    </div>
+                    {link.context && (
+                      <p className="text-[11px] text-[var(--text-muted)] line-clamp-2 leading-relaxed font-mono">
+                        {link.context}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -81,6 +81,16 @@ function preprocessMarkdown(md: string): { processed: string; mathBlocks: string
     return `<mark class="md-highlight md-highlight-${chosenColor}">${text}</mark>`;
   });
 
+  // 4. In-text hashtags: #tag or #هشتگ (excluding Markdown headings # Title and Hex colors)
+  // Matches #word preceded by space or start of line, not followed by space or hex color pattern
+  processed = processed.replace(/(^|[\s(])#([a-zA-Z؀-ۿ][\w؀-ۿ-]*)(?=$|[\s),.!?])/g, (match, prefix, tag) => {
+    // Avoid hex color codes like #fff or #123456
+    if (/^[0-9a-fA-F]{3,8}$/.test(tag)) {
+      return match;
+    }
+    return `${prefix}<span class="md-hashtag inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-semibold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 cursor-pointer hover:bg-fuchsia-500/20 transition-colors" data-tag="${escapeHtml(tag)}"><span>#</span><span>${escapeHtml(tag)}</span></span>`;
+  });
+
   return { processed, mathBlocks, mathInlines };
 }
 
@@ -416,6 +426,21 @@ export function detectDirection(text: string): 'rtl' | 'ltr' {
   return persianArabicRegex.test(firstHundredChars) ? 'rtl' : 'ltr';
 }
 
+// Extract all inline #hashtags from markdown text
+export function extractInlineTags(markdown: string): string[] {
+  if (!markdown) return [];
+  const tags = new Set<string>();
+  const regex = /(?:^|[\s(])#([a-zA-Z؀-ۿ][\w؀-ۿ-]*)(?=$|[\s),.!?])/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(markdown)) !== null) {
+    const tag = match[1];
+    if (!/^[0-9a-fA-F]{3,8}$/.test(tag)) {
+      tags.add(tag);
+    }
+  }
+  return Array.from(tags);
+}
+
 // Toggle a task item at given task index in raw markdown
 export function toggleTaskInMarkdown(markdown: string, targetTaskIndex: number): string {
   let currentIndex = 0;
@@ -429,3 +454,4 @@ export function toggleTaskInMarkdown(markdown: string, targetTaskIndex: number):
     return match;
   });
 }
+

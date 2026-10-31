@@ -11,6 +11,10 @@ export const authApi = {
     }
   },
 
+  isAuthenticated(): boolean {
+    return Boolean(this.getToken());
+  },
+
   setToken(token: string) {
     try {
       localStorage.setItem(TOKEN_KEY, token);

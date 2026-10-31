@@ -71,13 +71,16 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'hub_create_note',
-    description: 'ساخت سند جدید با عنوان، متن، پوشه و تگ‌ها در پایگاه دانش',
+    description: 'ذخیره و ایجاد مستقیم فایل مارک‌دان روی هارد دیسک و کامپیوتر کاربر در پوشه متصل‌شده (مانند Notes یا D:\\MIND\\Notes). هرگاه کاربر درخواست نوشتن موضوع، ایجاد فایل یا ذخیره یادداشت روی هارد دیسک یا سیستم محلی داد، حتماً این ابزار را صدا بزنید تا کلاینت محلی بلافاصله فایل را روی هارد دیسک کاربر ذخیره کند (هرگز به کاربر نگویید که امکان ذخیره روی هارد دیسک را ندارید). Create or write a markdown file directly to the user local hard disk via the active local sync agent.',
     inputSchema: {
       type: 'object',
       properties: {
-        title: { type: 'string', description: 'عنوان سند جدید' },
-        content: { type: 'string', description: 'متن مارک‌دان کامل سند' },
-        folder: { type: 'string', description: 'نام یا مسیر پوشه (اختیاری، پیش‌فرض: 🧠 مغز هوش مصنوعی)' },
+        title: { type: 'string', description: 'عنوان یادداشت، موضوع یا نام فایل (مثلاً «یادداشت جلسه» یا «برنامه کاری»)' },
+        topic: { type: 'string', description: 'موضوع یا نام فایل (معادل title)' },
+        content: { type: 'string', description: 'متن کامل مارک‌دان یادداشت یا فایل' },
+        text: { type: 'string', description: 'متن سند (معادل content)' },
+        folder: { type: 'string', description: 'مسیر یا نام پوشه روی هارد دیسک (اختیاری، مثلاً Notes یا Projects یا 🧠 مغز هوش مصنوعی)' },
+        folderPath: { type: 'string', description: 'مسیر پوشه روی دیسک (معادل folder)' },
         tags: {
           type: 'array',
           items: { type: 'string' },
@@ -89,13 +92,30 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
-    name: 'hub_append_to_note',
-    description: 'اضافه کردن متن جدید به انتهای یک سند موجود (مانند ثبت در صندوق ورودی، لاگ‌های روزانه یا یادداشت‌ها)',
+    name: 'hub_write_file',
+    description: 'ایجاد یا بازنویسی مستقیم یک فایل مارک‌دان روی هارد دیسک محلی کاربر. هرگاه کاربر درخواست ساخت فایلی با نام مشخص روی هارد دیسک داد این ابزار را اجرا کنید. Write or create a file directly to the user local physical hard drive.',
     inputSchema: {
       type: 'object',
       properties: {
-        fileIdOrTitle: { type: 'string', description: 'شناسه یا عنوان سند مورد نظر' },
-        contentToAppend: { type: 'string', description: 'متنی که باید به انتهای سند اضافه شود' },
+        filename: { type: 'string', description: 'نام فایل یا عنوان موضوع (مثلاً my-topic.md یا گزارش پروژه)' },
+        title: { type: 'string', description: 'عنوان فایل (معادل filename)' },
+        content: { type: 'string', description: 'محتوای کامل فایل به زبان مارک‌دان' },
+        folder: { type: 'string', description: 'پوشه مقصد روی هارد دیسک (اختیاری، پیش‌فرض: 🧠 مغز هوش مصنوعی)' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'تگ‌ها (اختیاری)' },
+      },
+      required: ['filename', 'content'],
+    },
+  },
+  {
+    name: 'hub_append_to_note',
+    description: 'اضافه کردن متن جدید به انتهای یک فایل یا یادداشت روی هارد دیسک (اگر فایل وجود نداشته باشد، به صورت خودکار ایجاد می‌شود).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileIdOrTitle: { type: 'string', description: 'شناسه، عنوان یا نام فایل مورد نظر' },
+        title: { type: 'string', description: 'عنوان یا نام فایل (معادل fileIdOrTitle)' },
+        contentToAppend: { type: 'string', description: 'متنی که باید به انتهای فایل اضافه شود' },
+        content: { type: 'string', description: 'متن جهت افزودن (معادل contentToAppend)' },
         separator: { type: 'string', description: 'جداکننده بین متن قبلی و متن جدید (اختیاری، پیش‌فرض دو خط جدید)' },
       },
       required: ['fileIdOrTitle', 'contentToAppend'],
@@ -103,14 +123,14 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'hub_update_note',
-    description: 'ویرایش محتوا، عنوان، پوشه یا تگ‌های یک سند موجود، به همراه شماره نسخه (expectedVersion) برای جلوگیری از بازنویسی ناخواسته',
+    description: 'ویرایش محتوا، عنوان، پوشه یا تگ‌های یک فایل موجود روی هارد دیسک، به همراه شماره نسخه برای جلوگیری از تعارض',
     inputSchema: {
       type: 'object',
       properties: {
-        fileIdOrTitle: { type: 'string', description: 'شناسه یا عنوان سند مورد نظر برای ویرایش' },
+        fileIdOrTitle: { type: 'string', description: 'شناسه، عنوان یا نام فایل جهت ویرایش' },
         content: { type: 'string', description: 'متن جدید مارک‌دان سند (اختیاری)' },
         title: { type: 'string', description: 'عنوان جدید سند (اختیاری)' },
-        folder: { type: 'string', description: 'مسیر یا پوشه جدید سند (اختیاری)' },
+        folder: { type: 'string', description: 'مسیر یا پوشه جدید سند روی دیسک (اختیاری)' },
         tags: {
           type: 'array',
           items: { type: 'string' },
@@ -118,8 +138,19 @@ export const MCP_TOOLS: McpTool[] = [
         },
         expectedVersion: {
           type: 'number',
-          description: 'شماره نسخه مورد انتظار سند قبل از ویرایش (اختیاری - در صورت عدم تطابق با نسخه سرور، خطا می‌دهد تا بازنویسی ناخواسته رخ ندهد)',
+          description: 'شماره نسخه مورد انتظار سند قبل از ویرایش (اختیاری)',
         },
+      },
+      required: ['fileIdOrTitle'],
+    },
+  },
+  {
+    name: 'hub_delete_note',
+    description: 'حذف یک یادداشت از مغز هوش مصنوعی و پایگاه دانش بر اساس شناسه یا عنوان',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileIdOrTitle: { type: 'string', description: 'شناسه (id) یا عنوان دقیق سند جهت حذف' },
       },
       required: ['fileIdOrTitle'],
     },
@@ -353,10 +384,31 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
 
       // --- Writable Tools ---
 
-      if (toolName === 'hub_create_note') {
-        const title = String(args.title || '').trim();
-        const content = String(args.content || '');
-        const folder = String(args.folder || '🧠 مغز هوش مصنوعی').trim();
+      if (toolName === 'hub_create_note' || toolName === 'hub_write_file') {
+        const rawTitle = String(
+          args.title ||
+          args.topic ||
+          args.filename ||
+          args.name ||
+          args.subject ||
+          ''
+        ).replace(/\.md$/i, '').trim();
+        const content = String(
+          args.content ??
+          args.text ??
+          args.body ??
+          args.markdown ??
+          args.note ??
+          ''
+        );
+        const folder = String(
+          args.folderPath ||
+          args.folder ||
+          args.path ||
+          args.directory ||
+          args.category ||
+          '🧠 مغز هوش مصنوعی'
+        ).trim();
         const tags = Array.isArray(args.tags)
           ? args.tags.map((t: string) => String(t).trim()).filter(Boolean)
           : [];
@@ -365,13 +417,50 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         }
         const isPublic = Boolean(args.isPublic ?? false);
 
-        if (!title) {
+        // Fallback title from first line of markdown if title is empty
+        const derivedTitle = content
+          ? content.split('\n')[0].replace(/^#+\s*/, '').trim().slice(0, 50)
+          : '';
+        const title = rawTitle || derivedTitle || 'یادداشت جدید هوش مصنوعی';
+
+        // Check if an existing note with same title exists in this folder or globally
+        const checkExisting = await pool.query(
+          `SELECT id, title, content, folder_path, tags, COALESCE(version, 1) as version
+           FROM shared_markdown_files
+           WHERE LOWER(title) = LOWER($1) AND (LOWER(COALESCE(folder_path, '')) = LOWER($2) OR $2 = '' OR $2 = '🧠 مغز هوش مصنوعی')
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [title, folder]
+        );
+
+        if (checkExisting.rows.length > 0 && toolName === 'hub_write_file') {
+          // Overwrite existing file when explicitly calling hub_write_file
+          const existing = checkExisting.rows[0];
+          const updateResult = await pool.query(
+            `UPDATE shared_markdown_files
+             SET content = $1,
+                 tags = $2,
+                 folder_path = $3,
+                 version = COALESCE(version, 1) + 1,
+                 updated_at = NOW()
+             WHERE id = $4
+             RETURNING id, title, content, folder_path, tags, is_public, COALESCE(version, 1) as version, created_at, updated_at`,
+            [content, tags, folder, existing.id]
+          );
+
           return {
             jsonrpc: '2.0',
             id,
             result: {
-              content: [{ type: 'text', text: 'خطا: عنوان سند (title) الزامی است.' }],
-              isError: true,
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    message: `فایل «${title}» با موفقیت بازنویسی و روی هارد دیسک و پایگاه دانش به‌روزرسانی شد.`,
+                    document: updateResult.rows[0],
+                  }, null, 2),
+                },
+              ],
             },
           };
         }
@@ -387,7 +476,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         const insertResult = await pool.query(
           `INSERT INTO shared_markdown_files (id, title, content, description, author_name, tags, is_public, folder_path, version, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, NOW(), NOW())
-           RETURNING id, title, folder_path, tags, is_public, COALESCE(version, 1) as version, created_at, updated_at`,
+           RETURNING id, title, content, folder_path, tags, is_public, COALESCE(version, 1) as version, created_at, updated_at`,
           [newId, title, content, 'سند ایجاد شده توسط هوش مصنوعی (MCP)', 'هوش مصنوعی (MCP)', tags, isPublic, folder]
         );
 
@@ -398,7 +487,11 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
             content: [
               {
                 type: 'text',
-                text: JSON.stringify({ message: 'سند با موفقیت ساخته شد.', document: insertResult.rows[0] }, null, 2),
+                text: JSON.stringify({
+                  message: `سند «${title}» با موفقیت در پوشه «${folder}» ایجاد گردید و آماده ذخیره روی هارد دیسک است.`,
+                  document: insertResult.rows[0],
+                  status: 'created_and_queued_for_disk',
+                }, null, 2),
               },
             ],
           },
@@ -406,8 +499,24 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
       }
 
       if (toolName === 'hub_append_to_note') {
-        const target = String(args.fileIdOrTitle || '').trim();
-        const contentToAppend = String(args.contentToAppend || '');
+        const target = String(
+          args.fileIdOrTitle ||
+          args.title ||
+          args.topic ||
+          args.filename ||
+          args.name ||
+          args.id ||
+          args.fileId ||
+          ''
+        ).replace(/\.md$/i, '').trim();
+        const contentToAppend = String(
+          args.contentToAppend ??
+          args.content ??
+          args.text ??
+          args.body ??
+          args.markdown ??
+          ''
+        );
         const separator = args.separator !== undefined ? String(args.separator) : '\n\n';
 
         if (!target) {
@@ -422,7 +531,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         }
 
         const findResult = await pool.query(
-          `SELECT id, title, content, folder_path, COALESCE(version, 1) as version
+          `SELECT id, title, content, folder_path, tags, COALESCE(version, 1) as version
            FROM shared_markdown_files
            WHERE id = $1 OR LOWER(title) = LOWER($1)
            LIMIT 1`,
@@ -430,12 +539,37 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         );
 
         if (findResult.rows.length === 0) {
+          // If note does not exist, automatically create it instead of failing!
+          const autoTitle = target;
+          const folder = String(args.folderPath || args.folder || '🧠 مغز هوش مصنوعی').trim();
+          const cleanTitle = autoTitle
+            .toLowerCase()
+            .replace(/[^\w؀-ۿ\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .slice(0, 30);
+          const randomSuffix = Math.random().toString(36).substring(2, 8);
+          const newId = cleanTitle ? `brain-${cleanTitle}-${randomSuffix}` : `brain-doc-${randomSuffix}`;
+
+          const createResult = await pool.query(
+            `INSERT INTO shared_markdown_files (id, title, content, description, author_name, tags, is_public, folder_path, version, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, NOW(), NOW())
+             RETURNING id, title, content, folder_path, tags, is_public, COALESCE(version, 1) as version, created_at, updated_at`,
+            [newId, autoTitle, contentToAppend, 'سند ایجاد شده توسط هوش مصنوعی (MCP)', 'هوش مصنوعی (MCP)', ['ai-brain'], false, folder]
+          );
+
           return {
             jsonrpc: '2.0',
             id,
             result: {
-              content: [{ type: 'text', text: `خطا: سند با شناسه یا عنوان «${target}» یافت نشد.` }],
-              isError: true,
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    message: `سند «${autoTitle}» یافت نشد، لذا به صورت خودکار به عنوان سند جدید روی هارد دیسک ایجاد گردید.`,
+                    document: createResult.rows[0],
+                  }, null, 2),
+                },
+              ],
             },
           };
         }
@@ -445,14 +579,20 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
           ? `${existingDoc.content}${separator}${contentToAppend}`
           : contentToAppend;
 
+        const currentTags: string[] = Array.isArray(existingDoc.tags) ? existingDoc.tags : [];
+        if (!currentTags.includes('ai-brain')) {
+          currentTags.push('ai-brain');
+        }
+
         const updateResult = await pool.query(
           `UPDATE shared_markdown_files
            SET content = $1,
+               tags = $2,
                version = COALESCE(version, 1) + 1,
                updated_at = NOW()
-           WHERE id = $2
-           RETURNING id, title, folder_path, COALESCE(version, 1) as version, updated_at`,
-          [newContent, existingDoc.id]
+           WHERE id = $3
+           RETURNING id, title, content, folder_path, tags, COALESCE(version, 1) as version, updated_at`,
+          [newContent, currentTags, existingDoc.id]
         );
 
         return {
@@ -470,15 +610,30 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
       }
 
       if (toolName === 'hub_update_note') {
-        const target = String(args.fileIdOrTitle || '').trim();
+        const target = String(
+          args.fileIdOrTitle ||
+          args.id ||
+          args.fileId ||
+          args.title ||
+          args.name ||
+          args.topic ||
+          args.filename ||
+          ''
+        ).replace(/\.md$/i, '').trim();
         const expectedVersion =
           args.expectedVersion !== undefined && args.expectedVersion !== null && !isNaN(Number(args.expectedVersion))
             ? Number(args.expectedVersion)
             : null;
-        const newContent = args.content !== undefined ? String(args.content) : null;
-        const newTitle = args.title !== undefined ? String(args.title).trim() : null;
-        const newFolder = args.folder !== undefined ? String(args.folder).trim() : null;
-        const newTags = Array.isArray(args.tags)
+        const newContent = args.content !== undefined
+          ? String(args.content)
+          : (args.text !== undefined ? String(args.text) : (args.body !== undefined ? String(args.body) : null));
+        const newTitle = args.title !== undefined
+          ? String(args.title).replace(/\.md$/i, '').trim()
+          : (args.name !== undefined ? String(args.name).replace(/\.md$/i, '').trim() : null);
+        const newFolder = args.folderPath !== undefined
+          ? String(args.folderPath).trim()
+          : (args.folder !== undefined ? String(args.folder).trim() : (args.path !== undefined ? String(args.path).trim() : null));
+        let newTags = Array.isArray(args.tags)
           ? args.tags.map((t: string) => String(t).trim()).filter(Boolean)
           : null;
 
@@ -534,7 +689,10 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         const finalTitle = newTitle !== null && newTitle.length > 0 ? newTitle : currentDoc.title;
         const finalContent = newContent !== null ? newContent : currentDoc.content;
         const finalFolder = newFolder !== null ? newFolder : currentDoc.folder_path;
-        const finalTags = newTags !== null ? newTags : currentDoc.tags;
+        let finalTags = newTags !== null ? newTags : (Array.isArray(currentDoc.tags) ? currentDoc.tags : []);
+        if (!finalTags.includes('ai-brain')) {
+          finalTags.push('ai-brain');
+        }
 
         const updateResult = await pool.query(
           `UPDATE shared_markdown_files
@@ -545,7 +703,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
                version = COALESCE(version, 1) + 1,
                updated_at = NOW()
            WHERE id = $5
-           RETURNING id, title, folder_path, tags, COALESCE(version, 1) as version, updated_at`,
+           RETURNING id, title, content, folder_path, tags, COALESCE(version, 1) as version, updated_at`,
           [finalTitle, finalContent, finalFolder, finalTags, currentDoc.id]
         );
 
@@ -557,6 +715,51 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
               {
                 type: 'text',
                 text: JSON.stringify({ message: 'سند با موفقیت به‌روزرسانی شد.', document: updateResult.rows[0] }, null, 2),
+              },
+            ],
+          },
+        };
+      }
+
+      if (toolName === 'hub_delete_note') {
+        const target = String(args.fileIdOrTitle || '').trim();
+        if (!target) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [{ type: 'text', text: 'خطا: شناسه یا عنوان سند (fileIdOrTitle) الزامی است.' }],
+              isError: true,
+            },
+          };
+        }
+
+        const deleteResult = await pool.query(
+          `DELETE FROM shared_markdown_files
+           WHERE id = $1 OR LOWER(title) = LOWER($1)
+           RETURNING id, title, folder_path`,
+          [target]
+        );
+
+        if (deleteResult.rows.length === 0) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [{ type: 'text', text: `سند «${target}» جهت حذف یافت نشد.` }],
+              isError: true,
+            },
+          };
+        }
+
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ message: 'سند با موفقیت حذف گردید.', deletedDocument: deleteResult.rows[0] }, null, 2),
               },
             ],
           },

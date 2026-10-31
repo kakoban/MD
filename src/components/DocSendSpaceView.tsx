@@ -260,7 +260,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
           return (
             <div
               key={child.fullPath}
-              className={`rounded-2xl border ${theme.border} bg-[var(--bg-secondary)] overflow-hidden transition-all shadow-xs`}
+              className={`rounded-2xl border ${theme.border} frosted-card overflow-hidden transition-all shadow-xs`}
             >
               <div
                 onClick={() => toggleFolderCollapse(child.fullPath)}
@@ -386,7 +386,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                 <div
                   key={doc.id}
                   onClick={() => onOpenDoc(doc.id, 'split')}
-                  className={`p-4 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] ${docTheme.cardBorder} hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-36 group`}
+                  className={`p-4 rounded-xl frosted-card ${docTheme.cardBorder} hover:shadow-md transition-all cursor-pointer flex flex-col justify-between h-36 group`}
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -524,7 +524,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
       />
 
       {/* 1. TOP HEADER: Clean Google Docs / Notion Style (Responsive Mobile & Desktop) */}
-      <header className="h-auto py-2.5 sm:h-16 border-b border-[var(--border-color)] px-3 sm:px-8 flex flex-col md:flex-row items-stretch md:items-center justify-between bg-[var(--bg-secondary)] shrink-0 z-30 gap-2.5 md:gap-4">
+      <header className="h-auto py-2.5 sm:h-16 frosted-glass border-b border-[var(--glass-border)] px-3 sm:px-8 flex flex-col md:flex-row items-stretch md:items-center justify-between shrink-0 z-30 gap-2.5 md:gap-4">
         {/* Top bar on mobile: Brand + Quick Actions */}
         <div className="flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
@@ -1233,7 +1233,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       <div
                         key={doc.id}
                         onClick={() => onOpenDoc(doc.id, 'split')}
-                        className={`group p-5 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] ${theme.cardBorder} hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between h-48 relative overflow-hidden`}
+                        className={`group p-5 rounded-2xl frosted-card ${theme.cardBorder} hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between h-48 relative overflow-hidden`}
                       >
                         {/* Top Row: Icon + Badges */}
                         <div>
@@ -1361,7 +1361,7 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                       <div
                         key={file.id}
                         onClick={() => onOpenCloudDoc(file)}
-                        className="group p-5 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-emerald-500/40 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between h-48 relative overflow-hidden"
+                        className="group p-5 rounded-2xl frosted-card hover:border-emerald-500/40 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between h-48 relative overflow-hidden"
                       >
                         {/* Top Row */}
                         <div>

@@ -99,14 +99,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   ];
 
   return (
-    <div className="toolbar-container flex items-center gap-1 px-2 sm:px-3 py-1.5 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] backdrop-blur-sm select-none z-20 text-[var(--text-secondary)] text-xs overflow-x-auto no-scrollbar flex-nowrap shrink-0">
+    <div className="toolbar-container flex items-center gap-1 px-2 sm:px-3 py-1.5 border-b border-[var(--glass-border)] frosted-glass select-none z-20 text-[var(--text-secondary)] text-xs overflow-x-auto no-scrollbar flex-nowrap shrink-0">
       {/* Undo / Redo */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--glass-border)] shrink-0">
         <button
           type="button"
           onClick={onUndo}
           disabled={!canUndo}
-          className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          className="p-1.5 rounded-lg hover:bg-[var(--tile-hover)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
           title={t('toolbar.undo')}
         >
           <Undo className="w-4 h-4" />
@@ -115,7 +115,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={onRedo}
           disabled={!canRedo}
-          className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          className="p-1.5 rounded-lg hover:bg-[var(--tile-hover)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
           title={t('toolbar.redo')}
         >
           <Redo className="w-4 h-4" />
@@ -123,18 +123,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Headings Dropdown */}
-      <div className="relative pe-1 border-e border-[var(--border-color)] shrink-0" ref={headingRef}>
+      <div className="relative pe-1 border-e border-[var(--glass-border)] shrink-0" ref={headingRef}>
         <button
           type="button"
           onClick={() => setShowHeadingMenu(!showHeadingMenu)}
-          className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-[var(--bg-tertiary)] transition-colors font-medium text-[var(--text-primary)]"
+          className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-[var(--tile-hover)] transition-colors font-medium text-[var(--text-primary)] cursor-pointer"
           title="عنوان‌ها (Headings)"
         >
           <span>{t('toolbar.headings')}</span>
           <ChevronDown className="w-3 h-3 text-[var(--text-muted)]" />
         </button>
         {showHeadingMenu && (
-          <div className="absolute top-full start-0 mt-1 w-44 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-xl py-1 z-30 divide-y divide-[var(--border-color)]">
+          <div className="absolute top-full start-0 mt-1 w-44 rounded-2xl frosted-glass border border-[var(--glass-border)] shadow-xl p-1 z-30 divide-y divide-[var(--glass-border)]">
             <button
               type="button"
               onClick={() => {

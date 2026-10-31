@@ -1472,17 +1472,19 @@ app.post('/api/brain/sync', async (req: Request, res: Response) => {
 app.get('/api/brain/documents', async (req: Request, res: Response) => {
   try {
     const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'مغز هوش مصنوعی یک فضای اختصاصی است و برای مشاهده آن باید وارد حساب کاربری خود شوید.' });
-    }
+    const whereUser = authUser
+      ? `(user_id = $1 OR user_id IS NULL OR author_name = 'هوش مصنوعی (MCP)')`
+      : `(user_id IS NULL OR author_name = 'هوش مصنوعی (MCP)')`;
+    const params = authUser ? [authUser.id] : [];
 
     const result = await pool.query(
-      `SELECT id, title, content, description, folder_path, tags, updated_at, created_at
+      `SELECT id, title, content, description, folder_path, tags, version, updated_at, created_at
        FROM shared_markdown_files
-       WHERE user_id = $1 AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')
+       WHERE ${whereUser}
+         AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')
        ORDER BY updated_at DESC
-       LIMIT 100`,
-      [authUser.id]
+       LIMIT 150`,
+      params
     );
     res.json({ success: true, files: result.rows });
   } catch (error: any) {

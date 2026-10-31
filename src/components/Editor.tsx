@@ -4,8 +4,9 @@ import { EditorState, Compartment, EditorSelection } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { bracketMatching, defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { closeBrackets } from '@codemirror/autocomplete';
-import { FontFamily } from '../types';
+import { closeBrackets, autocompletion, CompletionContext } from '@codemirror/autocomplete';
+import { FontFamily, MarkdownDoc } from '../types';
+import { extractHeadings } from '../utils/markdownParser';
 
 export interface EditorHandle {
   insertMarkdown: (prefix: string, suffix?: string, defaultText?: string) => void;
@@ -28,6 +29,7 @@ interface EditorProps {
   onSelectionChange?: (stats: { chars: number; words: number } | null) => void;
   onOpenSearch?: () => void;
   onSave?: () => void;
+  allDocs?: MarkdownDoc[];
 }
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(({
@@ -40,10 +42,14 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(({
   onSelectionChange,
   onOpenSearch,
   onSave,
+  allDocs = [],
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const isInternalChange = useRef(false);
+
+  const allDocsRef = useRef(allDocs);
+  allDocsRef.current = allDocs;
 
   const onOpenSearchRef = useRef(onOpenSearch);
   onOpenSearchRef.current = onOpenSearch;
@@ -259,6 +265,76 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(({
       indentWithTab,
     ]);
 
+    // Wiki-Link / Synapse [[...]] Autocomplete Source
+    const wikiLinkCompletionSource = (context: CompletionContext) => {
+      const line = context.state.doc.lineAt(context.pos);
+      const textBefore = line.text.slice(0, context.pos - line.from);
+
+      // Check if user typed [[ without closing ]]
+      const lastOpen = textBefore.lastIndexOf('[[');
+      if (lastOpen === -1) return null;
+
+      const lastClose = textBefore.lastIndexOf(']]');
+      if (lastClose > lastOpen) return null;
+
+      const query = textBefore.slice(lastOpen + 2);
+      const docs = allDocsRef.current || [];
+      const from = line.from + lastOpen + 2;
+
+      // Heading completion: [[Doc Title#Heading
+      if (query.includes('#')) {
+        const [targetTitle, headingQuery] = query.split('#');
+        const targetDoc = docs.find(
+          (d) => d.title.trim().toLowerCase() === targetTitle.trim().toLowerCase()
+        );
+        if (!targetDoc) return null;
+
+        const headings = extractHeadings(targetDoc.content);
+        const headingOptions = headings
+          .filter((h) => !headingQuery || h.text.toLowerCase().includes(headingQuery.toLowerCase()))
+          .map((h) => ({
+            label: h.text,
+            displayLabel: `§ ${h.text}`,
+            detail: `سطح ${h.level}`,
+            type: 'property',
+            apply: (view: EditorView) => {
+              const insertText = `${h.text}]]`;
+              view.dispatch({
+                changes: { from: line.from + lastOpen + 2 + targetTitle.length + 1, to: context.pos, insert: insertText },
+              });
+            },
+          }));
+
+        return {
+          from: line.from + lastOpen + 2 + targetTitle.length + 1,
+          options: headingOptions,
+          validFor: /^[^\]]*$/,
+        };
+      }
+
+      // Document title completion: [[Doc
+      const docOptions = docs
+        .filter((d) => !query || d.title.toLowerCase().includes(query.toLowerCase()))
+        .map((d) => ({
+          label: d.title,
+          displayLabel: `📄 ${d.title}`,
+          detail: d.folderPath || 'عمومی',
+          type: 'keyword',
+          apply: (view: EditorView) => {
+            const insertText = `${d.title}]]`;
+            view.dispatch({
+              changes: { from, to: context.pos, insert: insertText },
+            });
+          },
+        }));
+
+      return {
+        from,
+        options: docOptions,
+        validFor: /^[^\]#]*$/,
+      };
+    };
+
     const state = EditorState.create({
       doc: value,
       extensions: [
@@ -269,6 +345,10 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(({
         history(),
         bracketMatching(),
         closeBrackets(),
+        autocompletion({
+          override: [wikiLinkCompletionSource],
+          activateOnTyping: true,
+        }),
         markdown(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         editorTheme,

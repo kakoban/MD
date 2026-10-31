@@ -127,7 +127,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
 
   return (
     <footer
-      className={`status-bar select-none relative px-2.5 sm:px-4 py-1 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] backdrop-blur-sm text-[11px] text-[var(--text-muted)] flex items-center justify-between gap-2 sm:gap-4 z-10 transition-all duration-300 overflow-x-auto no-scrollbar whitespace-nowrap shrink-0 ${
+      className={`status-bar select-none relative px-2.5 sm:px-4 py-1 border-t border-[var(--glass-border)] frosted-glass text-[11px] text-[var(--text-muted)] flex items-center justify-between gap-2 sm:gap-4 z-10 transition-all duration-300 overflow-x-auto no-scrollbar whitespace-nowrap shrink-0 ${
         isSaving
           ? 'is-saving status-bar-saving'
           : isPending
@@ -184,7 +184,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
                   className={`flex items-center gap-2 px-2.5 py-0.5 rounded-lg border transition-all cursor-pointer ${
                     isGoalReached
                       ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 font-medium shadow-xs hover:border-emerald-500/60'
-                      : 'bg-[var(--bg-tertiary)] border-[var(--border-color)] text-[var(--text-secondary)] hover:border-amber-500/50 hover:bg-[var(--bg-primary)]'
+                      : 'bg-[var(--tile)] border-[var(--glass-border)] text-[var(--text-secondary)] hover:border-amber-500/50 hover:bg-[var(--tile-hover)]'
                   }`}
                   title="کلیک برای ویرایش یا مشاهده هدف کلمات"
                 >

@@ -226,7 +226,11 @@ export async function getOrCreateSubdir(
   folderPath?: string
 ): Promise<FileSystemDirectoryHandle> {
   if (!folderPath) return rootHandle;
-  const segments = folderPath.replace(/\\/g, '/').split('/').filter(Boolean);
+  const segments = folderPath
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((s) => s.trim().replace(/[\\/:*?"<>|]/g, '_'))
+    .filter(Boolean);
   let current = rootHandle;
   for (const segment of segments) {
     current = await current.getDirectoryHandle(segment, { create: true });
@@ -235,7 +239,8 @@ export async function getOrCreateSubdir(
 }
 
 export function sanitizeFileName(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'سند_جدید';
+  const clean = name.replace(/\.md$/i, '').replace(/[\\/:*?"<>|]/g, '_').trim();
+  return clean || 'سند_جدید';
 }
 
 // Write document content directly to the appropriate local physical folder (multi-folder routing)
@@ -268,7 +273,10 @@ export async function writeDocToAppropriateFolder(
     if (matchedRecord.handle.queryPermission) {
       // @ts-ignore
       const perm = await matchedRecord.handle.queryPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') return false;
+      if (perm !== 'granted') {
+        enqueuePendingDiskWrite(doc);
+        return false;
+      }
     }
 
     const targetDir = await getOrCreateSubdir(matchedRecord.handle, relativeSubdir);
@@ -277,11 +285,12 @@ export async function writeDocToAppropriateFolder(
 
     // @ts-ignore
     const writable = await fileHandle.createWritable();
-    await writable.write(doc.content);
+    await writable.write(doc.content ?? '');
     await writable.close();
     return true;
   } catch (err) {
     console.warn('Failed writing doc to folder:', matchedRecord.name, err);
+    enqueuePendingDiskWrite(doc);
     return false;
   }
 }
@@ -289,3 +298,160 @@ export async function writeDocToAppropriateFolder(
 export function isFileSystemAccessSupported(): boolean {
   return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 }
+
+// Global In-Memory Write Queue for Pending Disk Writes
+export interface PendingDiskWriteItem {
+  id?: string;
+  title: string;
+  content: string;
+  folderPath?: string;
+  queuedAt: number;
+}
+
+let pendingDiskWritesQueue: PendingDiskWriteItem[] = [];
+type QueueChangeCallback = (queue: PendingDiskWriteItem[]) => void;
+const queueListeners: Set<QueueChangeCallback> = new Set();
+
+export function getPendingDiskWrites(): PendingDiskWriteItem[] {
+  return [...pendingDiskWritesQueue];
+}
+
+export function subscribeToPendingQueue(callback: QueueChangeCallback): () => void {
+  queueListeners.add(callback);
+  callback([...pendingDiskWritesQueue]);
+  return () => {
+    queueListeners.delete(callback);
+  };
+}
+
+function notifyQueueChange() {
+  queueListeners.forEach((fn) => fn([...pendingDiskWritesQueue]));
+}
+
+export function enqueuePendingDiskWrite(doc: { id?: string; title: string; content: string; folderPath?: string }): void {
+  const existingIndex = pendingDiskWritesQueue.findIndex(
+    (item) => item.title.toLowerCase() === doc.title.toLowerCase() && (item.folderPath || '') === (doc.folderPath || '')
+  );
+  const newItem: PendingDiskWriteItem = {
+    id: doc.id,
+    title: doc.title,
+    content: doc.content,
+    folderPath: doc.folderPath,
+    queuedAt: Date.now(),
+  };
+
+  if (existingIndex !== -1) {
+    pendingDiskWritesQueue[existingIndex] = newItem;
+  } else {
+    pendingDiskWritesQueue.push(newItem);
+  }
+  notifyQueueChange();
+}
+
+export function clearPendingDiskWrites(): void {
+  pendingDiskWritesQueue = [];
+  notifyQueueChange();
+}
+
+// Check if any linked folder requires user gesture to grant readwrite permission
+export async function checkFoldersPermissionStatus(folders: LinkedFolderRecord[]): Promise<{
+  allGranted: boolean;
+  needsPrompt: boolean;
+  foldersStatus: { name: string; permission: 'granted' | 'prompt' | 'denied' }[];
+}> {
+  if (!folders || folders.length === 0) {
+    return { allGranted: false, needsPrompt: false, foldersStatus: [] };
+  }
+
+  let allGranted = true;
+  let needsPrompt = false;
+  const statuses: { name: string; permission: 'granted' | 'prompt' | 'denied' }[] = [];
+
+  for (const f of folders) {
+    try {
+      // @ts-ignore
+      if (f.handle.queryPermission) {
+        // @ts-ignore
+        const perm: 'granted' | 'prompt' | 'denied' = await f.handle.queryPermission({ mode: 'readwrite' });
+        statuses.push({ name: f.name, permission: perm });
+        if (perm !== 'granted') {
+          allGranted = false;
+        }
+        if (perm === 'prompt') {
+          needsPrompt = true;
+        }
+      } else {
+        statuses.push({ name: f.name, permission: 'granted' });
+      }
+    } catch {
+      statuses.push({ name: f.name, permission: 'denied' });
+      allGranted = false;
+    }
+  }
+
+  return { allGranted, needsPrompt, foldersStatus: statuses };
+}
+
+// Request permission (must be called inside user click handler) and flush all pending writes
+export async function requestPermissionAndFlushQueue(
+  folders: LinkedFolderRecord[]
+): Promise<{ success: boolean; writtenCount: number; error?: string }> {
+  if (!folders || folders.length === 0) {
+    return { success: false, writtenCount: 0, error: 'هیچ پوشه‌ای متصل نیست.' };
+  }
+
+  let grantedAny = false;
+  for (const f of folders) {
+    try {
+      // @ts-ignore
+      if (f.handle.requestPermission) {
+        // @ts-ignore
+        const perm = await f.handle.requestPermission({ mode: 'readwrite' });
+        if (perm === 'granted') {
+          grantedAny = true;
+        }
+      }
+    } catch (e) {
+      console.warn(`Permission request failed for ${f.name}`, e);
+    }
+  }
+
+  if (!grantedAny) {
+    return { success: false, writtenCount: 0, error: 'مجوز دسترسی توسط کاربر صادر نشد.' };
+  }
+
+  // Flush queue
+  let writtenCount = 0;
+  const queueToProcess = [...pendingDiskWritesQueue];
+  const remainingQueue: PendingDiskWriteItem[] = [];
+
+  for (const item of queueToProcess) {
+    const success = await writeDocToAppropriateFolder(folders, item);
+    if (success) {
+      writtenCount++;
+    } else {
+      remainingQueue.push(item);
+    }
+  }
+
+  pendingDiskWritesQueue = remainingQueue;
+  notifyQueueChange();
+
+  return { success: true, writtenCount };
+}
+
+// 1-Click creation of standard AI Brain second-brain directories inside linked root
+export async function createStandardBrainFolders(rootHandle: FileSystemDirectoryHandle): Promise<string[]> {
+  const standardDirs = ['Inbox', 'Projects', 'Notes', 'Me', '🧠 مغز هوش مصنوعی'];
+  const created: string[] = [];
+  for (const dir of standardDirs) {
+    try {
+      await rootHandle.getDirectoryHandle(dir, { create: true });
+      created.push(dir);
+    } catch (err) {
+      console.warn(`Failed to create standard directory ${dir}`, err);
+    }
+  }
+  return created;
+}
+

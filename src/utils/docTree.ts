@@ -103,6 +103,34 @@ export const FOLDER_THEMES: Record<string, FolderTheme> = {
     badge: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40 shadow-xs",
     cardBorder: "hover:border-fuchsia-500/70 hover:shadow-md hover:shadow-fuchsia-500/10",
   },
+  inbox: {
+    border: "border-sky-500/40 hover:border-sky-500/80 shadow-xs",
+    headerBg: "bg-sky-500/10 hover:bg-sky-500/15",
+    icon: "text-sky-400",
+    badge: "bg-sky-500/20 text-sky-300 border-sky-500/40",
+    cardBorder: "hover:border-sky-500/70",
+  },
+  projects: {
+    border: "border-emerald-500/40 hover:border-emerald-500/80 shadow-xs",
+    headerBg: "bg-emerald-500/10 hover:bg-emerald-500/15",
+    icon: "text-emerald-400",
+    badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+    cardBorder: "hover:border-emerald-500/70",
+  },
+  notes: {
+    border: "border-amber-500/40 hover:border-amber-500/80 shadow-xs",
+    headerBg: "bg-amber-500/10 hover:bg-amber-500/15",
+    icon: "text-amber-400",
+    badge: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+    cardBorder: "hover:border-amber-500/70",
+  },
+  me: {
+    border: "border-purple-500/40 hover:border-purple-500/80 shadow-xs",
+    headerBg: "bg-purple-500/10 hover:bg-purple-500/15",
+    icon: "text-purple-400",
+    badge: "bg-purple-500/20 text-purple-300 border-purple-500/40",
+    cardBorder: "hover:border-purple-500/70",
+  },
 };
 
 const PALETTE_KEYS = ["blue", "emerald", "amber", "purple", "rose", "indigo"];
@@ -111,6 +139,18 @@ export function getFolderTheme(folderName?: string): FolderTheme {
   const norm = (folderName || "").trim().toLowerCase();
   if (norm.includes("مغز") || norm.includes("brain")) {
     return FOLDER_THEMES.aiBrain;
+  }
+  if (norm === "inbox" || norm.startsWith("00-inbox") || norm.startsWith("00_inbox")) {
+    return FOLDER_THEMES.inbox;
+  }
+  if (norm === "projects" || norm.startsWith("01-projects") || norm.startsWith("01_projects")) {
+    return FOLDER_THEMES.projects;
+  }
+  if (norm === "notes" || norm.startsWith("02-notes") || norm.startsWith("02_notes") || norm.startsWith("03-resources")) {
+    return FOLDER_THEMES.notes;
+  }
+  if (norm === "me" || norm.includes("profile") || norm.includes("پروفایل")) {
+    return FOLDER_THEMES.me;
   }
   if (!norm || norm === DEFAULT_FOLDER_NAME || norm === "general" || norm === "سایر اسناد") {
     return FOLDER_THEMES.general;
