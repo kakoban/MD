@@ -1285,12 +1285,7 @@ export default function App() {
     setIsSyncingBrain(true);
     try {
       let brainDocs = customBrainDocs || documents.filter((d) =>
-        Boolean(
-          d.isAiBrain ||
-            getEffectiveFolderPath(d.folderPath).includes('مغز') ||
-            getEffectiveFolderPath(d.folderPath).includes('brain') ||
-            d.tags?.includes('ai-brain')
-        )
+        Boolean(d.isAiBrain ?? d.tags?.includes('ai-brain'))
       );
 
       if (brainDocs.length === 0) {

@@ -103,11 +103,9 @@ export const AiBrainManagerModal: React.FC<AiBrainManagerModalProps> = ({
     const map = new Map<string, { count: number; brainCount: number; docs: MarkdownDoc[] }>();
     documents.forEach((d) => {
       const folder = getEffectiveFolderPath(d.folderPath);
+      // Explicitly check isAiBrain flag or ai-brain tag only (avoid hardcoded folder name locks)
       const isBrain = Boolean(
-        d.isAiBrain ||
-        folder.includes('مغز') ||
-        folder.includes('brain') ||
-        d.tags?.includes('ai-brain')
+        d.isAiBrain ?? d.tags?.includes('ai-brain')
       );
 
       const entry = map.get(folder) || { count: 0, brainCount: 0, docs: [] };
@@ -130,10 +128,7 @@ export const AiBrainManagerModal: React.FC<AiBrainManagerModalProps> = ({
   const totalBrainDocsCount = useMemo(() => {
     return documents.filter((d) =>
       Boolean(
-        d.isAiBrain ||
-        getEffectiveFolderPath(d.folderPath).includes('مغز') ||
-        getEffectiveFolderPath(d.folderPath).includes('brain') ||
-        d.tags?.includes('ai-brain')
+        d.isAiBrain ?? d.tags?.includes('ai-brain')
       )
     ).length;
   }, [documents]);
@@ -149,7 +144,8 @@ export const AiBrainManagerModal: React.FC<AiBrainManagerModalProps> = ({
   // Toggle all documents in a specific folder in/out of AI Brain
   const handleToggleFolder = (folderName: string, shouldAdd: boolean) => {
     const updated = documents.map((d) => {
-      if (getEffectiveFolderPath(d.folderPath) === folderName) {
+      const docFolder = getEffectiveFolderPath(d.folderPath);
+      if (docFolder.toLowerCase() === folderName.toLowerCase()) {
         return {
           ...d,
           isAiBrain: shouldAdd,
@@ -198,10 +194,7 @@ export const AiBrainManagerModal: React.FC<AiBrainManagerModalProps> = ({
   const handleSyncNow = async () => {
     const brainDocs = documents.filter((d) =>
       Boolean(
-        d.isAiBrain ||
-        getEffectiveFolderPath(d.folderPath).includes('مغز') ||
-        getEffectiveFolderPath(d.folderPath).includes('brain') ||
-        d.tags?.includes('ai-brain')
+        d.isAiBrain ?? d.tags?.includes('ai-brain')
       )
     );
 
