@@ -1386,9 +1386,21 @@ app.put('/api/files/:id', async (req: Request, res: Response) => {
 app.delete('/api/files/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const cleanId = String(id || '').trim();
+    const noExt = cleanId.replace(/\.(md|markdown|txt)$/i, '').trim();
+
     const result = await pool.query(
-      'DELETE FROM shared_markdown_files WHERE id = $1 OR LOWER(title) = LOWER($1) RETURNING id, title',
-      [id]
+      `DELETE FROM shared_markdown_files
+       WHERE id = $1
+          OR LOWER(id) = LOWER($1)
+          OR LOWER(title) = LOWER($1)
+          OR LOWER(title) = LOWER($2)
+          OR LOWER(REGEXP_REPLACE(title, '\\.(md|markdown|txt)$', '', 'i')) = LOWER($2)
+          OR LOWER(REPLACE(REPLACE(title, 'ي', 'ی'), 'ك', 'ک')) = LOWER(REPLACE(REPLACE($2, 'ي', 'ی'), 'ك', 'ک'))
+          OR id = 'brain-' || $2
+          OR id LIKE 'brain-' || $2 || '-%'
+       RETURNING id, title`,
+      [cleanId, noExt]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'فایل مورد نظر یافت نشد.' });
@@ -1498,16 +1510,24 @@ app.get('/api/brain/documents', async (req: Request, res: Response) => {
 app.delete('/api/brain/purge', async (req: Request, res: Response) => {
   try {
     const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'برای تخلیه مغز هوش مصنوعی باید وارد حساب شوید.' });
-    }
+    // Purge user's brain files AND all MCP/AI generated unassigned brain files
+    const deleteCondition = authUser
+      ? `(user_id = $1 OR user_id IS NULL OR author_name = 'هوش مصنوعی (MCP)')`
+      : `(user_id IS NULL OR author_name = 'هوش مصنوعی (MCP)')`;
+    const params = authUser ? [authUser.id] : [];
 
-    await pool.query(
+    const result = await pool.query(
       `DELETE FROM shared_markdown_files
-       WHERE user_id = $1 AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')`,
-      [authUser.id]
+       WHERE ${deleteCondition}
+         AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')
+       RETURNING id, title`,
+      params
     );
-    res.json({ success: true, message: 'مخزن مغز هوش مصنوعی اختصاصی شما با موفقیت تخلیه شد.' });
+    res.json({
+      success: true,
+      message: `${result.rowCount || 0} سند از مغز هوش مصنوعی در سرور با موفقیت تخلیه شد.`,
+      deletedCount: result.rowCount,
+    });
   } catch (err: any) {
     console.error('Brain purge error:', err);
     res.status(500).json({ error: 'خطا در تخلیه مغز هوش مصنوعی' });

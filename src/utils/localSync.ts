@@ -244,6 +244,36 @@ export function sanitizeFileName(name: string): string {
   return clean || 'سند_جدید';
 }
 
+export function resolveFolderTarget(
+  folders: LinkedFolderRecord[],
+  rawFolderPath?: string
+): { record: LinkedFolderRecord; relativeSubdir: string } {
+  let clean = (rawFolderPath || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+
+  // Strip Windows drive letters (e.g. D:/, C:\)
+  clean = clean.replace(/^[a-zA-Z]:(\/|\\)?/i, '').replace(/^\/+|\/+$/g, '').trim();
+
+  // If only 1 linked folder is present, strip its name if prefixed
+  if (folders.length === 1) {
+    const rootName = folders[0].name.toLowerCase();
+    const stripped = clean.replace(new RegExp(`^${rootName}(/|$)`, 'i'), '');
+    return { record: folders[0], relativeSubdir: stripped };
+  }
+
+  // Multi-folder routing
+  const rootSegment = clean.split('/').filter(Boolean)[0] || '';
+  const matched = folders.find((f) => f.name.toLowerCase() === rootSegment.toLowerCase());
+  if (matched) {
+    const rest = clean.slice(rootSegment.length).replace(/^\/+/, '');
+    return { record: matched, relativeSubdir: rest };
+  }
+
+  return { record: folders[0], relativeSubdir: clean };
+}
+
 // Write document content directly to the appropriate local physical folder (multi-folder routing)
 export async function writeDocToAppropriateFolder(
   folders: LinkedFolderRecord[],
@@ -251,36 +281,21 @@ export async function writeDocToAppropriateFolder(
 ): Promise<boolean> {
   if (!folders || folders.length === 0) return false;
 
-  const docFolderPath = (doc.folderPath || '').trim().replace(/\\/g, '/');
-  const rootSegment = docFolderPath.split('/').filter(Boolean)[0] || '';
-
-  // Find matching root folder
-  let matchedRecord = folders.find((f) => f.name.toLowerCase() === rootSegment.toLowerCase());
-  let relativeSubdir = '';
-
-  if (matchedRecord) {
-    // Relative subdir inside this specific root folder
-    const rest = docFolderPath.slice(rootSegment.length).replace(/^\/+/, '');
-    relativeSubdir = rest;
-  } else {
-    // If no folder matches, save to the first linked folder
-    matchedRecord = folders[0];
-    relativeSubdir = docFolderPath;
-  }
+  const { record, relativeSubdir } = resolveFolderTarget(folders, doc.folderPath);
 
   try {
     // Check permission without prompting (auto-save runs outside click event)
     // @ts-ignore
-    if (matchedRecord.handle.queryPermission) {
+    if (record.handle.queryPermission) {
       // @ts-ignore
-      const perm = await matchedRecord.handle.queryPermission({ mode: 'readwrite' });
+      const perm = await record.handle.queryPermission({ mode: 'readwrite' });
       if (perm !== 'granted') {
         enqueuePendingDiskWrite(doc);
         return false;
       }
     }
 
-    const targetDir = await getOrCreateSubdir(matchedRecord.handle, relativeSubdir);
+    const targetDir = await getOrCreateSubdir(record.handle, relativeSubdir);
     const fileName = `${sanitizeFileName(doc.title)}.md`;
     const fileHandle = await targetDir.getFileHandle(fileName, { create: true });
 
@@ -290,7 +305,7 @@ export async function writeDocToAppropriateFolder(
     await writable.close();
     return true;
   } catch (err) {
-    console.warn('Failed writing doc to folder:', matchedRecord.name, err);
+    console.warn('Failed writing doc to folder:', record.name, err);
     enqueuePendingDiskWrite(doc);
     return false;
   }
@@ -303,27 +318,23 @@ export async function deleteDocFromAppropriateFolder(
 ): Promise<boolean> {
   if (!folders || folders.length === 0) return false;
 
-  const docFolderPath = (doc.folderPath || '').trim().replace(/\\/g, '/');
-  const rootSegment = docFolderPath.split('/').filter(Boolean)[0] || '';
-
-  let matchedRecord = folders.find((f) => f.name.toLowerCase() === rootSegment.toLowerCase());
-  let relativeSubdir = '';
-
-  if (matchedRecord) {
-    const rest = docFolderPath.slice(rootSegment.length).replace(/^\/+/, '');
-    relativeSubdir = rest;
-  } else {
-    matchedRecord = folders[0];
-    relativeSubdir = docFolderPath;
-  }
+  const { record, relativeSubdir } = resolveFolderTarget(folders, doc.folderPath);
 
   try {
-    const targetDir = await getOrCreateSubdir(matchedRecord.handle, relativeSubdir);
+    const targetDir = await getOrCreateSubdir(record.handle, relativeSubdir);
     const fileName = `${sanitizeFileName(doc.title)}.md`;
-    // @ts-ignore
-    await targetDir.removeEntry(fileName);
-    return true;
+    try {
+      // @ts-ignore
+      await targetDir.removeEntry(fileName);
+      return true;
+    } catch {
+      // Also attempt removing without .md extension
+      // @ts-ignore
+      await targetDir.removeEntry(sanitizeFileName(doc.title));
+      return true;
+    }
   } catch (err) {
+    console.warn('Failed deleting doc from folder:', record.name, err);
     return false;
   }
 }

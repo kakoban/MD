@@ -115,8 +115,12 @@ export default function App() {
   const addTombstone = useCallback((id: string, title?: string, folderPath?: string) => {
     tombstonesRef.current.add(id);
     if (title) {
-      tombstonesRef.current.add(title.toLowerCase().trim());
-      tombstonesRef.current.add(normalizeDocKey(title, folderPath));
+      const cleanTitle = title.trim();
+      const noExt = cleanTitle.replace(/\.(md|markdown|txt)$/i, '').trim();
+      tombstonesRef.current.add(cleanTitle.toLowerCase());
+      tombstonesRef.current.add(noExt.toLowerCase());
+      tombstonesRef.current.add(normalizeDocKey(cleanTitle, folderPath));
+      tombstonesRef.current.add(normalizeDocKey(noExt, folderPath));
     }
     persistTombstones(tombstonesRef.current);
   }, []);
@@ -858,10 +862,14 @@ export default function App() {
     const docToDelete = documents.find((d) => d.id === id);
     if (docToDelete) {
       addTombstone(id, docToDelete.title, docToDelete.folderPath);
-      // Delete from cloud / Neon database
+      // Delete from cloud / Neon database (both ID and title variants)
       cloudApi.deleteFile(docToDelete.id).catch(() => {});
       if (docToDelete.title) {
         cloudApi.deleteFile(docToDelete.title).catch(() => {});
+        const noExt = docToDelete.title.replace(/\.(md|markdown|txt)$/i, '').trim();
+        if (noExt !== docToDelete.title) {
+          cloudApi.deleteFile(noExt).catch(() => {});
+        }
       }
       // Delete from local hard drive
       if (linkedFolders.length > 0) {
@@ -1253,12 +1261,14 @@ export default function App() {
           const remoteUpdatedAt = remoteFile.updated_at ? new Date(remoteFile.updated_at).getTime() : Date.now();
           const targetKey = normalizeDocKey(remoteTitle, remoteFolder);
 
+          const cleanRemoteTitle = remoteTitle.replace(/\.(md|markdown|txt)$/i, '').toLowerCase().trim();
+
           // If document was explicitly deleted by user or has corrupted mojibake, ignore and purge from DB
           if (
             tombstonesRef.current.has(remoteFile.id) ||
             tombstonesRef.current.has(targetKey) ||
             tombstonesRef.current.has(remoteTitle.toLowerCase().trim()) ||
-            remoteTitle.includes('') ||
+            tombstonesRef.current.has(cleanRemoteTitle) ||
             remoteTitle.includes('') ||
             /^[?\s؟]+$/.test(remoteTitle)
           ) {
