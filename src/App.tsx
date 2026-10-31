@@ -60,6 +60,7 @@ import {
   verifyDirectoryPermission,
   scanAllLinkedDirectories,
   writeDocToAppropriateFolder,
+  deleteDocFromAppropriateFolder,
   isFileSystemAccessSupported,
   LinkedFolderRecord,
   getPendingDiskWrites,
@@ -74,6 +75,22 @@ const STORAGE_KEY_DOCS = 'markdown_studio_docs_v2';
 const STORAGE_KEY_ACTIVE = 'markdown_studio_active_id_v2';
 const STORAGE_KEY_THEME = 'markdown_studio_theme_v3';
 const STORAGE_KEY_FONT = 'markdown_studio_font_v2';
+const STORAGE_KEY_DELETED_TOMBSTONES = 'markdown_studio_deleted_tombstones_v1';
+
+function getStoredTombstones(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED_TOMBSTONES);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function persistTombstones(set: Set<string>): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_DELETED_TOMBSTONES, JSON.stringify(Array.from(set).slice(-500)));
+  } catch {}
+}
 
 export default function App() {
   // State: Documents
@@ -92,13 +109,36 @@ export default function App() {
     return SAMPLE_DOCUMENTS;
   });
 
-  // Active self-healing: purge any duplicate documents immediately on mount
+  // Active self-healing: purge any duplicate documents immediately on mount & remove corrupted/tombstone docs
+  const tombstonesRef = useRef<Set<string>>(getStoredTombstones());
+
+  const addTombstone = useCallback((id: string, title?: string, folderPath?: string) => {
+    tombstonesRef.current.add(id);
+    if (title) {
+      tombstonesRef.current.add(title.toLowerCase().trim());
+      tombstonesRef.current.add(normalizeDocKey(title, folderPath));
+    }
+    persistTombstones(tombstonesRef.current);
+  }, []);
+
   useEffect(() => {
     setDocuments((prev) => {
-      const deduped = deduplicateDocs(prev);
-      return deduped.length !== prev.length ? deduped : prev;
+      const tombstones = tombstonesRef.current;
+      const clean = prev.filter((d) => {
+        if (tombstones.has(d.id)) return false;
+        if (tombstones.has(normalizeDocKey(d.title, d.folderPath))) return false;
+        // Purge corrupted mojibake documents (e.g. titles with � or pure question marks)
+        if (d.title.includes('�') || d.title.includes('') || /^[?\s�؟]+$/.test(d.title)) {
+          addTombstone(d.id, d.title, d.folderPath);
+          cloudApi.deleteFile(d.id).catch(() => {});
+          return false;
+        }
+        return true;
+      });
+      const deduped = deduplicateDocs(clean.length > 0 ? clean : prev);
+      return deduped;
     });
-  }, []);
+  }, [addTombstone]);
 
   // State: Active Document ID
   const [activeDocId, setActiveDocId] = useState<string>(() => {
@@ -815,6 +855,23 @@ export default function App() {
   }, [documents]);
 
   const handleDeleteDoc = useCallback((id: string) => {
+    const docToDelete = documents.find((d) => d.id === id);
+    if (docToDelete) {
+      addTombstone(id, docToDelete.title, docToDelete.folderPath);
+      // Delete from cloud / Neon database
+      cloudApi.deleteFile(docToDelete.id).catch(() => {});
+      if (docToDelete.title) {
+        cloudApi.deleteFile(docToDelete.title).catch(() => {});
+      }
+      // Delete from local hard drive
+      if (linkedFolders.length > 0) {
+        deleteDocFromAppropriateFolder(linkedFolders, docToDelete).catch(() => {});
+      }
+    } else {
+      addTombstone(id);
+      cloudApi.deleteFile(id).catch(() => {});
+    }
+
     setDocuments((prev) => {
       const filtered = prev.filter((d) => d.id !== id);
       if (filtered.length === 0) {
@@ -828,7 +885,7 @@ export default function App() {
         setActiveDocId(remaining[0].id);
       }
     }
-  }, [activeDocId, documents]);
+  }, [activeDocId, documents, linkedFolders, addTombstone]);
 
   const handleToggleFavorite = useCallback((id: string) => {
     setDocuments((prev) =>
@@ -1115,6 +1172,18 @@ export default function App() {
     );
     if (!confirmed) return;
 
+    // Delete all affected documents from cloud, local disk and add to tombstones
+    affected.forEach((d) => {
+      addTombstone(d.id, d.title, d.folderPath);
+      cloudApi.deleteFile(d.id).catch(() => {});
+      if (d.title) {
+        cloudApi.deleteFile(d.title).catch(() => {});
+      }
+      if (linkedFolders.length > 0) {
+        deleteDocFromAppropriateFolder(linkedFolders, d).catch(() => {});
+      }
+    });
+
     setDocuments((prev) => {
       const remaining = prev.filter((d) => {
         const cur = (d.folderPath || '').trim();
@@ -1183,6 +1252,19 @@ export default function App() {
           const remoteFolder = remoteFile.folder_path || remoteFile.folderPath || '🧠 مغز هوش مصنوعی';
           const remoteUpdatedAt = remoteFile.updated_at ? new Date(remoteFile.updated_at).getTime() : Date.now();
           const targetKey = normalizeDocKey(remoteTitle, remoteFolder);
+
+          // If document was explicitly deleted by user or has corrupted mojibake, ignore and purge from DB
+          if (
+            tombstonesRef.current.has(remoteFile.id) ||
+            tombstonesRef.current.has(targetKey) ||
+            tombstonesRef.current.has(remoteTitle.toLowerCase().trim()) ||
+            remoteTitle.includes('') ||
+            remoteTitle.includes('') ||
+            /^[?\s؟]+$/.test(remoteTitle)
+          ) {
+            cloudApi.deleteFile(remoteFile.id).catch(() => {});
+            return;
+          }
 
           const existingIdx = updatedList.findIndex(
             (d) => d.id === remoteFile.id || normalizeDocKey(d.title, d.folderPath) === targetKey

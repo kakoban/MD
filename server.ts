@@ -1386,11 +1386,14 @@ app.put('/api/files/:id', async (req: Request, res: Response) => {
 app.delete('/api/files/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('DELETE FROM shared_markdown_files WHERE id = $1 RETURNING id', [id]);
+    const result = await pool.query(
+      'DELETE FROM shared_markdown_files WHERE id = $1 OR LOWER(title) = LOWER($1) RETURNING id, title',
+      [id]
+    );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'فایل مورد نظر یافت نشد.' });
     }
-    res.json({ success: true, message: 'فایل با موفقیت حذف شد.' });
+    res.json({ success: true, message: 'فایل با موفقیت حذف شد.', deleted: result.rows });
   } catch (error: any) {
     console.error('Error deleting file:', error);
     res.status(500).json({ error: 'Failed to delete file', details: error.message });

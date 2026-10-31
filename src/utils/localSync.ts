@@ -296,6 +296,38 @@ export async function writeDocToAppropriateFolder(
   }
 }
 
+// Delete document from local physical hard drive
+export async function deleteDocFromAppropriateFolder(
+  folders: LinkedFolderRecord[],
+  doc: { title: string; folderPath?: string }
+): Promise<boolean> {
+  if (!folders || folders.length === 0) return false;
+
+  const docFolderPath = (doc.folderPath || '').trim().replace(/\\/g, '/');
+  const rootSegment = docFolderPath.split('/').filter(Boolean)[0] || '';
+
+  let matchedRecord = folders.find((f) => f.name.toLowerCase() === rootSegment.toLowerCase());
+  let relativeSubdir = '';
+
+  if (matchedRecord) {
+    const rest = docFolderPath.slice(rootSegment.length).replace(/^\/+/, '');
+    relativeSubdir = rest;
+  } else {
+    matchedRecord = folders[0];
+    relativeSubdir = docFolderPath;
+  }
+
+  try {
+    const targetDir = await getOrCreateSubdir(matchedRecord.handle, relativeSubdir);
+    const fileName = `${sanitizeFileName(doc.title)}.md`;
+    // @ts-ignore
+    await targetDir.removeEntry(fileName);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 export function isFileSystemAccessSupported(): boolean {
   return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 }
