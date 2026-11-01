@@ -1062,11 +1062,25 @@ mark.md-highlight-orange {
   box-shadow: 0 25px 60px -15px rgba(219, 39, 119, 0.22) !important;
 }
 
-/* Print styles for clean export/save-as-PDF */
+/* ==============================================================
+   PRINT & A4 PAGINATION ENGINE (CSS PAGED MEDIA)
+   ============================================================== */
+@page {
+  size: A4 portrait;
+  margin: 15mm 20mm;
+}
+
 @media print {
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   body {
-    background: white !important;
-    color: black !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-size: 11.5pt;
+    line-height: 1.8;
   }
 
   .no-print,
@@ -1075,54 +1089,146 @@ mark.md-highlight-orange {
   header,
   .toolbar-container,
   .status-bar,
-  .editor-pane {
+  .editor-pane,
+  .floating-highlight-menu,
+  .code-copy-btn,
+  .heading-anchor,
+  .sidebar-responsive,
+  .sidebar-mobile-backdrop {
     display: none !important;
   }
 
   .preview-pane,
   .markdown-body {
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: 170mm !important;
     padding: 0 !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     overflow: visible !important;
-    color: #111 !important;
+    color: #111827 !important;
+    background: transparent !important;
+    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, Tahoma, sans-serif !important;
+    line-height: 1.8 !important;
   }
 
+  .markdown-body p,
+  .markdown-body li {
+    line-height: 1.8 !important;
+  }
+
+  /* Eliminate orphan headings (Keep headings with their following text) */
+  h1, h2, h3, h4, h5, h6,
   .markdown-body h1,
   .markdown-body h2,
-  .markdown-body h3 {
-    color: #111 !important;
-    page-break-after: avoid;
+  .markdown-body h3,
+  .markdown-body h4,
+  .markdown-body h5,
+  .markdown-body h6 {
+    color: #0f172a !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 
-  .code-block-container {
-    border: 1px solid #ccc !important;
-    background: #f8f9fa !important;
-    page-break-inside: avoid;
+  /* Zero-break rules: Never break inside tables, code blocks, blockquotes, and diagrams */
+  table,
+  tr,
+  blockquote,
+  .code-block-container,
+  pre,
+  .mermaid-block-wrapper,
+  .mermaid-render-container,
+  .katex-display-wrapper,
+  .admonition {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 
-  .code-block-header {
-    background: #eee !important;
-    color: #333 !important;
+  /* Automatic table header repetition across pages */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    break-inside: auto;
   }
 
-  .code-copy-btn {
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  tbody tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Manual page-break utility class */
+  .page-break {
+    break-after: page !important;
+    page-break-after: always !important;
+    display: block !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+
+  .page-break::after {
     display: none !important;
   }
 
+  /* Vector SVG defensive scaling (170mm printable width limit) */
+  svg,
+  .mermaid-render-container svg,
+  .mermaid-svg {
+    max-width: 170mm !important;
+    height: auto !important;
+    display: block !important;
+    margin-inline: auto !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .code-block-container {
+    border: 1px solid #d1d5db !important;
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .code-block-header {
+    background: #e2e8f0 !important;
+    color: #334155 !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+
   pre code {
-    color: #222 !important;
+    color: #0f172a !important;
+  }
+
+  .mermaid-block-wrapper {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+  }
+
+  .mermaid-header {
+    background: #f8fafc !important;
+    border-bottom: 1px solid #e2e8f0 !important;
   }
 
   .custom-markdown-table {
-    border: 1px solid #ddd !important;
+    border: 1px solid #d1d5db !important;
   }
 
   .custom-markdown-table th,
   .custom-markdown-table td {
-    border: 1px solid #ddd !important;
-    color: #000 !important;
+    border: 1px solid #d1d5db !important;
+    color: #111827 !important;
   }
 
   /* Booklet Cover Page Print Styling */
@@ -1154,6 +1260,7 @@ mark.md-highlight-orange {
     white-space: nowrap !important;
   }
 }
+
 
 /* ==============================================================
    PRESENTATION / SLIDE MODE STYLING (SCREEN)

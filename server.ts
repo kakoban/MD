@@ -1126,8 +1126,7 @@ app.get('/api/files', async (req: Request, res: Response) => {
       FROM shared_markdown_files f
       LEFT JOIN users u ON f.user_id = u.id
       LEFT JOIN document_access_requests ar ON ar.file_id = f.id AND ar.requester_id = $1
-      WHERE (f.is_public = true OR (f.user_id IS NOT NULL AND f.user_id = $1))
-        AND NOT ('ai-brain' = ANY(f.tags) AND (f.user_id IS NULL OR f.user_id != $1))
+      WHERE (f.is_public = true OR (f.user_id IS NOT NULL AND f.user_id = $1) OR f.author_name = 'هوش مصنوعی (MCP)' OR f.author_name = 'کاربر محلی')
     `;
     const params: any[] = [authUser ? authUser.id : null];
     let paramIndex = 2;
@@ -1435,17 +1434,15 @@ app.post('/api/files/:id/star', async (req: Request, res: Response) => {
 app.post('/api/brain/sync', async (req: Request, res: Response) => {
   try {
     const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'برای ذخیره و همگام‌سازی اسناد در مغز هوش مصنوعی باید ابتدا وارد حساب کاربری شوید.' });
-    }
+    const userId = authUser ? authUser.id : null;
+    const authorName = authUser ? (authUser.displayName || authUser.username || 'کاربر استودیو') : 'کاربر محلی';
 
     const { documents } = req.body;
     if (!Array.isArray(documents) || documents.length === 0) {
       return res.status(400).json({ error: 'لیست اسناد جهت همگام‌سازی الزامی است.' });
     }
 
-    const userId = authUser.id;
-    const authorName = authUser.displayName || authUser.username || 'کاربر استودیو';
+// userId and authorName declared above
 
     let syncedCount = 0;
     for (const doc of documents) {
@@ -1456,19 +1453,20 @@ app.post('/api/brain/sync', async (req: Request, res: Response) => {
       const cleanTags = Array.from(new Set([...(doc.tags || []), 'ai-brain']));
       const id = doc.id && !doc.id.startsWith('imported-') && !doc.id.startsWith('doc-') && !doc.id.startsWith('local-')
         ? doc.id
-        : `brain-${userId.slice(0, 8)}-${generateFileId(cleanTitle)}`;
+        : `brain-${userId ? userId.slice(0, 8) : 'local'}-${generateFileId(cleanTitle)}`;
 
       await pool.query(
         `INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, is_public, folder_path, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, NOW(), NOW())
+         VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, NOW(), NOW())
          ON CONFLICT (id) DO UPDATE
          SET title = EXCLUDED.title,
              content = EXCLUDED.content,
              folder_path = EXCLUDED.folder_path,
              tags = EXCLUDED.tags,
+             is_public = true,
              version = COALESCE(shared_markdown_files.version, 1) + 1,
              updated_at = NOW()`,
-        [id, cleanTitle, content, `سند ثبت‌شده در مغز هوش مصنوعی`, authorName, userId, cleanTags, folderPath]
+        [id, cleanTitle, content, `سند ثبت‌شده در مخزن اسناد`, authorName, userId, cleanTags, folderPath]
       );
       syncedCount++;
     }
@@ -1488,17 +1486,16 @@ app.get('/api/brain/documents', async (req: Request, res: Response) => {
   try {
     const authUser = getAuthUser(req);
     const whereUser = authUser
-      ? `(user_id = $1 OR user_id IS NULL OR author_name = 'هوش مصنوعی (MCP)')`
-      : `(user_id IS NULL OR author_name = 'هوش مصنوعی (MCP)')`;
+      ? `(user_id = $1 OR user_id IS NULL OR is_public = true OR author_name = 'هوش مصنوعی (MCP)' OR author_name = 'کاربر محلی')`
+      : `(user_id IS NULL OR is_public = true OR author_name = 'هوش مصنوعی (MCP)' OR author_name = 'کاربر محلی')`;
     const params = authUser ? [authUser.id] : [];
 
     const result = await pool.query(
       `SELECT id, title, content, description, folder_path, tags, version, updated_at, created_at
        FROM shared_markdown_files
        WHERE ${whereUser}
-         AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')
        ORDER BY updated_at DESC
-       LIMIT 150`,
+       LIMIT 300`,
       params
     );
     res.json({ success: true, files: result.rows });

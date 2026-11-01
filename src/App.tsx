@@ -1,3 +1,4 @@
+import { triggerDocumentPrint } from './utils/printPipeline';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   MarkdownDoc,
@@ -1263,13 +1264,9 @@ export default function App() {
 
           const cleanRemoteTitle = remoteTitle.replace(/\.(md|markdown|txt)$/i, '').toLowerCase().trim();
 
-          // If document was explicitly deleted by user or has corrupted mojibake, ignore and purge from DB
+          // Only ignore if the exact remote ID was explicitly deleted by user
           if (
             tombstonesRef.current.has(remoteFile.id) ||
-            tombstonesRef.current.has(targetKey) ||
-            tombstonesRef.current.has(remoteTitle.toLowerCase().trim()) ||
-            tombstonesRef.current.has(cleanRemoteTitle) ||
-            remoteTitle.includes('') ||
             /^[?\s؟]+$/.test(remoteTitle)
           ) {
             cloudApi.deleteFile(remoteFile.id).catch(() => {});
@@ -1350,6 +1347,24 @@ export default function App() {
     }
   }, [linkedFolders]);
 
+
+  // Debounced auto-sync to Neon cloud so Claude MCP always has real-time access to user files
+  const autoSyncTimerRef = useRef<any>(null);
+  useEffect(() => {
+    if (documents.length === 0) return;
+    if (autoSyncTimerRef.current) {
+      clearTimeout(autoSyncTimerRef.current);
+    }
+    autoSyncTimerRef.current = setTimeout(() => {
+      cloudApi.syncAiBrainDocs(documents).catch(() => {});
+    }, 4000);
+    return () => {
+      if (autoSyncTimerRef.current) {
+        clearTimeout(autoSyncTimerRef.current);
+      }
+    };
+  }, [documents]);
+
   // Periodic intelligent background polling (every 4s) when tab is active and on focus
   useEffect(() => {
     // Fetch immediately on mount / tab change
@@ -1361,9 +1376,7 @@ export default function App() {
     window.addEventListener('focus', onFocus);
 
     const pollInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        handleFetchAndMergeAiBrainDocs(true);
-      }
+      handleFetchAndMergeAiBrainDocs(true);
     }, 4000);
 
     return () => {
@@ -1376,9 +1389,7 @@ export default function App() {
   const handleSyncAiBrain = useCallback(async (customBrainDocs?: MarkdownDoc[]) => {
     setIsSyncingBrain(true);
     try {
-      let brainDocs = customBrainDocs || documents.filter((d) =>
-        Boolean(d.isAiBrain ?? d.tags?.includes('ai-brain'))
-      );
+      let brainDocs = customBrainDocs || documents;
 
       if (brainDocs.length === 0) {
         setIsSyncingBrain(false);
@@ -1606,18 +1617,20 @@ export default function App() {
     URL.revokeObjectURL(url);
   }, [activeDoc, effectiveDirection, renderedHtml]);
 
-  const handlePrint = useCallback(() => {
+  const handlePrint = useCallback(async () => {
     setBookletConfig(null);
-    setTimeout(() => {
-      window.print();
-    }, 50);
+    await triggerDocumentPrint({
+      theme: 'light',
+      containerElement: (document.querySelector('.markdown-body') as HTMLElement) || null,
+    });
   }, []);
 
-  const handlePrintBooklet = useCallback((config: BookletConfig) => {
+  const handlePrintBooklet = useCallback(async (config: BookletConfig) => {
     setBookletConfig(config);
-    setTimeout(() => {
-      window.print();
-    }, 150);
+    await triggerDocumentPrint({
+      theme: 'light',
+      containerElement: (document.querySelector('.markdown-body') as HTMLElement) || null,
+    });
   }, []);
 
   const handleCopyMarkdown = useCallback(() => {

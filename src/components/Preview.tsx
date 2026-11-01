@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FontFamily, HighlightColor } from '../types';
+import { debounceRenderMermaid } from '../utils/mermaidRenderer';
 import {
   ZoomIn,
   ZoomOut,
@@ -274,6 +275,14 @@ export const Preview: React.FC<PreviewProps> = ({
       synapseLinks.forEach((link) => link.removeEventListener('click', handleSynapseClick));
     };
   }, [html, onToggleTask, activeRef]);
+
+  // Dynamically render Mermaid diagram SVGs
+  useEffect(() => {
+    const el = activeRef.current;
+    if (!el) return;
+    const isDark = typeof document !== 'undefined' && document.body.classList.contains('theme-dark');
+    debounceRenderMermaid(el, isDark ? 'dark' : 'light', 150);
+  }, [html, activeRef]);
 
   const fontClass =
     fontFamily === 'mono'

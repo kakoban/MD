@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   FileText,
+  HardDrive,
   Plus,
   Upload,
   Search,
@@ -52,7 +53,13 @@ import {
   sortDocs,
   getDocUploadTime,
 } from '../utils/docTree';
-import { LinkedFolderRecord } from '../utils/localSync';
+import {
+  LinkedFolderRecord,
+  getPendingDiskWrites,
+  subscribeToPendingQueue,
+  requestPermissionAndFlushQueue,
+  PendingDiskWriteItem,
+} from '../utils/localSync';
 
 interface DocSendSpaceViewProps {
   documents: MarkdownDoc[];
@@ -123,6 +130,24 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
   const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedEmbedTitle, setCopiedEmbedTitle] = useState<string | null>(null);
+  const [pendingDiskWrites, setPendingDiskWrites] = useState<PendingDiskWriteItem[]>(() => getPendingDiskWrites());
+
+  useEffect(() => {
+    setPendingDiskWrites(getPendingDiskWrites());
+    const unsub = subscribeToPendingQueue((queue) => {
+      setPendingDiskWrites([...queue]);
+    });
+    return unsub;
+  }, []);
+
+  const handleFlushDiskQueue = async () => {
+    if (linkedFolders.length === 0) {
+      onSyncLocalDisk?.(false);
+      return;
+    }
+    await requestPermissionAndFlushQueue(linkedFolders);
+    setPendingDiskWrites(getPendingDiskWrites());
+  };
 
   const aiBrainCount = React.useMemo(() => {
     const localCount = documents.filter((d) =>
@@ -1534,15 +1559,43 @@ export const DocSendSpaceView: React.FC<DocSendSpaceViewProps> = ({
                               {doc.cloudAuthor || 'محلی شما'}
                             </td>
                             <td className="hidden sm:table-cell py-3 px-2 sm:px-4 text-center">
-                              {doc.isCloudShared ? (
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">
-                                  ابری
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full bg-neutral-500/15 text-[var(--text-muted)] text-[10px]">
-                                  محلی
-                                </span>
-                              )}
+                              {(() => {
+                                const isPendingDisk = pendingDiskWrites.some(
+                                  (p) => p.title.toLowerCase() === doc.title.toLowerCase() || p.id === doc.id
+                                );
+                                if (isPendingDisk) {
+                                  return (
+                                    <span
+                                      onClick={handleFlushDiskQueue}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 font-bold text-[10px] border border-amber-500/25 cursor-pointer hover:bg-amber-500/25 transition-all"
+                                      title="کلیک برای ذخیره روی هارد دیسک (نیاز به تایید)"
+                                    >
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                                      <span>در انتظار دیسک</span>
+                                    </span>
+                                  );
+                                }
+                                if (linkedFolders.length > 0) {
+                                  return (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-bold text-[10px] border border-emerald-500/25"
+                                      title="ذخیره روی هارد دیسک محلی (D:\MIND)"
+                                    >
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                      <span>روی دیسک</span>
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-bold text-[10px] border border-blue-500/25"
+                                    title="ذخیره در فضای ابری و حافظه مرورگر"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                                    <span>ابری</span>
+                                  </span>
+                                );
+                              })()}
                             </td>
                             <td className="py-3 px-2 sm:px-4 text-center">
                               <div className="flex items-center justify-center gap-1 sm:gap-2">

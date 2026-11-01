@@ -8,6 +8,7 @@ export interface MarkdownDoc {
   isFavorite?: boolean;
   tags?: string[];
   isCloudShared?: boolean;
+  isPublic?: boolean;
   cloudSyncedAt?: number;
   cloudAuthor?: string;
   isForked?: boolean;

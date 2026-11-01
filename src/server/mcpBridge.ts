@@ -25,12 +25,12 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'hub_smart_search',
-    description: 'جستجوی هوشمند در اسناد مارک‌دان بر اساس عنوان، تگ‌ها، محتوا یا نام پوشه (صرفه‌جویی ۹۰٪ توکن)',
+    description: 'جستجوی هوشمند در تمام اسناد مارک‌دان بر اساس عنوان، تگ‌ها، محتوا یا نام پوشه (صرفه‌جویی ۹۰٪ توکن)',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'متن، عنوان یا کلمه کلیدی مورد جستجو' },
-        folder: { type: 'string', description: 'نام یا مسیر اختیاری پوشه برای محدود کردن جستجو (مانند pori یا عمومی یا مغز هوش مصنوعی)' },
+        folder: { type: 'string', description: 'نام یا مسیر اختیاری پوشه برای محدود کردن جستجو (مانند Projects یا Notes یا عمومی)' },
         limit: { type: 'number', description: 'حداکثر تعداد نتایج (پیش‌فرض ۱۰)' },
       },
       required: ['query'],
@@ -38,11 +38,11 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'hub_get_folder_documents',
-    description: 'دریافت فهرست و خلاصه تمام اسناد موجود در یک پوشه یا سرفصل آموزشی خاص (مثلاً پوشه pori، راهنمای آموزشی یا عمومی)',
+    description: 'دریافت فهرست و خلاصه تمام اسناد موجود در یک پوشه یا سرفصل خاص (مانند پوشه Projects، Notes، Inbox یا عمومی)',
     inputSchema: {
       type: 'object',
       properties: {
-        folderName: { type: 'string', description: 'نام یا مسیر پوشه مورد نظر (مانند pori)' },
+        folderName: { type: 'string', description: 'نام یا مسیر پوشه مورد نظر (مانند Projects یا Notes)' },
         limit: { type: 'number', description: 'تعداد اسناد (پیش‌فرض ۲۰)' },
       },
       required: ['folderName'],
@@ -50,57 +50,57 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'hub_read_note_with_graph',
-    description: 'خواندن کامل محتوای یک سند مارک‌دان به همراه پیوندهای متصل به آن (Synapse Links)',
+    description: 'خواندن کامل محتوای یک سند مارک‌دان به همراه پیوندهای متصل به آن (Synapse Links). این ابزار با شناسه سند، عنوان دقیق، عنوان بدون پسوند یا حتی نام فایل با زیرخط یا فاصله به راحتی سند را پیدا می‌کند.',
     inputSchema: {
       type: 'object',
       properties: {
-        fileIdOrTitle: { type: 'string', description: 'شناسه یا عنوان دقیق سند' },
+        fileIdOrTitle: { type: 'string', description: 'شناسه، عنوان یا نام فایل سند (مانند فایل_فنی یا Active_Projects_Tracker_02)' },
       },
       required: ['fileIdOrTitle'],
     },
   },
   {
     name: 'hub_list_documents',
-    description: 'دریافت فهرست تمام اسناد ثبت‌شده، پوشه‌ها، سرفصل‌ها و خلاصه‌ها در مخزن ابری',
+    description: 'دریافت فهرست تمام اسناد ثبت‌شده، پوشه‌ها، سرفصل‌ها و خلاصه‌ها در مخزن مشترک ابری و محلی',
     inputSchema: {
       type: 'object',
       properties: {
-        limit: { type: 'number', description: 'تعداد اسناد (پیش‌فرض ۲۰)' },
+        limit: { type: 'number', description: 'تعداد اسناد (پیش‌فرض ۵۰)' },
       },
     },
   },
   {
     name: 'hub_create_note',
-    description: 'ذخیره و ایجاد مستقیم فایل مارک‌دان روی هارد دیسک و کامپیوتر کاربر در پوشه متصل‌شده (مانند Notes یا D:\\MIND\\Notes). هرگاه کاربر درخواست نوشتن موضوع، ایجاد فایل یا ذخیره یادداشت روی هارد دیسک یا سیستم محلی داد، حتماً این ابزار را صدا بزنید تا کلاینت محلی بلافاصله فایل را روی هارد دیسک کاربر ذخیره کند (هرگز به کاربر نگویید که امکان ذخیره روی هارد دیسک را ندارید). Create or write a markdown file directly to the user local hard disk via the active local sync agent.',
+    description: 'ذخیره و ایجاد مستقیم فایل مارک‌دان روی هارد دیسک و کامپیوتر کاربر در پوشه متصل‌شده (مانند Projects یا Notes یا D:\\MIND). هرگاه کاربر درخواست نوشتن موضوع، ایجاد فایل یا ذخیره یادداشت روی هارد دیسک داد، حتماً این ابزار را فراخوانی کنید تا بلافاصله روی هارد دیسک و مخزن ثبت شود (هرگز به کاربر نگویید که دسترسی به هارد دیسک ندارید).',
     inputSchema: {
       type: 'object',
       properties: {
-        title: { type: 'string', description: 'عنوان یادداشت، موضوع یا نام فایل (مثلاً «یادداشت جلسه» یا «برنامه کاری»)' },
+        title: { type: 'string', description: 'عنوان یادداشت، موضوع یا نام فایل (مثلاً «فایل_فنی» یا «برنامه_هفتگی»)' },
         topic: { type: 'string', description: 'موضوع یا نام فایل (معادل title)' },
         content: { type: 'string', description: 'متن کامل مارک‌دان یادداشت یا فایل' },
         text: { type: 'string', description: 'متن سند (معادل content)' },
-        folder: { type: 'string', description: 'مسیر یا نام پوشه روی هارد دیسک (اختیاری، مثلاً Notes یا Projects یا 🧠 مغز هوش مصنوعی)' },
+        folder: { type: 'string', description: 'مسیر یا نام پوشه روی هارد دیسک (اختیاری، مثلاً Projects یا Notes یا 🧠 مغز هوش مصنوعی)' },
         folderPath: { type: 'string', description: 'مسیر پوشه روی دیسک (معادل folder)' },
         tags: {
           type: 'array',
           items: { type: 'string' },
           description: 'لیست برچسب‌ها و تگ‌ها (اختیاری)',
         },
-        isPublic: { type: 'boolean', description: 'عمومی بودن سند (اختیاری، پیش‌فرض: false)' },
+        isPublic: { type: 'boolean', description: 'عمومی و قابل مشاهده بودن در فضای کاری (پیش‌فرض: true)' },
       },
       required: ['title', 'content'],
     },
   },
   {
     name: 'hub_write_file',
-    description: 'ایجاد یا بازنویسی مستقیم یک فایل مارک‌دان روی هارد دیسک محلی کاربر. هرگاه کاربر درخواست ساخت فایلی با نام مشخص روی هارد دیسک داد این ابزار را اجرا کنید. Write or create a file directly to the user local physical hard drive.',
+    description: 'ایجاد یا بازنویسی مستقیم یک فایل مارک‌دان روی هارد دیسک محلی کاربر. هرگاه کاربر درخواست ساخت یا بروزرسانی فایلی با نام مشخص روی هارد دیسک داد این ابزار را اجرا کنید.',
     inputSchema: {
       type: 'object',
       properties: {
-        filename: { type: 'string', description: 'نام فایل یا عنوان موضوع (مثلاً my-topic.md یا گزارش پروژه)' },
+        filename: { type: 'string', description: 'نام فایل یا عنوان موضوع (مثلاً فایل_فنی.md یا گزارش پروژه)' },
         title: { type: 'string', description: 'عنوان فایل (معادل filename)' },
         content: { type: 'string', description: 'محتوای کامل فایل به زبان مارک‌دان' },
-        folder: { type: 'string', description: 'پوشه مقصد روی هارد دیسک (اختیاری، پیش‌فرض: 🧠 مغز هوش مصنوعی)' },
+        folder: { type: 'string', description: 'پوشه مقصد روی هارد دیسک (اختیاری، مثلاً Projects یا Notes)' },
         tags: { type: 'array', items: { type: 'string' }, description: 'تگ‌ها (اختیاری)' },
       },
       required: ['filename', 'content'],
@@ -146,7 +146,7 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'hub_delete_note',
-    description: 'حذف یک یادداشت از مغز هوش مصنوعی و پایگاه دانش بر اساس شناسه یا عنوان',
+    description: 'حذف یک یادداشت از مخزن و هارد دیسک بر اساس شناسه یا عنوان',
     inputSchema: {
       type: 'object',
       properties: {
@@ -164,6 +164,84 @@ export function setCorsHeaders(res: Response): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With');
+}
+
+/**
+ * Highly resilient document resolver.
+ * Resolves by exact ID, title, title without .md extension,
+ * space/underscore/hyphen variants, Persian/Arabic character normalizations,
+ * and smart fuzzy fallback.
+ */
+export async function findDocumentByFlexibleTarget(pool: pg.Pool, rawTarget: string): Promise<any | null> {
+  const target = String(rawTarget || '').trim();
+  if (!target) return null;
+
+  const noExt = target.replace(/\.(md|markdown|txt)$/i, '').trim();
+  const spaceVariant = noExt.replace(/[-_]/g, ' ').trim();
+  const underscoreVariant = noExt.replace(/\s+/g, '_').trim();
+  const hyphenVariant = noExt.replace(/\s+/g, '-').trim();
+
+  // Normalize Persian/Arabic letters (ي -> ی, ك -> ک, etc.)
+  const normalizedFa = noExt.replace(/ي/g, 'ی').replace(/ك/g, 'ک');
+  const normalizedTarget = target.replace(/ي/g, 'ی').replace(/ك/g, 'ک');
+
+  const query = `
+    SELECT id, title, content, description, folder_path, author_name, tags, COALESCE(version, 1) as version, is_public, updated_at, created_at
+    FROM shared_markdown_files
+    WHERE id = $1
+       OR LOWER(id) = LOWER($1)
+       OR LOWER(title) = LOWER($1)
+       OR LOWER(title) = LOWER($2)
+       OR LOWER(REGEXP_REPLACE(title, '\\.(md|markdown|txt)$', '', 'i')) = LOWER($2)
+       OR LOWER(REPLACE(REPLACE(title, '_', ' '), '-', ' ')) = LOWER($3)
+       OR LOWER(REPLACE(REPLACE(title, ' ', '_'), '-', '_')) = LOWER($4)
+       OR LOWER(REPLACE(REPLACE(title, ' ', '-'), '_', '-')) = LOWER($5)
+       OR LOWER(REPLACE(REPLACE(title, 'ي', 'ی'), 'ك', 'ک')) = LOWER($6)
+       OR LOWER(REPLACE(REPLACE(title, 'ي', 'ی'), 'ك', 'ک')) = LOWER($7)
+       OR id = 'brain-' || $2
+       OR id LIKE 'brain-' || $2 || '-%'
+       OR id LIKE '%' || $2 || '%'
+    ORDER BY
+      CASE
+        WHEN id = $1 THEN 1
+        WHEN LOWER(id) = LOWER($1) THEN 2
+        WHEN LOWER(title) = LOWER($1) THEN 3
+        WHEN LOWER(title) = LOWER($2) THEN 4
+        ELSE 5
+      END,
+      updated_at DESC
+    LIMIT 1
+  `;
+
+  try {
+    const res = await pool.query(query, [
+      target,
+      noExt,
+      spaceVariant,
+      underscoreVariant,
+      hyphenVariant,
+      normalizedFa,
+      normalizedTarget,
+    ]);
+
+    if (res.rows.length > 0) {
+      return res.rows[0];
+    }
+
+    // Secondary fallback: ILIKE substring search
+    const fallbackQuery = `
+      SELECT id, title, content, description, folder_path, author_name, tags, COALESCE(version, 1) as version, is_public, updated_at, created_at
+      FROM shared_markdown_files
+      WHERE LOWER(title) LIKE $1 OR LOWER(id) LIKE $1
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `;
+    const fallbackRes = await pool.query(fallbackQuery, [`%${noExt.toLowerCase()}%`]);
+    return fallbackRes.rows[0] || null;
+  } catch (err) {
+    console.warn('findDocumentByFlexibleTarget query notice:', err);
+    return null;
+  }
 }
 
 export async function processMcpMessage(pool: pg.Pool, message: any): Promise<any | null> {
@@ -195,7 +273,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         },
         serverInfo: {
           name: 'markdown-studio-cognitive-mcp',
-          version: '1.0.0',
+          version: '1.2.0',
         },
       },
     };
@@ -219,8 +297,9 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
 
     try {
       if (toolName === 'hub_get_ai_brain_context') {
-        const limitNum = Math.min(Number(args.limit) || 10, 30);
-        const result = await pool.query(
+        const limitNum = Math.min(Number(args.limit) || 15, 50);
+        // Returns top notes from brain, or recent workspace notes as fallback context
+        let result = await pool.query(
           `SELECT id, title, content, description, folder_path, author_name, tags, COALESCE(version, 1) as version, updated_at
            FROM shared_markdown_files
            WHERE 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%'
@@ -228,6 +307,16 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
            LIMIT $1`,
           [limitNum]
         );
+
+        if (result.rows.length === 0) {
+          result = await pool.query(
+            `SELECT id, title, content, description, folder_path, author_name, tags, COALESCE(version, 1) as version, updated_at
+             FROM shared_markdown_files
+             ORDER BY updated_at DESC
+             LIMIT $1`,
+            [limitNum]
+          );
+        }
 
         return {
           jsonrpc: '2.0',
@@ -237,8 +326,8 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
               {
                 type: 'text',
                 text: result.rows.length > 0
-                  ? JSON.stringify({ space: 'مغز هوش مصنوعی (AI Brain)', totalDocs: result.rows.length, documents: result.rows }, null, 2)
-                  : 'هنوز سندی در فضای مغز هوش مصنوعی همگام‌سازی نشده است.',
+                  ? JSON.stringify({ space: 'مخزن دانش و اسناد (Knowledge Hub)', totalDocs: result.rows.length, documents: result.rows }, null, 2)
+                  : 'هنوز سندی در مخزن همگام‌سازی نشده است.',
               },
             ],
           },
@@ -248,11 +337,11 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
       if (toolName === 'hub_smart_search') {
         const queryStr = String(args.query || '').trim().toLowerCase();
         const folderStr = String(args.folder || '').trim().toLowerCase();
-        const limitNum = Math.min(Number(args.limit) || 10, 50);
+        const limitNum = Math.min(Number(args.limit) || 20, 100);
 
-        let sql = `SELECT id, title, description, folder_path, author_name, tags, COALESCE(version, 1) as version, updated_at
+        let sql = `SELECT id, title, description, folder_path, author_name, tags, COALESCE(version, 1) as version, is_public, updated_at
            FROM shared_markdown_files
-           WHERE (is_public = true OR 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%') AND (
+           WHERE (
              LOWER(title) LIKE $1 OR
              LOWER(description) LIKE $1 OR
              LOWER(content) LIKE $1 OR
@@ -286,12 +375,12 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
 
       if (toolName === 'hub_get_folder_documents') {
         const folderName = String(args.folderName || '').trim();
-        const limitNum = Math.min(Number(args.limit) || 20, 100);
+        const limitNum = Math.min(Number(args.limit) || 50, 200);
 
         const result = await pool.query(
-          `SELECT id, title, description, folder_path, author_name, tags, COALESCE(version, 1) as version, updated_at
+          `SELECT id, title, description, folder_path, author_name, tags, COALESCE(version, 1) as version, is_public, updated_at
            FROM shared_markdown_files
-           WHERE (is_public = true OR 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%') AND (
+           WHERE (
              LOWER(COALESCE(folder_path, '')) LIKE $1 OR
              LOWER(title) LIKE $1 OR
              $2 = ANY(tags)
@@ -318,28 +407,21 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
       }
 
       if (toolName === 'hub_read_note_with_graph') {
-        const target = String(args.fileIdOrTitle || '').trim();
-        const result = await pool.query(
-          `SELECT id, title, content, description, folder_path, author_name, tags, COALESCE(version, 1) as version, updated_at
-           FROM shared_markdown_files
-           WHERE id = $1 OR LOWER(title) = LOWER($1)
-           LIMIT 1`,
-          [target]
-        );
+        const target = String(args.fileIdOrTitle || args.title || args.id || '').trim();
+        const doc = await findDocumentByFlexibleTarget(pool, target);
 
-        if (result.rows.length === 0) {
+        if (!doc) {
           return {
             jsonrpc: '2.0',
             id,
             result: {
-              content: [{ type: 'text', text: `سند با شناسه یا عنوان «${target}» یافت نشد.` }],
+              content: [{ type: 'text', text: `سند با شناسه یا عنوان «${target}» در مخزن یافت نشد.` }],
               isError: true,
             },
           };
         }
 
-        const doc = result.rows[0];
-        const linkMatches = [...doc.content.matchAll(/\[\[([^\]\n]+)\]\]/g)].map((m) => m[1]);
+        const linkMatches = [...(doc.content || '').matchAll(/\[\[([^\]\n]+)\]\]/g)].map((m) => m[1]);
 
         return {
           jsonrpc: '2.0',
@@ -363,11 +445,10 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
       }
 
       if (toolName === 'hub_list_documents') {
-        const limitNum = Math.min(Number(args.limit) || 20, 100);
+        const limitNum = Math.min(Number(args.limit) || 50, 200);
         const result = await pool.query(
-          `SELECT id, title, description, folder_path, author_name, tags, COALESCE(version, 1) as version, updated_at
+          `SELECT id, title, description, folder_path, author_name, tags, COALESCE(version, 1) as version, is_public, updated_at
            FROM shared_markdown_files
-           WHERE (is_public = true OR 'ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')
            ORDER BY updated_at DESC
            LIMIT $1`,
           [limitNum]
@@ -407,7 +488,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
           args.path ||
           args.directory ||
           args.category ||
-          '🧠 مغز هوش مصنوعی'
+          'Projects'
         ).trim();
         const tags = Array.isArray(args.tags)
           ? args.tags.map((t: string) => String(t).trim()).filter(Boolean)
@@ -415,37 +496,30 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         if (!tags.includes('ai-brain')) {
           tags.push('ai-brain');
         }
-        const isPublic = Boolean(args.isPublic ?? false);
+        const isPublic = args.isPublic !== undefined ? Boolean(args.isPublic) : true;
 
         // Fallback title from first line of markdown if title is empty
         const derivedTitle = content
           ? content.split('\n')[0].replace(/^#+\s*/, '').trim().slice(0, 50)
           : '';
-        const title = rawTitle || derivedTitle || 'یادداشت جدید هوش مصنوعی';
+        const title = rawTitle || derivedTitle || 'یادداشت جدید';
 
-        // Check if an existing note with same title exists in this folder or globally
-        const checkExisting = await pool.query(
-          `SELECT id, title, content, folder_path, tags, COALESCE(version, 1) as version
-           FROM shared_markdown_files
-           WHERE LOWER(title) = LOWER($1) AND (LOWER(COALESCE(folder_path, '')) = LOWER($2) OR $2 = '' OR $2 = '🧠 مغز هوش مصنوعی')
-           ORDER BY updated_at DESC
-           LIMIT 1`,
-          [title, folder]
-        );
+        // Check if note exists using flexible target matching
+        const existingDoc = await findDocumentByFlexibleTarget(pool, title);
 
-        if (checkExisting.rows.length > 0 && toolName === 'hub_write_file') {
-          // Overwrite existing file when explicitly calling hub_write_file
-          const existing = checkExisting.rows[0];
+        if (existingDoc && toolName === 'hub_write_file') {
+          // Overwrite existing file when calling hub_write_file
           const updateResult = await pool.query(
             `UPDATE shared_markdown_files
              SET content = $1,
                  tags = $2,
                  folder_path = $3,
+                 is_public = true,
                  version = COALESCE(version, 1) + 1,
                  updated_at = NOW()
              WHERE id = $4
              RETURNING id, title, content, folder_path, tags, is_public, COALESCE(version, 1) as version, created_at, updated_at`,
-            [content, tags, folder, existing.id]
+            [content, tags, folder || existingDoc.folder_path, existingDoc.id]
           );
 
           return {
@@ -458,6 +532,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
                   text: JSON.stringify({
                     message: `فایل «${title}» با موفقیت بازنویسی و روی هارد دیسک و پایگاه دانش به‌روزرسانی شد.`,
                     document: updateResult.rows[0],
+                    status: 'written_and_queued_for_disk',
                   }, null, 2),
                 },
               ],
@@ -476,6 +551,14 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
         const insertResult = await pool.query(
           `INSERT INTO shared_markdown_files (id, title, content, description, author_name, tags, is_public, folder_path, version, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, NOW(), NOW())
+           ON CONFLICT (id) DO UPDATE
+           SET title = EXCLUDED.title,
+               content = EXCLUDED.content,
+               folder_path = EXCLUDED.folder_path,
+               tags = EXCLUDED.tags,
+               is_public = true,
+               version = COALESCE(shared_markdown_files.version, 1) + 1,
+               updated_at = NOW()
            RETURNING id, title, content, folder_path, tags, is_public, COALESCE(version, 1) as version, created_at, updated_at`,
           [newId, title, content, 'سند ایجاد شده توسط هوش مصنوعی (MCP)', 'هوش مصنوعی (MCP)', tags, isPublic, folder]
         );
@@ -530,18 +613,12 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
           };
         }
 
-        const findResult = await pool.query(
-          `SELECT id, title, content, folder_path, tags, COALESCE(version, 1) as version
-           FROM shared_markdown_files
-           WHERE id = $1 OR LOWER(title) = LOWER($1)
-           LIMIT 1`,
-          [target]
-        );
+        const existingDoc = await findDocumentByFlexibleTarget(pool, target);
 
-        if (findResult.rows.length === 0) {
-          // If note does not exist, automatically create it instead of failing!
+        if (!existingDoc) {
+          // If note does not exist, automatically create it!
           const autoTitle = target;
-          const folder = String(args.folderPath || args.folder || '🧠 مغز هوش مصنوعی').trim();
+          const folder = String(args.folderPath || args.folder || 'Projects').trim();
           const cleanTitle = autoTitle
             .toLowerCase()
             .replace(/[^\w؀-ۿ\s-]/g, '')
@@ -554,7 +631,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
             `INSERT INTO shared_markdown_files (id, title, content, description, author_name, tags, is_public, folder_path, version, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, NOW(), NOW())
              RETURNING id, title, content, folder_path, tags, is_public, COALESCE(version, 1) as version, created_at, updated_at`,
-            [newId, autoTitle, contentToAppend, 'سند ایجاد شده توسط هوش مصنوعی (MCP)', 'هوش مصنوعی (MCP)', ['ai-brain'], false, folder]
+            [newId, autoTitle, contentToAppend, 'سند ایجاد شده توسط هوش مصنوعی (MCP)', 'هوش مصنوعی (MCP)', ['ai-brain'], true, folder]
           );
 
           return {
@@ -574,7 +651,6 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
           };
         }
 
-        const existingDoc = findResult.rows[0];
         const newContent = existingDoc.content
           ? `${existingDoc.content}${separator}${contentToAppend}`
           : contentToAppend;
@@ -591,7 +667,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
                version = COALESCE(version, 1) + 1,
                updated_at = NOW()
            WHERE id = $3
-           RETURNING id, title, content, folder_path, tags, COALESCE(version, 1) as version, updated_at`,
+           RETURNING id, title, content, folder_path, tags, is_public, COALESCE(version, 1) as version, updated_at`,
           [newContent, currentTags, existingDoc.id]
         );
 
@@ -648,15 +724,9 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
           };
         }
 
-        const findResult = await pool.query(
-          `SELECT id, title, content, folder_path, tags, COALESCE(version, 1) as version, updated_at
-           FROM shared_markdown_files
-           WHERE id = $1 OR LOWER(title) = LOWER($1)
-           LIMIT 1`,
-          [target]
-        );
+        const currentDoc = await findDocumentByFlexibleTarget(pool, target);
 
-        if (findResult.rows.length === 0) {
+        if (!currentDoc) {
           return {
             jsonrpc: '2.0',
             id,
@@ -666,8 +736,6 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
             },
           };
         }
-
-        const currentDoc = findResult.rows[0];
 
         // Version Conflict Protection (Optimistic Concurrency Control)
         if (expectedVersion !== null && Number(currentDoc.version) !== expectedVersion) {
@@ -703,7 +771,7 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
                version = COALESCE(version, 1) + 1,
                updated_at = NOW()
            WHERE id = $5
-           RETURNING id, title, content, folder_path, tags, COALESCE(version, 1) as version, updated_at`,
+           RETURNING id, title, content, folder_path, tags, is_public, COALESCE(version, 1) as version, updated_at`,
           [finalTitle, finalContent, finalFolder, finalTags, currentDoc.id]
         );
 
@@ -734,14 +802,8 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
           };
         }
 
-        const deleteResult = await pool.query(
-          `DELETE FROM shared_markdown_files
-           WHERE id = $1 OR LOWER(title) = LOWER($1)
-           RETURNING id, title, folder_path`,
-          [target]
-        );
-
-        if (deleteResult.rows.length === 0) {
+        const targetDoc = await findDocumentByFlexibleTarget(pool, target);
+        if (!targetDoc) {
           return {
             jsonrpc: '2.0',
             id,
@@ -751,6 +813,13 @@ export async function processMcpMessage(pool: pg.Pool, message: any): Promise<an
             },
           };
         }
+
+        const deleteResult = await pool.query(
+          `DELETE FROM shared_markdown_files
+           WHERE id = $1
+           RETURNING id, title, folder_path`,
+          [targetDoc.id]
+        );
 
         return {
           jsonrpc: '2.0',
