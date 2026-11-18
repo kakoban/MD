@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FontFamily, HighlightColor } from '../types';
-import { debounceRenderMermaid } from '../utils/mermaidRenderer';
 import {
   ZoomIn,
   ZoomOut,
@@ -8,36 +7,30 @@ import {
   MoveHorizontal,
   Highlighter,
   MessageSquarePlus,
-  MessageSquare,
-  LayoutDashboard,
   Trash2,
   X,
   Check,
   Sparkles,
-  Palette,
-  ChevronLeft,
-  ChevronRight,
+  Palette
 } from 'lucide-react';
-import { executeCode } from '../utils/codeRunner';
-import { escapeHtml } from '../utils/markdownParser';
-import { MarkdownDoc } from '../types';
-import { getInboundSynapses } from '../utils/synapseEngine';
 
 interface PreviewProps {
   html: string;
   fontFamily: FontFamily;
   direction: 'rtl' | 'ltr';
-  onToggleTask: (taskIndex: number) => void;
+  onToggleTask?: (taskIndex: number) => void;
   onHighlightText?: (selectedText: string, color: HighlightColor) => void;
   onRemoveHighlight?: (highlightedText: string) => void;
   onAddTeacherNote?: (targetText: string, noteText: string) => void;
   scrollRef?: React.RefObject<HTMLDivElement | null>;
-  onToggleComments?: () => void;
-  commentsCount?: number;
-  onBackToWorkspace?: () => void;
-  onNavigateToDoc?: (docTitle: string, heading?: string) => void;
-  allDocs?: MarkdownDoc[];
-  activeDocTitle?: string;
+}
+
+interface FloatingMenuState {
+  x: number;
+  y: number;
+  text: string;
+  isExistingHighlight?: boolean;
+  currentColor?: HighlightColor;
 }
 
 const HIGHLIGHT_COLORS: { id: HighlightColor; name: string; bg: string; dot: string; hover: string }[] = [
@@ -58,21 +51,9 @@ export const Preview: React.FC<PreviewProps> = ({
   onRemoveHighlight,
   onAddTeacherNote,
   scrollRef,
-  onToggleComments,
-  commentsCount = 0,
-  onBackToWorkspace,
-  onNavigateToDoc,
-  allDocs = [],
-  activeDocTitle = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeRef = scrollRef || containerRef;
-
-  // Inbound Backlinks for current active document
-  const inboundBacklinks = React.useMemo(() => {
-    if (!activeDocTitle || !allDocs || allDocs.length === 0) return [];
-    return getInboundSynapses(activeDocTitle, allDocs);
-  }, [activeDocTitle, allDocs]);
 
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [readingProgress, setReadingProgress] = useState<number>(0);
@@ -82,6 +63,7 @@ export const Preview: React.FC<PreviewProps> = ({
   const [teacherPenActive, setTeacherPenActive] = useState<boolean>(false);
   const [activePenColor, setActivePenColor] = useState<HighlightColor>('yellow');
   const [showPenColorMenu, setShowPenColorMenu] = useState<boolean>(false);
+  const [floatingMenu, setFloatingMenu] = useState<FloatingMenuState | null>(null);
   const [showNoteModal, setShowNoteModal] = useState<{ targetText: string } | null>(null);
   const [teacherNoteInput, setTeacherNoteInput] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -107,24 +89,49 @@ export const Preview: React.FC<PreviewProps> = ({
     setReadingProgress(progress);
   };
 
-  // Handle text selection in preview pane (strictly quiet unless teacher pen is active)
+  // Handle text selection in preview pane
   const handleMouseUp = useCallback(() => {
-    if (!teacherPenActive || !onHighlightText) return;
-
+    if (!onHighlightText && !onAddTeacherNote) {
+      return;
+    }
+    // If floating menu is open and user clicked inside it, don't close immediately
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
+    if (!selection || selection.isCollapsed) {
+      return;
+    }
 
     const selectedText = selection.toString().trim();
-    if (!selectedText) return;
+    if (!selectedText || selectedText.length < 1) {
+      return;
+    }
 
+    // Verify selection is inside activeRef
     const range = selection.getRangeAt(0);
     const container = activeRef.current;
-    if (!container || !container.contains(range.commonAncestorContainer)) return;
+    if (!container || !container.contains(range.commonAncestorContainer)) {
+      return;
+    }
 
-    onHighlightText(selectedText, activePenColor);
-    const colorName = HIGHLIGHT_COLORS.find((c) => c.id === activePenColor)?.name || activePenColor;
-    showToast(`متن با رنگ ${colorName} هایلایت شد`);
-    selection.removeAllRanges();
+    // If Teacher Pen mode is active: automatically highlight with chosen color!
+    if (teacherPenActive && onHighlightText) {
+      onHighlightText(selectedText, activePenColor);
+      const colorName = HIGHLIGHT_COLORS.find((c) => c.id === activePenColor)?.name || activePenColor;
+      showToast(`متن با رنگ ${colorName} هایلایت شد`);
+      selection.removeAllRanges();
+      return;
+    }
+
+    // Otherwise, show the floating action bar right at the selection
+    const rect = range.getBoundingClientRect();
+    const x = Math.max(16, Math.min(window.innerWidth - 320, rect.left + rect.width / 2 - 140));
+    const y = rect.top > 65 ? rect.top - 54 : rect.bottom + 8;
+
+    setFloatingMenu({
+      x,
+      y,
+      text: selectedText,
+      isExistingHighlight: false,
+    });
   }, [teacherPenActive, activePenColor, onHighlightText, showToast, activeRef]);
 
   // Wire up interactive task checkboxes, code copy, and click-on-highlight in rendered HTML
@@ -135,6 +142,10 @@ export const Preview: React.FC<PreviewProps> = ({
     // 1. Task checkboxes
     const checkboxes = el.querySelectorAll<HTMLInputElement>('input.task-item-checkbox');
     const handleCheckboxClick = (e: Event) => {
+      if (!onToggleTask) {
+        e.preventDefault();
+        return;
+      }
       const target = e.target as HTMLInputElement;
       const indexStr = target.getAttribute('data-task-index');
       if (indexStr !== null) {
@@ -165,124 +176,64 @@ export const Preview: React.FC<PreviewProps> = ({
     };
     copyBtns.forEach((btn) => btn.addEventListener('click', handleCopyClick));
 
-    // 2.5 Code Runner buttons (HTML, Python, JS)
-    const runBtns = el.querySelectorAll<HTMLButtonElement>('button.code-run-btn');
-    const handleRunClick = async (e: MouseEvent) => {
+    // 3. Click listener on existing highlight marks (<mark class="md-highlight">)
+    const marks = el.querySelectorAll<HTMLElement>('mark.md-highlight');
+    const handleMarkClick = (e: MouseEvent) => {
+      if (!onHighlightText && !onRemoveHighlight) return;
       e.stopPropagation();
-      const btn = (e.currentTarget || e.target) as HTMLButtonElement;
-      const encodedCode = btn.getAttribute('data-run-code');
-      const lang = btn.getAttribute('data-run-lang') || '';
-      if (!encodedCode || !lang) return;
+      const mark = e.currentTarget as HTMLElement;
+      const rawText = mark.getAttribute('data-raw-text') || mark.innerText.trim();
+      const currentColor = (mark.getAttribute('data-highlight-color') as HighlightColor) || 'yellow';
+      const rect = mark.getBoundingClientRect();
+      const x = Math.max(16, Math.min(window.innerWidth - 320, rect.left + rect.width / 2 - 140));
+      const y = rect.top > 65 ? rect.top - 54 : rect.bottom + 8;
 
-      const rawCode = decodeURIComponent(encodedCode);
-      const container = btn.closest('.code-block-container');
-      if (!container) return;
-
-      const outputEl = container.querySelector<HTMLElement>('.code-runner-output');
-      if (!outputEl) return;
-
-      outputEl.classList.remove('hidden');
-      outputEl.innerHTML = `
-        <div class="flex items-center gap-2 text-neutral-400 py-1">
-          <svg class="w-4 h-4 animate-spin text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-          </svg>
-          <span class="runner-status-text">در حال اجرای کد (${lang})...</span>
-        </div>
-      `;
-
-      const statusSpan = outputEl.querySelector('.runner-status-text');
-
-      try {
-        const result = await executeCode(rawCode, lang, (status) => {
-          if (statusSpan) statusSpan.textContent = status;
-        });
-
-        if (result.lang === 'html' && result.htmlDoc) {
-          outputEl.innerHTML = `
-            <div class="flex items-center justify-between mb-2 pb-2 border-b border-neutral-800 text-xs">
-              <span class="font-bold text-emerald-400 flex items-center gap-1.5">
-                <span>🌐</span>
-                <span>پیش‌نمایش زنده خروجی HTML</span>
-              </span>
-              <button type="button" class="runner-close-btn text-neutral-400 hover:text-white px-2 py-0.5 rounded hover:bg-neutral-800 text-xs cursor-pointer">بستن خروجی ×</button>
-            </div>
-            <iframe class="runner-html-iframe w-full h-64 bg-white rounded border border-neutral-800" sandbox="allow-scripts"></iframe>
-          `;
-          const iframe = outputEl.querySelector<HTMLIFrameElement>('.runner-html-iframe');
-          if (iframe) iframe.srcdoc = result.htmlDoc;
-        } else {
-          const isErr = !result.success;
-          outputEl.innerHTML = `
-            <div class="flex items-center justify-between mb-2 pb-2 border-b border-neutral-800 text-xs">
-              <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full ${isErr ? 'bg-rose-500' : 'bg-emerald-400'}"></span>
-                <span class="font-bold ${isErr ? 'text-rose-400' : 'text-emerald-400'}">
-                  ${isErr ? 'خطا در اجرا' : 'خروجی اجرا'}
-                </span>
-                <span class="text-[10px] text-neutral-500 font-mono">(${result.executionTimeMs} میلی‌ثانیه)</span>
-              </div>
-              <button type="button" class="runner-close-btn text-neutral-400 hover:text-white px-2 py-0.5 rounded hover:bg-neutral-800 text-xs cursor-pointer">بستن خروجی ×</button>
-            </div>
-            <pre class="p-3 rounded bg-neutral-900 border border-neutral-800/80 overflow-x-auto whitespace-pre-wrap leading-relaxed text-xs font-mono ${isErr ? 'text-rose-400' : 'text-emerald-300'}">${escapeHtml(result.error || result.output || '')}</pre>
-          `;
-        }
-
-        const closeBtn = outputEl.querySelector<HTMLButtonElement>('.runner-close-btn');
-        closeBtn?.addEventListener('click', () => {
-          outputEl.classList.add('hidden');
-          outputEl.innerHTML = '';
-        });
-      } catch (err: any) {
-        outputEl.innerHTML = `
-          <div class="flex items-center justify-between mb-2 pb-2 border-b border-neutral-800 text-xs">
-            <span class="font-bold text-rose-400">خطای غیرمنتظره</span>
-            <button type="button" class="runner-close-btn text-neutral-400 hover:text-white px-2 py-0.5 rounded hover:bg-neutral-800 text-xs cursor-pointer">بستن ×</button>
-          </div>
-          <pre class="p-3 rounded bg-neutral-900 text-rose-400 overflow-x-auto whitespace-pre-wrap text-xs font-mono leading-relaxed">${escapeHtml(err?.message || String(err))}</pre>
-        `;
-        const closeBtn = outputEl.querySelector<HTMLButtonElement>('.runner-close-btn');
-        closeBtn?.addEventListener('click', () => {
-          outputEl.classList.add('hidden');
-          outputEl.innerHTML = '';
-        });
-      }
+      setFloatingMenu({
+        x,
+        y,
+        text: rawText,
+        isExistingHighlight: true,
+        currentColor,
+      });
     };
-    runBtns.forEach((btn) => btn.addEventListener('click', handleRunClick));
-
-    // 2.7 Synapse Bi-directional Wiki Links & Transclusion source clicks
-    const synapseLinks = el.querySelectorAll<HTMLElement>('.synapse-wiki-link, [data-synapse-target]');
-    const handleSynapseClick = (e: MouseEvent) => {
-      e.preventDefault();
-      const target = (e.currentTarget || e.target) as HTMLElement;
-      const title = target.getAttribute('data-synapse-title');
-      const heading = target.getAttribute('data-synapse-heading') || undefined;
-      const docId = target.getAttribute('data-synapse-target');
-
-      if (title && onNavigateToDoc) {
-        onNavigateToDoc(title, heading);
-      } else if (docId && onNavigateToDoc) {
-        onNavigateToDoc(docId, heading);
-      }
-    };
-    synapseLinks.forEach((link) => link.addEventListener('click', handleSynapseClick));
+    marks.forEach((m) => m.addEventListener('click', handleMarkClick));
 
     return () => {
       checkboxes.forEach((cb) => cb.removeEventListener('change', handleCheckboxClick));
       copyBtns.forEach((btn) => btn.removeEventListener('click', handleCopyClick));
-      runBtns.forEach((btn) => btn.removeEventListener('click', handleRunClick));
-      synapseLinks.forEach((link) => link.removeEventListener('click', handleSynapseClick));
+      marks.forEach((m) => m.removeEventListener('click', handleMarkClick));
     };
   }, [html, onToggleTask, activeRef]);
 
-  // Dynamically render Mermaid diagram SVGs
+  // Close floating menu when clicking away
   useEffect(() => {
-    const el = activeRef.current;
-    if (!el) return;
-    const isDark = typeof document !== 'undefined' && document.body.classList.contains('theme-dark');
-    debounceRenderMermaid(el, isDark ? 'dark' : 'light', 150);
-  }, [html, activeRef]);
+    const handleDocumentClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.floating-highlight-menu') || target.closest('mark.md-highlight')) {
+        return;
+      }
+      setFloatingMenu(null);
+    };
+    document.addEventListener('mousedown', handleDocumentClick);
+    return () => document.removeEventListener('mousedown', handleDocumentClick);
+  }, []);
+
+  const handleApplyHighlight = (color: HighlightColor) => {
+    if (!floatingMenu || !onHighlightText) return;
+    onHighlightText(floatingMenu.text, color);
+    const colorName = HIGHLIGHT_COLORS.find((c) => c.id === color)?.name || color;
+    showToast(`هایلایت با رنگ ${colorName} اعمال شد`);
+    setFloatingMenu(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleRemoveHighlight = () => {
+    if (!floatingMenu || !onRemoveHighlight) return;
+    onRemoveHighlight(floatingMenu.text);
+    showToast('هایلایت برداشته شد');
+    setFloatingMenu(null);
+    window.getSelection()?.removeAllRanges();
+  };
 
   const fontClass =
     fontFamily === 'mono'
@@ -311,16 +262,18 @@ export const Preview: React.FC<PreviewProps> = ({
       </div>
 
       {/* Floating Toolbar: Teacher Pen, Layout Width & Zoom Controls */}
-      <div className="absolute top-2 end-2 sm:top-3 sm:end-4 z-20 flex items-center gap-1 sm:gap-1.5 p-1 rounded-2xl frosted-glass border border-[var(--glass-border)] shadow-md select-none">
-        {/* TEACHER HIGHLIGHTER PEN BUTTON */}
-        <div className="relative flex items-center shrink-0">
+      <div className="absolute top-4 end-5 z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-md backdrop-blur-md opacity-95 hover:opacity-100 transition-opacity select-none">
+        {/* TEACHER HIGHLIGHTER PEN BUTTON (Authenticated Editor Only) */}
+        {onHighlightText && (
+        <>
+        <div className="relative flex items-center">
           <button
             type="button"
             onClick={() => setTeacherPenActive(!teacherPenActive)}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
               teacherPenActive
                 ? 'bg-amber-500 text-neutral-950 shadow-md ring-2 ring-amber-400/50'
-                : 'hover:bg-[var(--tile-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                : 'hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
             }`}
             title={
               teacherPenActive
@@ -329,8 +282,8 @@ export const Preview: React.FC<PreviewProps> = ({
             }
           >
             <Highlighter className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">قلم مدرس</span>
-            <span className="sm:hidden">قلم</span>
+            <span className="hidden sm:inline">قلم هایلایت مدرس</span>
+            <span className="sm:hidden">هایلایتر</span>
             {teacherPenActive && <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />}
           </button>
 
@@ -340,7 +293,7 @@ export const Preview: React.FC<PreviewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowPenColorMenu(!showPenColorMenu)}
-                className="w-5 h-5 rounded-full border border-neutral-400/40 flex items-center justify-center p-0.5 hover:scale-110 transition-transform cursor-pointer"
+                className="w-5 h-5 rounded-full border border-neutral-400/40 flex items-center justify-center p-0.5 hover:scale-110 transition-transform"
                 style={{
                   backgroundColor:
                     activePenColor === 'yellow'
@@ -367,7 +320,7 @@ export const Preview: React.FC<PreviewProps> = ({
                         setActivePenColor(c.id);
                         setShowPenColorMenu(false);
                       }}
-                      className={`w-5 h-5 rounded-full ${c.dot} hover:scale-125 transition-transform cursor-pointer ${
+                      className={`w-5 h-5 rounded-full ${c.dot} hover:scale-125 transition-transform ${
                         activePenColor === c.id ? 'ring-2 ring-offset-1 ring-amber-500' : ''
                       }`}
                       title={c.name}
@@ -379,108 +332,141 @@ export const Preview: React.FC<PreviewProps> = ({
           )}
         </div>
 
-        {/* Width Toggle (Medium / Wide / Full) - Hidden on Mobile */}
-        <div className="hidden sm:flex items-center">
-          <div className="w-[1px] h-4 bg-[var(--border-color)] mx-1" />
-          <button
-            type="button"
-            onClick={() => {
-              setLayoutWidth((current) =>
-                current === 'wide' ? 'full' : current === 'full' ? 'comfortable' : 'wide'
-              );
-            }}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-[11px] cursor-pointer"
-            title="تغییر عرض صفحه (عریض / تمام‌صفحه / استاندارد)"
-          >
-            <MoveHorizontal className="w-3.5 h-3.5 text-amber-500" />
-            <span>{layoutWidth === 'wide' ? 'عریض' : layoutWidth === 'full' ? 'تمام‌صفحه' : 'متوسط'}</span>
-          </button>
-        </div>
+        <div className="w-[1px] h-4 bg-[var(--border-color)] mx-0.5" />
+        </>
+        )}
 
-        {/* Zoom Controls - Hidden on Mobile (Native pinch zoom is used) */}
-        <div className="hidden sm:flex items-center">
-          <div className="w-[1px] h-4 bg-[var(--border-color)] mx-1" />
+        {/* Width Toggle (Medium / Wide / Full) */}
+        <button
+          type="button"
+          onClick={() => {
+            setLayoutWidth((current) =>
+              current === 'wide' ? 'full' : current === 'full' ? 'comfortable' : 'wide'
+            );
+          }}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-[11px]"
+          title="تغییر عرض صفحه (عریض / تمام‌صفحه / استاندارد)"
+        >
+          <MoveHorizontal className="w-3.5 h-3.5 text-amber-500" />
+          <span>{layoutWidth === 'wide' ? 'عریض' : layoutWidth === 'full' ? 'تمام‌صفحه' : 'متوسط'}</span>
+        </button>
+
+        <div className="w-[1px] h-4 bg-[var(--border-color)] mx-0.5" />
+
+        {/* Zoom Controls */}
+        <button
+          type="button"
+          onClick={() => setZoomLevel((z) => Math.max(80, z - 10))}
+          className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          title="کاهش اندازه قلم"
+        >
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+        <span className="text-[11px] font-mono text-[var(--text-muted)] px-1 select-none">
+          {zoomLevel}%
+        </span>
+        <button
+          type="button"
+          onClick={() => setZoomLevel((z) => Math.min(150, z + 10))}
+          className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          title="افزایش اندازه قلم"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+        {zoomLevel !== 100 && (
           <button
             type="button"
-            onClick={() => setZoomLevel((z) => Math.max(80, z - 10))}
-            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title="کاهش اندازه قلم"
+            onClick={() => setZoomLevel(100)}
+            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-amber-500 transition-colors"
+            title="بازنشانی اندازه قلم"
           >
-            <ZoomOut className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3 h-3" />
           </button>
-          <span className="text-[11px] font-mono text-[var(--text-muted)] px-1 select-none">
-            {zoomLevel}%
-          </span>
-          <button
-            type="button"
-            onClick={() => setZoomLevel((z) => Math.min(150, z + 10))}
-            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title="افزایش اندازه قلم"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-          {zoomLevel !== 100 && (
+        )}
+      </div>
+
+      {/* Main Preview Scroll Area */}
+      <div
+        ref={activeRef}
+        onScroll={handleScroll}
+        onMouseUp={handleMouseUp}
+        dir={direction}
+        className={`flex-1 overflow-y-auto p-6 md:p-12 lg:p-14 text-[var(--text-primary)] ${fontClass} ${
+          teacherPenActive ? 'cursor-text select-text' : ''
+        }`}
+      >
+        <div
+          className={`${widthContainerClass} markdown-body transition-all duration-200`}
+          style={{ fontSize: `${zoomLevel}%` }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </div>
+
+      {/* FLOATING SELECTION / HIGHLIGHT TOOLBAR */}
+      {floatingMenu && (
+        <div
+          className="floating-highlight-menu fixed z-50 animate-in fade-in zoom-in-95 duration-150 flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl backdrop-blur-md select-none"
+          style={{
+            left: `${floatingMenu.x}px`,
+            top: `${floatingMenu.y}px`,
+          }}
+        >
+          {/* Highlighter Palette */}
+          <div className="flex items-center gap-1 pe-1 border-e border-[var(--border-color)]">
+            {HIGHLIGHT_COLORS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => handleApplyHighlight(c.id)}
+                className={`w-6 h-6 rounded-full ${c.dot} hover:scale-125 transition-transform shadow-xs flex items-center justify-center ${
+                  floatingMenu.currentColor === c.id ? 'ring-2 ring-offset-1 ring-amber-500' : ''
+                }`}
+                title={`هایلایت با رنگ ${c.name}`}
+              >
+                {floatingMenu.currentColor === c.id && <Check className="w-3 h-3 text-neutral-900 stroke-[3]" />}
+              </button>
+            ))}
+          </div>
+
+          {/* Add Teacher Note Button */}
+          {onAddTeacherNote && (
             <button
               type="button"
-              onClick={() => setZoomLevel(100)}
-              className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-amber-500 transition-colors cursor-pointer"
-              title="بازنشانی اندازه قلم"
+              onClick={() => {
+                setShowNoteModal({ targetText: floatingMenu.text });
+                setFloatingMenu(null);
+              }}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-xs transition-colors"
+              title="افزودن نکته یا یادداشت مدرس برای این بخش"
             >
-              <RotateCcw className="w-3 h-3" />
+              <MessageSquarePlus className="w-3.5 h-3.5 text-amber-500" />
+              <span className="text-[11px] font-medium hidden sm:inline">یادداشت مدرس</span>
             </button>
           )}
-        </div>
-      </div>
 
-      {/* Main Preview Container */}
-      <div className="flex-1 flex overflow-hidden relative">
-        <div
-          ref={activeRef}
-          onScroll={handleScroll}
-          onMouseUp={handleMouseUp}
-          dir={direction}
-          className={`flex-1 overflow-y-auto p-3.5 sm:p-6 md:p-12 lg:p-14 pt-14 sm:pt-16 text-[var(--text-primary)] ${fontClass} ${
-            teacherPenActive ? 'cursor-text select-text' : ''
-          }`}
-        >
-          <div
-            className={`${widthContainerClass} markdown-body transition-all duration-200`}
-            style={{ fontSize: `${zoomLevel}%` }}
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-
-          {/* Inbound Backlinks Section (Synapse Engine Integration) */}
-          {inboundBacklinks.length > 0 && (
-            <div className={`${widthContainerClass} mt-12 pt-6 border-t border-[var(--border-color)] space-y-3`}>
-              <div className="flex items-center gap-2 text-xs font-bold text-[#0061FF]">
-                <span>🔗</span>
-                <span>پیوندهای ورودی به این سند (Backlinks - {inboundBacklinks.length})</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {inboundBacklinks.map((link, idx) => (
-                  <div
-                    key={`${link.sourceDoc.id}-${idx}`}
-                    onClick={() => onNavigateToDoc?.(link.sourceDoc.title)}
-                    className="p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-[#0061FF]/40 hover:bg-[#0061FF]/5 transition-all cursor-pointer group space-y-1 shadow-2xs"
-                  >
-                    <div className="flex items-center justify-between text-xs font-bold text-[var(--text-primary)] group-hover:text-[#0061FF]">
-                      <span className="truncate">📄 {link.sourceDoc.title}</span>
-                      <span className="text-[10px] text-[var(--text-muted)] font-normal">
-                        {link.sourceDoc.folderPath || 'عمومی'}
-                      </span>
-                    </div>
-                    {link.context && (
-                      <p className="text-[11px] text-[var(--text-muted)] line-clamp-2 leading-relaxed font-mono">
-                        {link.context}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* Remove Highlight Button if existing */}
+          {floatingMenu.isExistingHighlight && onRemoveHighlight && (
+            <button
+              type="button"
+              onClick={handleRemoveHighlight}
+              className="p-1 rounded-lg hover:bg-rose-500/15 text-rose-500 transition-colors"
+              title="حذف هایلایت از این متن"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           )}
+
+          {/* Close Button */}
+          <button
+            type="button"
+            onClick={() => setFloatingMenu(null)}
+            className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            title="بستن"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
-      </div>
+      )}
 
       {/* TEACHER NOTE MODAL */}
       {showNoteModal && (

@@ -7,14 +7,12 @@ import {
   Star,
   Trash2,
   ExternalLink,
-  Plus,
   RefreshCw,
   FolderOpen,
   User,
 } from 'lucide-react';
 import { authApi } from '../services/authApi';
-import { cloudApi } from '../services/cloudApi';
-import { SharedMarkdownFile } from '../services/cloudApi';
+import { cloudApi, SharedMarkdownFile } from '../services/cloudApi';
 
 interface MyDocumentsModalProps {
   isOpen: boolean;
@@ -32,6 +30,7 @@ export const MyDocumentsModal: React.FC<MyDocumentsModalProps> = ({
   const [documents, setDocuments] = useState<SharedMarkdownFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const fetchMyDocs = async () => {
     setIsLoading(true);
@@ -49,19 +48,20 @@ export const MyDocumentsModal: React.FC<MyDocumentsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       fetchMyDocs();
+      setConfirmDeleteId(null);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleDelete = async (fileId: string, title: string, e: React.MouseEvent) => {
+  const handleDelete = async (fileId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`آیا از حذف سند ابری «${title}» اطمینان دارید؟`)) return;
     try {
       await cloudApi.deleteFile(fileId);
       setDocuments((prev) => prev.filter((d) => d.id !== fileId));
+      setConfirmDeleteId(null);
     } catch (err: any) {
-      alert(err.message || 'خطا در حذف سند');
+      setErrorMessage(err.message || 'خطا در حذف سند');
     }
   };
 
@@ -82,9 +82,9 @@ export const MyDocumentsModal: React.FC<MyDocumentsModalProps> = ({
               <FolderOpen className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold">اسناد ابری من</h2>
+              <h2 className="text-sm font-bold">اسناد من</h2>
               <p className="text-[11px] text-[var(--text-muted)]">
-                تمام اسناد ذخیره‌شده و همگام در پایگاه داده ابری Neon {userName ? `(${userName})` : ''}
+                فهرست اختصاصی اسناد حساب کاربری {userName ? `(${userName})` : ''}
               </p>
             </div>
           </div>
@@ -93,7 +93,7 @@ export const MyDocumentsModal: React.FC<MyDocumentsModalProps> = ({
               type="button"
               onClick={fetchMyDocs}
               disabled={isLoading}
-              className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+              className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
               title="بروزرسانی لیست"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -101,7 +101,7 @@ export const MyDocumentsModal: React.FC<MyDocumentsModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+              className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -113,81 +113,118 @@ export const MyDocumentsModal: React.FC<MyDocumentsModalProps> = ({
           {isLoading && documents.length === 0 ? (
             <div className="py-16 text-center text-xs text-[var(--text-muted)]">
               <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-amber-500" />
-              <span>در حال بازیابی اسناد از پایگاه ابری...</span>
+              <span>در حال بارگذاری اسناد شما...</span>
             </div>
           ) : errorMessage ? (
-            <div className="py-12 text-center text-xs text-rose-400">
+            <div className="py-12 text-center text-xs text-rose-500">
               <p>{errorMessage}</p>
             </div>
           ) : documents.length === 0 ? (
             <div className="py-16 text-center text-[var(--text-muted)]">
               <FileText className="w-10 h-10 mx-auto mb-3 text-neutral-400 opacity-60" />
-              <p className="text-xs font-semibold text-[var(--text-secondary)]">هنوز سندی در حساب ابری خود ذخیره نکرده‌اید.</p>
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">هنوز سندی در حساب شما ثبت نشده است.</p>
               <p className="text-[11px] mt-1 text-[var(--text-muted)]">
-                با کلیک روی دکمه «اشتراک ابری» در بالای صفحه، سند فعال در حساب شما ذخیره می‌شود.
+                از طریق داشبورد یا نوار ابزار می‌توانید اولین سند خود را ایجاد کنید.
               </p>
             </div>
           ) : (
-            documents.map((doc) => (
-              <div
-                key={doc.id}
-                onClick={() => {
-                  onOpenDocument(doc);
-                  onClose();
-                }}
-                className="p-4 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] hover:border-amber-500/50 hover:bg-[var(--bg-tertiary)]/40 transition-all cursor-pointer flex items-center justify-between gap-4 group"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-xs text-[var(--text-primary)] group-hover:text-amber-500 transition-colors truncate">
-                      {doc.title}
-                    </h3>
-                    <span className="text-[10px] px-2 py-0.2 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)]">
-                      {doc.is_public ? 'عمومی' : 'خصوصی'}
-                    </span>
-                  </div>
-                  {doc.description && (
-                    <p className="text-[11px] text-[var(--text-muted)] truncate mb-2">{doc.description}</p>
-                  )}
-                  <div className="flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
-                    <span className="flex items-center gap-1 font-semibold text-amber-500">
-                      <User className="w-3 h-3 text-amber-500" />
-                      <span>{doc.author_name || userName || 'شما'}</span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-neutral-400" />
-                      <span>{new Date(doc.updated_at).toLocaleDateString('fa-IR')}</span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Eye className="w-3 h-3 text-neutral-400" />
-                      <span>{doc.views_count} بازدید</span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Star className="w-3 h-3 text-amber-500" />
-                      <span>{doc.stars_count} ستاره</span>
-                    </span>
-                  </div>
-                </div>
+            documents.map((doc) => {
+              const visibilityText =
+                doc.visibility === 'public' || (!doc.visibility && doc.is_public)
+                  ? 'اکسپلور عمومی'
+                  : doc.visibility === 'unlisted'
+                  ? 'دارای لینک'
+                  : 'خصوصی';
+              const isConfirming = confirmDeleteId === doc.id;
 
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={(e) => handleDelete(doc.id, doc.title, e)}
-                    className="p-2 rounded-xl text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                    title="حذف سند"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    className="p-2 rounded-xl text-neutral-400 hover:text-amber-500 group-hover:text-amber-500 transition-colors"
-                    title="باز کردن در ویرایشگر"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </button>
+              return (
+                <div
+                  key={doc.id}
+                  onClick={() => {
+                    onOpenDocument(doc);
+                    onClose();
+                  }}
+                  className="p-4 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] hover:border-amber-500/50 hover:bg-[var(--bg-tertiary)]/40 transition-all cursor-pointer flex items-center justify-between gap-4 group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-bold text-xs text-[var(--text-primary)] group-hover:text-amber-500 transition-colors truncate">
+                        {doc.title}
+                      </h3>
+                    </div>
+                    {doc.description && (
+                      <p className="text-[11px] text-[var(--text-muted)] truncate mb-2">{doc.description}</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-[var(--text-muted)] tabular-nums">
+                      <span className="flex items-center gap-1 font-semibold text-amber-500">
+                        <User className="w-3 h-3" />
+                        <span>{doc.author_name || userName || 'شما'}</span>
+                      </span>
+                      <span>·</span>
+                      <span>{visibilityText}</span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>{new Date(doc.updated_at).toLocaleDateString('fa-IR')}</span>
+                      </span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1">
+                        <Eye className="w-3 h-3" />
+                        <span>{doc.views_count}</span>
+                      </span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1">
+                        <Star className="w-3 h-3 text-amber-500" />
+                        <span>{doc.stars_count}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    {isConfirming ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => handleDelete(doc.id, e)}
+                          className="px-2.5 py-1 rounded-lg bg-rose-500 text-white text-[11px] font-bold cursor-pointer"
+                        >
+                          تأیید حذف
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="px-2 py-1 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] text-[11px] cursor-pointer"
+                        >
+                          لغو
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(doc.id)}
+                          className="p-2 rounded-xl text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          title="حذف سند"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onOpenDocument(doc);
+                            onClose();
+                          }}
+                          className="p-2 rounded-xl text-neutral-400 hover:text-amber-500 group-hover:text-amber-500 transition-colors cursor-pointer"
+                          title="باز کردن در ویرایشگر"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

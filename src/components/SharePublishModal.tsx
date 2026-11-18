@@ -1,29 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  CloudUpload,
-  X,
   Share2,
+  X,
   Check,
   Copy,
-  Tag,
   Globe,
   Lock,
-  Sparkles,
+  Link2,
   ExternalLink,
   CheckCircle2,
-  Database,
   Loader2,
+  User,
 } from 'lucide-react';
 import { cloudApi } from '../services/cloudApi';
+import { DocVisibility } from '../types';
 
 interface SharePublishModalProps {
   isOpen: boolean;
   onClose: () => void;
+  documentId?: string;
+  isExistingCloudDoc?: boolean;
   documentTitle: string;
   documentContent: string;
+  initialDescription?: string;
+  initialTags?: string[];
+  initialVisibility?: DocVisibility;
   defaultAuthor?: string;
-  folderPath?: string;
-  onPublishedSuccess?: (shareId: string) => void;
+  onPublishedSuccess?: (
+    shareId: string,
+    meta: { visibility: DocVisibility; title: string; description: string; tags: string[] }
+  ) => void;
   onOpenCommunity?: () => void;
 }
 
@@ -34,57 +40,51 @@ const POPULAR_SUGGESTED_TAGS = [
   'خلاصه کتاب',
   'مدیریت پروژه',
   'طراحی سیستم',
-  'یادداشت شخصی',
+  'یادداشت',
   'چک‌لیست',
 ];
 
 export const SharePublishModal: React.FC<SharePublishModalProps> = ({
   isOpen,
   onClose,
+  documentId,
+  isExistingCloudDoc = false,
   documentTitle,
   documentContent,
+  initialDescription = '',
+  initialTags = [],
+  initialVisibility = 'private',
   defaultAuthor,
-  folderPath,
   onPublishedSuccess,
   onOpenCommunity,
 }) => {
   const [title, setTitle] = useState(documentTitle || 'سند جدید');
-  const [authorName, setAuthorName] = useState(() => {
-    return defaultAuthor || localStorage.getItem('markdown_author_name') || 'نویسنده';
-  });
-
-  React.useEffect(() => {
-    if (defaultAuthor && defaultAuthor.trim()) {
-      setAuthorName(defaultAuthor.trim());
-    }
-  }, [defaultAuthor, isOpen]);
-
-  React.useEffect(() => {
-    if (isOpen) {
-      const activeTitle = (documentTitle || '').trim() || 'سند جدید';
-      setTitle(activeTitle);
-      const autoSlug = activeTitle
-        .toLowerCase()
-        .replace(/[\s\-_]+/g, '-')
-        .replace(/[^\w؀-ۿ-]/g, '')
-        .slice(0, 50);
-      setCustomId(autoSlug);
-      setPublishedUrl(null);
-      setErrorMsg(null);
-      setCopiedLink(false);
-    }
-  }, [isOpen, documentTitle]);
-  const [description, setDescription] = useState('');
-  const [tags, setTags] = useState<string[]>(['آموزشی']);
+  const [description, setDescription] = useState(initialDescription);
+  const [tags, setTags] = useState<string[]>(initialTags);
   const [tagInput, setTagInput] = useState('');
-  const [isPublic, setIsPublic] = useState(true);
+  const [visibility, setVisibility] = useState<DocVisibility>(initialVisibility);
   const [customId, setCustomId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [savedVisibility, setSavedVisibility] = useState<DocVisibility>('private');
   const [copiedLink, setCopiedLink] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setTitle(documentTitle || 'سند جدید');
+      setDescription(initialDescription || '');
+      setTags(initialTags && initialTags.length > 0 ? initialTags : []);
+      setVisibility(initialVisibility || 'private');
+      setCustomId('');
+      setPublishedUrl(null);
+      setErrorMsg(null);
+    }
+  }, [isOpen, documentTitle, initialDescription, initialTags, initialVisibility]);
+
   if (!isOpen) return null;
+
+  const authorDisplay = defaultAuthor?.trim() || 'شما';
 
   const handleAddTag = (tagToAdd: string) => {
     const trimmed = tagToAdd.trim().replace(/^#/, '');
@@ -104,35 +104,48 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
       setErrorMsg('عنوان سند الزامی است.');
       return;
     }
-    if (!documentContent.trim()) {
-      setErrorMsg('محتوای سند خالی است.');
-      return;
-    }
 
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
-      localStorage.setItem('markdown_author_name', authorName);
+      let resolvedId = documentId || '';
 
-      const res = await cloudApi.publishFile({
-        title: title.trim(),
-        content: documentContent,
-        description: description.trim(),
-        author_name: authorName.trim(),
-        tags,
-        is_public: isPublic,
-        customId: customId.trim() || undefined,
-        folderPath: folderPath?.trim() || undefined,
-      });
-
-      const fullShareUrl = `${window.location.origin}/?share=${res.file.id}`;
-      setPublishedUrl(fullShareUrl);
-      if (onPublishedSuccess) {
-        onPublishedSuccess(res.file.id);
+      if (isExistingCloudDoc && documentId) {
+        await cloudApi.updateFile(documentId, {
+          title: title.trim(),
+          content: documentContent,
+          description: description.trim(),
+          tags,
+          visibility,
+          is_public: visibility === 'public',
+        });
+        resolvedId = documentId;
+      } else {
+        const res = await cloudApi.publishFile({
+          title: title.trim(),
+          content: documentContent,
+          description: description.trim(),
+          author_name: authorDisplay,
+          tags,
+          visibility,
+          is_public: visibility === 'public',
+          customId: customId.trim() || undefined,
+        });
+        resolvedId = res.file.id;
       }
+
+      const fullShareUrl = `${window.location.origin}/?share=${resolvedId}`;
+      setSavedVisibility(visibility);
+      setPublishedUrl(fullShareUrl);
+      onPublishedSuccess?.(resolvedId, {
+        visibility,
+        title: title.trim(),
+        description: description.trim(),
+        tags,
+      });
     } catch (err: any) {
-      setErrorMsg(err.message || 'خطا در ارتباط با دیتابیس Neon');
+      setErrorMsg(err.message || 'خطا در ذخیره‌سازی تنظیمات اشتراک');
     } finally {
       setIsSubmitting(false);
     }
@@ -153,33 +166,34 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 select-none">
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl p-4 sm:p-6 space-y-4 sm:space-y-5 text-[var(--text-primary)]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 select-none"
+      onClick={handleResetAndClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-2xl p-6 space-y-5 text-[var(--text-primary)] max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        dir="rtl"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
-              <CloudUpload className="w-5 h-5" />
+              <Share2 className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm text-[var(--text-primary)]">
-                  اشتراک‌گذاری در پایگاه داده ابری
-                </h3>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                  <Database className="w-2.5 h-2.5" />
-                  Neon PostgreSQL
-                </span>
-              </div>
+              <h3 className="font-bold text-sm text-[var(--text-primary)]">
+                تنظیمات دسترسی و اشتراک‌گذاری
+              </h3>
               <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                ذخیره پایدار در دیتابیس و تولید لینک مستقیم اشتراک‌گذاری
+                تعیین کنید چه کسانی به این سند دسترسی داشته باشند
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={handleResetAndClose}
-            className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -192,65 +206,71 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
               <CheckCircle2 className="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" />
               <div>
                 <h4 className="font-bold text-sm text-emerald-500">
-                  فایل شما با موفقیت در پایگاه داده ذخیره شد!
+                  تنظیمات دسترسی سند ذخیره شد
                 </h4>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">
-                  اکنون هر کاربری با این لینک می‌تواند فایل مارک‌دان را مشاهده، مطالعه و در ادیتور خود باز کند.
+                <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
+                  {savedVisibility === 'private'
+                    ? 'این سند در وضعیت خصوصی قرار دارد و هیچ کاربر دیگری امکان مشاهده آن را ندارد.'
+                    : savedVisibility === 'unlisted'
+                    ? 'این سند در اکسپلور عمومی نمایش داده نمی‌شود؛ تنها کسانی که لینک زیر را داشته باشند می‌توانند آن را مطالعه کنند.'
+                    : 'این سند در اکسپلور عمومی منتشر شد و با لینک زیر نیز قابل دسترسی است.'}
                 </p>
               </div>
             </div>
 
-            {/* Link box */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-[var(--text-muted)]">
-                لینک اختصاصی اشتراک:
-              </label>
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]">
-                <input
-                  type="text"
-                  readOnly
-                  value={publishedUrl}
-                  className="bg-transparent text-xs text-[var(--text-primary)] font-mono flex-1 outline-none px-1"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs transition-colors shrink-0"
-                >
-                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedLink ? 'کپی شد' : 'کپی لینک'}</span>
-                </button>
+            {savedVisibility !== 'private' && (
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium text-[var(--text-muted)]">
+                  لینک مستقیم اشتراک:
+                </label>
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]">
+                  <input
+                    type="text"
+                    readOnly
+                    dir="ltr"
+                    value={publishedUrl}
+                    className="bg-transparent text-xs text-[var(--text-primary)] font-mono flex-1 outline-none px-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs transition-colors shrink-0 cursor-pointer"
+                  >
+                    {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedLink ? 'کپی شد' : 'کپی لینک'}</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex items-center justify-between pt-3 border-t border-[var(--border-color)]">
-              {onOpenCommunity && (
+              {onOpenCommunity && savedVisibility === 'public' && (
                 <button
                   type="button"
                   onClick={() => {
                     handleResetAndClose();
                     onOpenCommunity();
                   }}
-                  className="flex items-center gap-1.5 text-xs text-amber-500 hover:underline"
+                  className="flex items-center gap-1.5 text-xs text-amber-500 hover:underline cursor-pointer"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>مشاهده در مخزن فایل‌های همگانی</span>
+                  <span>مشاهده در اکسپلور عمومی</span>
                 </button>
               )}
               <button
                 type="button"
                 onClick={handleResetAndClose}
-                className="px-4 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-xs text-[var(--text-primary)] transition-colors ms-auto"
+                className="px-4 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-xs text-[var(--text-primary)] transition-colors ms-auto cursor-pointer"
               >
-                بستن و ادامه
+                بستن
               </button>
             </div>
           </div>
         ) : (
           /* Form View */
-          <form onSubmit={handlePublish} className="space-y-3.5 text-xs">
+          <form onSubmit={handlePublish} className="space-y-4 text-xs">
             {errorMsg && (
-              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs">
                 {errorMsg}
               </div>
             )}
@@ -258,65 +278,118 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
             {/* Title */}
             <div>
               <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                عنوان فایل:
+                عنوان سند:
               </label>
               <input
                 type="text"
                 value={title}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setTitle(val);
-                  const autoSlug = val
-                    .trim()
-                    .toLowerCase()
-                    .replace(/[\s\-_]+/g, '-')
-                    .replace(/[^\w؀-ۿ-]/g, '')
-                    .slice(0, 50);
-                  setCustomId(autoSlug);
-                }}
-                placeholder="عنوان فایل مارک‌دان..."
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="عنوان سند..."
                 className="w-full p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-amber-500 font-medium"
                 required
               />
             </div>
 
-            {/* Author & Custom Slug */}
+            {/* Author Info + Optional Custom Slug */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                  نام نویسنده / منتشرکننده:
+                  نام نویسنده (از پروفایل شما):
                 </label>
-                <input
-                  type="text"
-                  value={authorName}
-                  onChange={(e) => setAuthorName(e.target.value)}
-                  placeholder="نام شما یا گروه..."
-                  className="w-full p-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-amber-500"
-                />
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)]">
+                  <User className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="font-semibold truncate">{authorDisplay}</span>
+                </div>
               </div>
-              <div>
-                <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                  شناسه دلخواه لینک (اختیاری):
-                </label>
-                <input
-                  type="text"
-                  value={customId}
-                  onChange={(e) => setCustomId(e.target.value)}
-                  placeholder="مثال: deep-learning-notes"
-                  className="w-full p-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-amber-500 font-mono text-[11px]"
-                />
+
+              {!isExistingCloudDoc && (
+                <div>
+                  <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
+                    شناسه دلخواه لینک (اختیاری):
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={customId}
+                    onChange={(e) => setCustomId(e.target.value)}
+                    placeholder="deep-learning-notes"
+                    className="w-full p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-amber-500 font-mono text-[11px]"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Three-Tier Visibility Selector */}
+            <div className="space-y-2">
+              <label className="block text-[11px] font-medium text-[var(--text-muted)]">
+                سطح دسترسی سند:
+              </label>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibility('private')}
+                  className={`w-full text-start p-3 rounded-2xl border flex items-start gap-3 transition-colors cursor-pointer ${
+                    visibility === 'private'
+                      ? 'bg-amber-500/10 border-amber-500/50 text-[var(--text-primary)]'
+                      : 'bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-secondary)] hover:border-amber-500/30'
+                  }`}
+                >
+                  <Lock className={`w-4 h-4 mt-0.5 shrink-0 ${visibility === 'private' ? 'text-amber-500' : 'text-[var(--text-muted)]'}`} />
+                  <div className="flex-1">
+                    <div className="font-bold text-xs">خصوصی (فقط خودم)</div>
+                    <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                      هیچ کاربر دیگری حتی با داشتن لینک امکان مشاهده این سند را ندارد.
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setVisibility('unlisted')}
+                  className={`w-full text-start p-3 rounded-2xl border flex items-start gap-3 transition-colors cursor-pointer ${
+                    visibility === 'unlisted'
+                      ? 'bg-sky-500/10 border-sky-500/50 text-[var(--text-primary)]'
+                      : 'bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-secondary)] hover:border-sky-500/30'
+                  }`}
+                >
+                  <Link2 className={`w-4 h-4 mt-0.5 shrink-0 ${visibility === 'unlisted' ? 'text-sky-500' : 'text-[var(--text-muted)]'}`} />
+                  <div className="flex-1">
+                    <div className="font-bold text-xs">اشتراک با لینک مستقیم</div>
+                    <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                      در اکسپلور عمومی نمایش داده نمی‌شود، اما هر کس لینک را داشته باشد می‌تواند آن را مطالعه کند.
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setVisibility('public')}
+                  className={`w-full text-start p-3 rounded-2xl border flex items-start gap-3 transition-colors cursor-pointer ${
+                    visibility === 'public'
+                      ? 'bg-emerald-500/10 border-emerald-500/50 text-[var(--text-primary)]'
+                      : 'bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-secondary)] hover:border-emerald-500/30'
+                  }`}
+                >
+                  <Globe className={`w-4 h-4 mt-0.5 shrink-0 ${visibility === 'public' ? 'text-emerald-500' : 'text-[var(--text-muted)]'}`} />
+                  <div className="flex-1">
+                    <div className="font-bold text-xs">انتشار در اکسپلور عمومی</div>
+                    <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                      برای همه کاربران در بخش اکسپلور عمومی قابل مشاهده، جستجو و مطالعه است.
+                    </div>
+                  </div>
+                </button>
               </div>
             </div>
 
             {/* Description */}
             <div>
               <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                توضیح کوتاه درباره محتوا:
+                توضیح کوتاه (اختیاری):
               </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="این سند شامل چه مباحثی است..."
+                placeholder="خلاصه‌ای کوتاه درباره محتوای این سند..."
                 rows={2}
                 className="w-full p-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-amber-500 resize-none"
               />
@@ -325,25 +398,27 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
             {/* Tags */}
             <div>
               <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                دسته‌بندی و برچسب‌ها:
+                برچسب‌ها:
               </label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {tags.map((t) => (
-                  <span
-                    key={t}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-500 border border-amber-500/30 text-[11px]"
-                  >
-                    #{t}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTag(t)}
-                      className="hover:text-rose-400 ms-0.5"
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {tags.map((t) => (
+                    <span
+                      key={t}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-500 border border-amber-500/30 text-[11px]"
                     >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
+                      #{t}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(t)}
+                        className="hover:text-rose-400 ms-0.5 cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -361,13 +436,12 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleAddTag(tagInput)}
-                  className="px-3 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-secondary)]"
+                  className="px-3 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] cursor-pointer"
                 >
                   افزودن
                 </button>
               </div>
 
-              {/* Suggestions */}
               <div className="flex flex-wrap gap-1 pt-1.5 items-center">
                 <span className="text-[10px] text-[var(--text-muted)]">پیشنهاد:</span>
                 {POPULAR_SUGGESTED_TAGS.filter((t) => !tags.includes(t))
@@ -377,7 +451,7 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
                       key={t}
                       type="button"
                       onClick={() => handleAddTag(t)}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] hover:bg-amber-500/20 hover:text-amber-500 text-[var(--text-muted)] transition-colors"
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] hover:bg-amber-500/20 hover:text-amber-500 text-[var(--text-muted)] transition-colors cursor-pointer"
                     >
                       +{t}
                     </button>
@@ -385,65 +459,32 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
               </div>
             </div>
 
-            {/* Visibility Toggle */}
-            <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {isPublic ? (
-                  <Globe className="w-4 h-4 text-emerald-500" />
-                ) : (
-                  <Lock className="w-4 h-4 text-amber-500" />
-                )}
-                <div>
-                  <div className="font-semibold text-xs text-[var(--text-primary)]">
-                    {isPublic ? 'نمایش در مخزن همگانی (Public)' : 'فقط با لینک مستقیم (Unlisted)'}
-                  </div>
-                  <div className="text-[10px] text-[var(--text-muted)]">
-                    {isPublic
-                      ? 'سایر کاربران در کتابخانه عمومی می‌توانند این فایل را پیدا کنند.'
-                      : 'فقط کسانی که لینک را دارند می‌توانند فایل را باز کنند.'}
-                  </div>
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={isPublic}
-                onChange={(e) => setIsPublic(e.target.checked)}
-                className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
-              />
-            </div>
-
             {/* Actions */}
-            <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[var(--border-color)]">
-              <span className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
-                <Database className="w-3 h-3 text-emerald-500" />
-                ذخیره روی دیتابیس ابری Neon
-              </span>
-              <div className="flex items-center justify-end gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleResetAndClose}
-                  className="px-3 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-xs text-[var(--text-secondary)] transition-colors cursor-pointer"
-                >
-                  انصراف
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-neutral-950 font-bold text-xs shadow-md transition-all cursor-pointer"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>در حال ذخیره...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CloudUpload className="w-4 h-4" />
-                      <span>انتشار و ساخت لینک</span>
-                    </>
-                  )}
-                </button>
-              </div>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--border-color)]">
+              <button
+                type="button"
+                onClick={handleResetAndClose}
+                className="px-3.5 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-xs text-[var(--text-secondary)] transition-colors cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-neutral-950 font-bold text-xs transition-colors cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>در حال ذخیره...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>ذخیره تنظیمات</span>
+                  </>
+                )}
+              </button>
             </div>
           </form>
         )}

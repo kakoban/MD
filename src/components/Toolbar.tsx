@@ -23,7 +23,6 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { HighlightColor } from '../types';
-import { useLanguage } from '../context/LanguageContext';
 
 interface ToolbarProps {
   onInsertMarkdown: (prefix: string, suffix?: string, defaultText?: string) => void;
@@ -47,8 +46,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   canUndo,
   canRedo,
   onOpenCheatsheet,
-}: ToolbarProps) => {
-  const { t } = useLanguage();
+}) => {
   const [showHighlightMenu, setShowHighlightMenu] = useState(false);
   const [showCalloutMenu, setShowCalloutMenu] = useState(false);
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
@@ -99,15 +97,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   ];
 
   return (
-    <div className="toolbar-container flex items-center gap-1 px-2 sm:px-3 py-1.5 border-b border-[var(--glass-border)] frosted-glass select-none z-20 text-[var(--text-secondary)] text-xs overflow-x-auto no-scrollbar flex-nowrap shrink-0">
+    <div className="toolbar-container flex flex-wrap items-center gap-1 px-3 py-1.5 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] backdrop-blur-sm select-none z-20 text-[var(--text-secondary)] text-xs">
       {/* Undo / Redo */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--glass-border)] shrink-0">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
         <button
           type="button"
           onClick={onUndo}
           disabled={!canUndo}
-          className="p-1.5 rounded-lg hover:bg-[var(--tile-hover)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
-          title={t('toolbar.undo')}
+          className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          title="بازگشت (Ctrl+Z)"
         >
           <Undo className="w-4 h-4" />
         </button>
@@ -115,26 +113,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={onRedo}
           disabled={!canRedo}
-          className="p-1.5 rounded-lg hover:bg-[var(--tile-hover)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
-          title={t('toolbar.redo')}
+          className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          title="انجام مجدد (Ctrl+Y)"
         >
           <Redo className="w-4 h-4" />
         </button>
       </div>
 
       {/* Headings Dropdown */}
-      <div className="relative pe-1 border-e border-[var(--glass-border)] shrink-0" ref={headingRef}>
+      <div className="relative pe-1 border-e border-[var(--border-color)]" ref={headingRef}>
         <button
           type="button"
           onClick={() => setShowHeadingMenu(!showHeadingMenu)}
-          className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-[var(--tile-hover)] transition-colors font-medium text-[var(--text-primary)] cursor-pointer"
+          className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-[var(--bg-tertiary)] transition-colors font-medium text-[var(--text-primary)]"
           title="عنوان‌ها (Headings)"
         >
-          <span>{t('toolbar.headings')}</span>
+          <span>سرفصل</span>
           <ChevronDown className="w-3 h-3 text-[var(--text-muted)]" />
         </button>
         {showHeadingMenu && (
-          <div className="absolute top-full start-0 mt-1 w-44 rounded-2xl frosted-glass border border-[var(--glass-border)] shadow-xl p-1 z-30 divide-y divide-[var(--glass-border)]">
+          <div className="absolute top-full start-0 mt-1 w-44 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-xl py-1 z-30 divide-y divide-[var(--border-color)]">
             <button
               type="button"
               onClick={() => {
@@ -184,12 +182,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Basic Text Formatting */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
         <button
           type="button"
           onClick={() => onInsertMarkdown('**', '**', 'متن پررنگ')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.bold')}
+          title="پررنگ / Bold (Ctrl+B)"
         >
           <Bold className="w-4 h-4" />
         </button>
@@ -197,7 +195,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('*', '*', 'متن مورب')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.italic')}
+          title="مورب / Italic (Ctrl+I)"
         >
           <Italic className="w-4 h-4" />
         </button>
@@ -205,14 +203,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('~~', '~~', 'متن خط‌خورده')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.strikethrough')}
+          title="خط‌خورده / Strikethrough"
         >
           <Strikethrough className="w-4 h-4" />
         </button>
       </div>
 
       {/* HIGHLIGHT TOOL (Key User Feature) */}
-      <div className="relative pe-1.5 border-e border-[var(--border-color)] shrink-0" ref={highlightRef}>
+      <div className="relative pe-1.5 border-e border-[var(--border-color)]" ref={highlightRef}>
         <div className="flex items-center bg-amber-500/15 rounded-md border border-amber-500/30 overflow-hidden">
           <button
             type="button"
@@ -221,7 +219,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             title="هایلایت متن (Ctrl+H)"
           >
             <Highlighter className="w-3.5 h-3.5 text-amber-500" />
-            <span>{t('toolbar.highlight')}</span>
+            <span>هایلایت</span>
           </button>
           <button
             type="button"
@@ -258,12 +256,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Code Tools */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
         <button
           type="button"
           onClick={() => onInsertMarkdown('`', '`', 'کد درون‌خطی')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.inlineCode')}
+          title="کد درون خطی / Inline Code"
         >
           <Code className="w-4 h-4" />
         </button>
@@ -271,19 +269,19 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('```typescript\n', '\n```', '// کد خود را اینجا بنویسید')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.codeBlock')}
+          title="بلوک کد با هایلایت سینتکس"
         >
           <FileCode className="w-4 h-4" />
         </button>
       </div>
 
       {/* Lists & Checklists */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
         <button
           type="button"
           onClick={() => onInsertMarkdown('- ', '', 'مورد لیست')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.bulletList')}
+          title="لیست نشانه‌دار (Bullet List)"
         >
           <List className="w-4 h-4" />
         </button>
@@ -291,7 +289,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('1. ', '', 'مورد شماره یک')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.numberList')}
+          title="لیست شماره‌دار (Numbered List)"
         >
           <ListOrdered className="w-4 h-4" />
         </button>
@@ -299,14 +297,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('- [ ] ', '', 'وظیفه جدید')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-emerald-500 transition-colors"
-          title={t('toolbar.taskList')}
+          title="چک‌لیست تعاملی (Task List)"
         >
           <CheckSquare className="w-4 h-4" />
         </button>
       </div>
 
       {/* Admonitions / Callouts */}
-      <div className="relative pe-1 border-e border-[var(--border-color)] shrink-0" ref={calloutRef}>
+      <div className="relative pe-1 border-e border-[var(--border-color)]" ref={calloutRef}>
         <button
           type="button"
           onClick={() => setShowCalloutMenu(!showCalloutMenu)}
@@ -314,7 +312,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="جعبه‌های اعلان (Callouts)"
         >
           <Info className="w-4 h-4 text-sky-500" />
-          <span>{t('toolbar.callout')}</span>
+          <span>اعلان‌ها</span>
           <ChevronDown className="w-3 h-3 text-[var(--text-muted)]" />
         </button>
         {showCalloutMenu && (
@@ -338,7 +336,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Tables Dropdown */}
-      <div className="relative pe-1 border-e border-[var(--border-color)] shrink-0" ref={tableRef}>
+      <div className="relative pe-1 border-e border-[var(--border-color)]" ref={tableRef}>
         <button
           type="button"
           onClick={() => setShowTableMenu(!showTableMenu)}
@@ -390,7 +388,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Math, Quotes, Links, Images */}
-      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)] shrink-0">
+      <div className="flex items-center gap-0.5 pe-1.5 border-e border-[var(--border-color)]">
         <button
           type="button"
           onClick={() => onInsertMarkdown('$', '$', 'E = mc^2')}
@@ -411,7 +409,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('> ', '', 'متن نقل قول')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.quote')}
+          title="نقل قول (Quote)"
         >
           <Quote className="w-4 h-4" />
         </button>
@@ -419,7 +417,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('[', '](https://example.com)', 'عنوان پیوند')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.link')}
+          title="درج پیوند (Ctrl+K)"
         >
           <LinkIcon className="w-4 h-4" />
         </button>
@@ -427,7 +425,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('![', '](https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800)', 'تصویر نمونه')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.image')}
+          title="درج تصویر"
         >
           <ImageIcon className="w-4 h-4" />
         </button>
@@ -435,7 +433,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           type="button"
           onClick={() => onInsertMarkdown('\n---\n')}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.divider')}
+          title="خط جداکننده (Divider)"
         >
           <Minus className="w-4 h-4" />
         </button>
@@ -448,7 +446,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             onInsertMarkdown(`*تاریخ: ${dateStr} - ساعت: ${timeStr}*\n`);
           }}
           className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-          title={t('toolbar.datetime')}
+          title="درج زمان و تاریخ امروز"
         >
           <Calendar className="w-4 h-4" />
         </button>
@@ -458,11 +456,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <button
         type="button"
         onClick={onOpenCheatsheet}
-        className="ms-auto shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)] transition-colors cursor-pointer"
+        className="ms-auto flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)] transition-colors"
         title="راهنمای نشانه‌گذاری مارک‌دان"
       >
         <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
-        <span>{t('toolbar.cheatsheet')}</span>
+        <span>راهنمای نشانه‌گذاری</span>
       </button>
     </div>
   );

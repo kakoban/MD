@@ -1,4 +1,3 @@
-import { triggerDocumentPrint } from './utils/printPipeline';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   MarkdownDoc,
@@ -11,162 +10,107 @@ import {
   HeadingItem,
   BookletConfig,
   CloudSyncStatus,
+  UserProfile,
+  DocVisibility,
 } from './types';
-import { SAMPLE_DOCUMENTS } from './data/sampleDocuments';
 import {
   parseMarkdownToHtml,
   extractHeadings,
   calculateStats,
   detectDirection,
   toggleTaskInMarkdown,
-  slugify,
 } from './utils/markdownParser';
 import { Navbar } from './components/Navbar';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
-import { DocSendSpaceView } from './components/DocSendSpaceView';
 import { Editor, EditorHandle } from './components/Editor';
 import { Preview } from './components/Preview';
 import { PresentationView } from './components/PresentationView';
 import { BookletModal } from './components/BookletModal';
 import { CommunityModal } from './components/CommunityModal';
 import { SharePublishModal } from './components/SharePublishModal';
-import { TemplatesModal } from './components/TemplatesModal';
-import { MarkdownTemplate } from './data/templates';
-import { cloudApi } from './services/cloudApi';
+import { WorkspaceDashboard } from './components/WorkspaceDashboard';
+import { cloudApi, SharedMarkdownFile } from './services/cloudApi';
 import { Outline } from './components/Outline';
 import { StatsBar } from './components/StatsBar';
 import { ConfettiOverlay } from './components/ConfettiOverlay';
 import { CheatsheetModal } from './components/CheatsheetModal';
 import { SearchReplaceModal } from './components/SearchReplaceModal';
 import { AuthModal } from './components/AuthModal';
-import { AccessRequestModal } from './components/AccessRequestModal';
-import { AccessRequestsManagerModal } from './components/AccessRequestsManagerModal';
-import { SharedMarkdownFile } from './services/cloudApi';
-import { DocumentComments } from './components/DocumentComments';
 import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
-import { QuickSwitcherModal } from './components/QuickSwitcherModal';
-import { NeuralTopologyModal } from './components/NeuralTopologyModal';
-import { AiBrainManagerModal } from './components/AiBrainManagerModal';
 import { authApi } from './services/authApi';
-import { UserProfile } from './types';
-import { Database, GitFork, Sparkles, Presentation as PresentationIcon, MessageSquare, LayoutDashboard, ArrowRight } from 'lucide-react';
-import { deduplicateDocs, normalizeDocKey, getEffectiveFolderPath } from './utils/docTree';
 import {
-  getAllStoredDirectoryHandles,
-  addStoredDirectoryHandle,
-  removeStoredDirectoryHandle,
-  clearAllStoredDirectoryHandles,
-  verifyDirectoryPermission,
-  scanAllLinkedDirectories,
-  writeDocToAppropriateFolder,
-  deleteDocFromAppropriateFolder,
-  isFileSystemAccessSupported,
-  LinkedFolderRecord,
-  getPendingDiskWrites,
-  subscribeToPendingQueue,
-  checkFoldersPermissionStatus,
-  requestPermissionAndFlushQueue,
-  createStandardBrainFolders,
-  PendingDiskWriteItem,
-} from './utils/localSync';
+  GitFork,
+  Upload,
+  LogIn,
+  FileText,
+  Lock,
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  Eye,
+} from 'lucide-react';
 
-const STORAGE_KEY_DOCS = 'markdown_studio_docs_v2';
-const STORAGE_KEY_ACTIVE = 'markdown_studio_active_id_v2';
 const STORAGE_KEY_THEME = 'markdown_studio_theme_v3';
 const STORAGE_KEY_FONT = 'markdown_studio_font_v2';
-const STORAGE_KEY_DELETED_TOMBSTONES = 'markdown_studio_deleted_tombstones_v1';
 
-function getStoredTombstones(): Set<string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_DELETED_TOMBSTONES);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch {
-    return new Set();
-  }
-}
+function mapServerFileToDoc(file: SharedMarkdownFile, currentUserId?: string): MarkdownDoc {
+  const visibility: DocVisibility =
+    file.visibility === 'public' || file.visibility === 'unlisted' || file.visibility === 'private'
+      ? file.visibility
+      : file.is_public
+      ? 'public'
+      : 'private';
 
-function persistTombstones(set: Set<string>): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_DELETED_TOMBSTONES, JSON.stringify(Array.from(set).slice(-500)));
-  } catch {}
+  return {
+    id: file.id,
+    title: file.title,
+    content: file.content || '',
+    description: file.description || '',
+    createdAt: new Date(file.created_at).getTime(),
+    updatedAt: new Date(file.updated_at).getTime(),
+    isFavorite: Boolean(file.is_favorite),
+    tags: file.tags || [],
+    visibility,
+    isCloudShared: true,
+    cloudAuthor: file.author_name,
+    userId: file.user_id,
+    isOwner: file.is_owner ?? Boolean(currentUserId && file.user_id === currentUserId),
+    cloudSyncedAt: Date.now(),
+  };
 }
 
 export default function App() {
-  // State: Documents
-  const [documents, setDocuments] = useState<MarkdownDoc[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_DOCS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return deduplicateDocs(parsed);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load documents from localStorage', e);
-    }
-    return SAMPLE_DOCUMENTS;
-  });
+  // User & Session state
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(() => Boolean(authApi.getToken()));
+  const [workspaceView, setWorkspaceView] = useState<'dashboard' | 'editor'>('dashboard');
 
-  // Active self-healing: purge any duplicate documents immediately on mount & remove corrupted/tombstone docs
-  const tombstonesRef = useRef<Set<string>>(getStoredTombstones());
+  // Authenticated user's personal documents (strictly isolated per user)
+  const [documents, setDocuments] = useState<MarkdownDoc[]>([]);
+  const [isLoadingDocs, setIsLoadingDocs] = useState<boolean>(false);
+  const [activeDocId, setActiveDocId] = useState<string>('');
 
-  const addTombstone = useCallback((id: string, title?: string, folderPath?: string) => {
-    tombstonesRef.current.add(id);
-    if (title) {
-      const cleanTitle = title.trim();
-      const noExt = cleanTitle.replace(/\.(md|markdown|txt)$/i, '').trim();
-      tombstonesRef.current.add(cleanTitle.toLowerCase());
-      tombstonesRef.current.add(noExt.toLowerCase());
-      tombstonesRef.current.add(normalizeDocKey(cleanTitle, folderPath));
-      tombstonesRef.current.add(normalizeDocKey(noExt, folderPath));
-    }
-    persistTombstones(tombstonesRef.current);
-  }, []);
+  // Guest transient local-only document (RAM only, never persisted)
+  const [guestDoc, setGuestDoc] = useState<{ title: string; content: string } | null>(null);
+  const [isGuestDragging, setIsGuestDragging] = useState(false);
+  const guestFileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    setDocuments((prev) => {
-      const tombstones = tombstonesRef.current;
-      const clean = prev.filter((d) => {
-        if (tombstones.has(d.id)) return false;
-        if (tombstones.has(normalizeDocKey(d.title, d.folderPath))) return false;
-        // Purge corrupted mojibake documents (e.g. titles with � or pure question marks)
-        if (d.title.includes('�') || d.title.includes('') || /^[?\s�؟]+$/.test(d.title)) {
-          addTombstone(d.id, d.title, d.folderPath);
-          cloudApi.deleteFile(d.id).catch(() => {});
-          return false;
-        }
-        return true;
-      });
-      const deduped = deduplicateDocs(clean.length > 0 ? clean : prev);
-      return deduped;
-    });
-  }, [addTombstone]);
+  // Read-only Shared Link Document (?share=ID or Explore preview)
+  const [sharedViewDoc, setSharedViewDoc] = useState<MarkdownDoc | null>(null);
+  const [sharedLinkLoading, setSharedLinkLoading] = useState<boolean>(false);
+  const [sharedLinkError, setSharedLinkError] = useState<string | null>(null);
 
-  // State: Active Document ID
-  const [activeDocId, setActiveDocId] = useState<string>(() => {
-    try {
-      const savedId = localStorage.getItem(STORAGE_KEY_ACTIVE);
-      if (savedId) return savedId;
-    } catch (e) {
-      console.error(e);
-    }
-    return SAMPLE_DOCUMENTS[0].id;
-  });
-
-  // UI States (DocSend Space landing by default)
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('share') || params.get('file') ? 'preview' : 'workspace';
-  });
+  // UI & Editor States
+  const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [guestViewMode, setGuestViewMode] = useState<'split' | 'editor' | 'preview'>('preview');
   const [theme, setTheme] = useState<AppTheme>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_THEME);
-      if (saved && saved !== 'light') return saved as AppTheme;
+      if (saved) return saved as AppTheme;
     } catch {}
-    return 'academic'; // Default to Academic Blue theme!
+    return 'light';
   });
   const [fontFamily, setFontFamily] = useState<FontFamily>(() => {
     try {
@@ -176,44 +120,27 @@ export default function App() {
     return 'vazir';
   });
   const [textDirection, setTextDirection] = useState<TextDirection>('auto');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isOutlineOpen, setIsOutlineOpen] = useState(false);
   const [isCheatsheetOpen, setIsCheatsheetOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState(false);
-  const [isTopologyOpen, setIsTopologyOpen] = useState(false);
-  const [isBrainManagerOpen, setIsBrainManagerOpen] = useState(false);
   const [isBookletModalOpen, setIsBookletModalOpen] = useState(false);
   const [bookletConfig, setBookletConfig] = useState<BookletConfig | null>(null);
   const [isCommunityOpen, setIsCommunityOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [shareTargetDocId, setShareTargetDocId] = useState<string | null>(null);
   const [isConfettiActive, setIsConfettiActive] = useState(false);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
-  const [requestedAccessFile, setRequestedAccessFile] = useState<SharedMarkdownFile | null>(null);
-  const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false);
-  const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
-  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
-  const [activeDocCommentsCount, setActiveDocCommentsCount] = useState<number>(0);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isMyDocumentsModalOpen, setIsMyDocumentsModalOpen] = useState(false);
-  const [cloudFilesCount, setCloudFilesCount] = useState<number>(0);
-  const [cloudNotice, setCloudNotice] = useState<string | null>(null);
+  const [exploreFilesCount, setExploreFilesCount] = useState<number>(0);
+  const [toastNotice, setToastNotice] = useState<string | null>(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('synced');
-  const [localSaveStatus, setLocalSaveStatus] = useState<CloudSyncStatus>('synced');
-  const [linkedFolders, setLinkedFolders] = useState<LinkedFolderRecord[]>([]);
-  const [isSyncingLocal, setIsSyncingLocal] = useState<boolean>(false);
-  const [isSyncingBrain, setIsSyncingBrain] = useState<boolean>(false);
-  const [pendingDiskWritesCount, setPendingDiskWritesCount] = useState<number>(0);
-  const [diskPermissionNeedsPrompt, setDiskPermissionNeedsPrompt] = useState<boolean>(false);
-  const localSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isFirstRenderRef = useRef<boolean>(true);
+
   const cloudSyncedStateRef = useRef<Record<string, { title: string; content: string }>>({});
   const isAutoSavingRef = useRef<boolean>(false);
   const pendingAutoSaveRef = useRef<{ id: string; title: string; content: string } | null>(null);
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Undo / Redo history for active document
   const [history, setHistory] = useState<string[]>([]);
@@ -226,301 +153,251 @@ export default function App() {
   // Search state
   const [searchMatches, setSearchMatches] = useState<number[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
-  const [lastSearchLen, setLastSearchLen] = useState(0);
 
-  // Rendered HTML & Headings cache
+  // Rendered HTML cache
   const [renderedHtml, setRenderedHtml] = useState<string>('');
 
   const editorRef = useRef<EditorHandle>(null);
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
-  // Active Document memo
-  const activeDoc = useMemo(() => {
-    return documents.find((d) => d.id === activeDocId) || documents[0] || SAMPLE_DOCUMENTS[0];
-  }, [documents, activeDocId]);
+  const showNotice = useCallback((msg: string, duration = 3800) => {
+    setToastNotice(msg);
+    setTimeout(() => {
+      setToastNotice((prev) => (prev === msg ? null : prev));
+    }, duration);
+  }, []);
 
-  // Save documents to localStorage
+  // Clean up any legacy shared browser storage keys on mount
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_DOCS, JSON.stringify(documents));
-    } catch (e) {
-      console.error('Failed to save documents', e);
-    }
-  }, [documents]);
-
-  // Save active document ID
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_ACTIVE, activeDocId);
-    } catch (e) {}
-  }, [activeDocId]);
+      localStorage.removeItem('markdown_studio_docs_v2');
+      localStorage.removeItem('markdown_studio_active_id_v2');
+      localStorage.removeItem('markdown_author_name');
+    } catch {}
+  }, []);
 
   // Save theme & font preferences
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_THEME, theme);
       localStorage.setItem(STORAGE_KEY_FONT, fontFamily);
-    } catch (e) {}
+    } catch {}
   }, [theme, fontFamily]);
 
-  // Reset history stack when switching documents
-  useEffect(() => {
-    if (activeDoc) {
-      setHistory([activeDoc.content]);
-      setHistoryIndex(0);
+  // Load authenticated user's personal documents
+  const loadUserDocuments = useCallback(async (user: UserProfile) => {
+    setIsLoadingDocs(true);
+    try {
+      const files = await authApi.getMyDocuments();
+      const mapped = files.map((f) => mapServerFileToDoc(f, user.id));
+      setDocuments(mapped);
+      mapped.forEach((d) => {
+        cloudSyncedStateRef.current[d.id] = { title: d.title, content: d.content };
+      });
+      setActiveDocId((prev) => (mapped.some((d) => d.id === prev) ? prev : mapped[0]?.id || ''));
+    } catch (err) {
+      console.error('Failed to load user documents:', err);
+    } finally {
+      setIsLoadingDocs(false);
     }
-  }, [activeDocId]);
+  }, []);
 
-  // Load cloud database stats from Neon and authenticate user session
+  // Authenticate user session and fetch public explore count on mount
   useEffect(() => {
-    // Check authenticated user session
-    authApi
-      .getMe()
-      .then((user) => {
-        if (user) {
-          setCurrentUser(user);
-        }
-      })
-      .catch(() => {});
+    let mounted = true;
+    const token = authApi.getToken();
+    if (token) {
+      authApi
+        .getMe()
+        .then(async (user) => {
+          if (!mounted) return;
+          if (user) {
+            setCurrentUser(user);
+            await loadUserDocuments(user);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (mounted) setIsAuthChecking(false);
+        });
+    } else {
+      setIsAuthChecking(false);
+    }
 
     cloudApi
       .getHealth()
       .then((data) => {
-        if (data?.stats?.totalFiles !== undefined) {
-          setCloudFilesCount(data.stats.totalFiles);
+        if (mounted && data?.stats?.totalFiles !== undefined) {
+          setExploreFilesCount(data.stats.totalFiles);
         }
       })
-      .catch((err) => {
-        console.warn('Neon DB health check:', err.message);
-      });
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, [loadUserDocuments]);
+
+  // Check URL query parameters for ?share=ID or ?file=ID
+  const loadSharedLinkFromUrl = useCallback(async (user: UserProfile | null) => {
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get('share') || params.get('file');
+    if (!shareId) return;
+
+    setSharedLinkLoading(true);
+    setSharedLinkError(null);
+
+    try {
+      const file = await cloudApi.getFileById(shareId);
+      const doc = mapServerFileToDoc(file, user?.id);
+
+      if (user && doc.isOwner) {
+        // Owner opened their own link -> open in full editor inside their workspace
+        setDocuments((prev) => {
+          const exists = prev.find((d) => d.id === doc.id);
+          return exists ? prev.map((d) => (d.id === doc.id ? doc : d)) : [doc, ...prev];
+        });
+        cloudSyncedStateRef.current[doc.id] = { title: doc.title, content: doc.content };
+        setActiveDocId(doc.id);
+        setSharedViewDoc(null);
+        setWorkspaceView('editor');
+        setViewMode('split');
+      } else {
+        setSharedViewDoc(doc);
+      }
+    } catch (err: any) {
+      setSharedLinkError(err.message || 'خطا در باز کردن سند اشتراکی');
+      setSharedViewDoc(null);
+    } finally {
+      setSharedLinkLoading(false);
+    }
   }, []);
 
-  const handleLoginSuccess = (user: UserProfile) => {
+  useEffect(() => {
+    if (!isAuthChecking) {
+      loadSharedLinkFromUrl(currentUser);
+    }
+  }, [isAuthChecking, currentUser?.id, loadSharedLinkFromUrl]);
+
+  const activeDoc = useMemo(() => {
+    if (sharedViewDoc) return sharedViewDoc;
+    return documents.find((d) => d.id === activeDocId) || null;
+  }, [documents, activeDocId, sharedViewDoc]);
+
+  const shareTargetDoc = useMemo(() => {
+    if (shareTargetDocId) {
+      return documents.find((d) => d.id === shareTargetDocId) || activeDoc;
+    }
+    return activeDoc;
+  }, [documents, shareTargetDocId, activeDoc]);
+
+  // Content used for rendering preview HTML
+  const previewSourceContent = useMemo(() => {
+    if (sharedViewDoc) return sharedViewDoc.content;
+    if (!currentUser) return guestDoc?.content || '';
+    return activeDoc?.content || '';
+  }, [sharedViewDoc, currentUser, guestDoc?.content, activeDoc?.content]);
+
+  // Re-parse markdown to HTML whenever active content changes
+  useEffect(() => {
+    let isCancelled = false;
+    if (previewSourceContent) {
+      parseMarkdownToHtml(previewSourceContent).then((html) => {
+        if (!isCancelled) {
+          setRenderedHtml(html);
+        }
+      });
+    } else {
+      setRenderedHtml('');
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [previewSourceContent]);
+
+  // Reset undo history when switching documents
+  useEffect(() => {
+    if (activeDoc && !sharedViewDoc) {
+      setHistory([activeDoc.content]);
+      setHistoryIndex(0);
+    }
+  }, [activeDocId, sharedViewDoc]);
+
+  const handleLoginSuccess = async (user: UserProfile) => {
     setCurrentUser(user);
-    setCloudNotice(`خوش آمدید ${user.displayName}! به حساب کاربری خود وارد شدید.`);
-    setTimeout(() => setCloudNotice(null), 4000);
+    setGuestDoc(null);
+    await loadUserDocuments(user);
+    if (!sharedViewDoc) {
+      setWorkspaceView('dashboard');
+    }
+    showNotice(`خوش آمدید ${user.displayName}! فضای کار اختصاصی شما آماده است.`);
   };
 
   const handleLogout = () => {
     authApi.logout();
     setCurrentUser(null);
-    setCloudNotice('با موفقیت از حساب کاربری خارج شدید.');
-    setTimeout(() => setCloudNotice(null), 3500);
-  };
+    setDocuments([]);
+    setActiveDocId('');
+    cloudSyncedStateRef.current = {};
+    setGuestDoc(null);
+    setWorkspaceView('dashboard');
+    setIsProfileModalOpen(false);
+    setIsMyDocumentsModalOpen(false);
+    setIsCommunityOpen(false);
+    setIsShareModalOpen(false);
+    setIsBookletModalOpen(false);
 
-  const handleOpenMyDocument = (file: any) => {
-    const existing = documents.find((d) => d.id === file.id);
-    if (existing) {
-      setActiveDocId(existing.id);
-    } else {
-      const doc: MarkdownDoc = {
-        id: file.id,
-        title: file.title,
-        content: file.content || '',
-        createdAt: new Date(file.created_at).getTime(),
-        updatedAt: new Date(file.updated_at).getTime(),
-        tags: file.tags || [],
-        isCloudShared: true,
-        cloudAuthor: file.author_name,
-        cloudSyncedAt: Date.now(),
-      };
-      setDocuments((prev) => [doc, ...prev]);
-      setActiveDocId(doc.id);
+    // If viewing a private doc or logged-in explore doc, clear sharedViewDoc unless ?share= is in URL
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('share') && !params.get('file')) {
+      setSharedViewDoc(null);
     }
-    setViewMode('preview');
-    setCloudNotice(`سند ابری «${file.title}» بارگذاری شد.`);
-    setTimeout(() => setCloudNotice(null), 3000);
+    showNotice('از حساب کاربری خود خارج شدید.');
   };
 
-  const fetchPendingRequestsCount = useCallback(() => {
-    if (!currentUser) {
-      setPendingRequestsCount(0);
+  const clearShareUrlParam = () => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('share') || url.searchParams.has('file')) {
+      url.searchParams.delete('share');
+      url.searchParams.delete('file');
+      window.history.replaceState({}, '', url.pathname + url.search);
+    }
+  };
+
+  // Auto-save updates for authenticated user's documents
+  const executeCloudSave = useCallback(async (id: string, title: string, content: string) => {
+    if (isAutoSavingRef.current) {
+      pendingAutoSaveRef.current = { id, title, content };
       return;
     }
-    cloudApi
-      .getIncomingAccessRequests()
-      .then((res) => {
-        const pending = (res.requests || []).filter((r) => r.status === 'pending').length;
-        setPendingRequestsCount(pending);
-      })
-      .catch(() => {});
-  }, [currentUser]);
 
-  useEffect(() => {
-    fetchPendingRequestsCount();
-  }, [fetchPendingRequestsCount]);
+    isAutoSavingRef.current = true;
+    setCloudSyncStatus('saving');
 
-  // Load comments count for active cloud-shared document
-  useEffect(() => {
-    if (activeDoc?.id && activeDoc.isCloudShared) {
-      cloudApi
-        .getComments(activeDoc.id)
-        .then((cmts) => setActiveDocCommentsCount(cmts.length))
-        .catch(() => {});
-    } else {
-      setActiveDocCommentsCount(0);
-    }
-  }, [activeDoc?.id, activeDoc?.isCloudShared]);
+    try {
+      await cloudApi.updateFile(id, { title, content });
+      cloudSyncedStateRef.current[id] = { title, content };
+      setCloudSyncStatus('synced');
 
-  // Global keyboard shortcut: Ctrl+K or Cmd+K opens Quick Switcher Spotlight
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setIsQuickSwitcherOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
-
-  // Check URL query parameters for ?verify_token or ?reset_token or ?share=ID or ?file=ID
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const resetToken = params.get('reset_token') || params.get('reset');
-    if (resetToken) {
-      setResetPasswordToken(resetToken);
-      setIsAuthModalOpen(true);
-      const cleanUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
-    }
-
-    const verifyToken = params.get('verify_token') || params.get('verify');
-    if (verifyToken) {
-      authApi
-        .verifyEmailToken(verifyToken)
-        .then((res) => {
-          if (res.user) {
-            setCurrentUser(res.user);
-            setIsConfettiActive(true);
-            setTimeout(() => setIsConfettiActive(false), 5000);
-            setCloudNotice(`🎉 حساب کاربری شما با موفقیت فعال شد! خوش آمدید @${res.user.username}`);
-            setTimeout(() => setCloudNotice(null), 6000);
-            // Clean url
-            const cleanUrl = window.location.pathname;
-            window.history.replaceState({}, document.title, cleanUrl);
-          }
-        })
-        .catch((err) => {
-          alert(err.message || 'خطا در فعال‌سازی حساب کاربری');
-        });
-    }
-
-    const shareId = params.get('share') || params.get('file');
-
-    if (shareId) {
-      cloudApi
-        .getFileById(shareId)
-        .then((file) => {
-          const doc: MarkdownDoc = {
-            id: file.id,
-            title: file.title,
-            content: file.content || '',
-            createdAt: new Date(file.created_at).getTime(),
-            updatedAt: new Date(file.updated_at).getTime(),
-            tags: file.tags,
-            isCloudShared: true,
-            cloudAuthor: file.author_name,
-            cloudSyncedAt: Date.now(),
-          };
-          setDocuments((prev) => {
-            const exists = prev.find((d) => d.id === file.id);
-            if (exists) {
-              return prev.map((d) => (d.id === file.id ? doc : d));
-            }
-            return [doc, ...prev];
-          });
-          setActiveDocId(file.id);
-          cloudSyncedStateRef.current[file.id] = { title: file.title, content: file.content || '' };
-          setCloudSyncStatus('synced');
-          // Switch to distraction-free Reader View by default for shared links!
-          setViewMode('preview');
-          setCloudNotice(`فایل «${file.title}» در حالت مطالعه از مخزن ابری Neon باز شد.`);
-          setTimeout(() => setCloudNotice(null), 5000);
-        })
-        .catch((err: any) => {
-          console.error('Failed to load shared file from URL:', err);
-          if (err.isLocked && err.file) {
-            setRequestedAccessFile(err.file);
-            setCloudNotice('این سند خصوصی است. لطفاً برای دسترسی، درخواست خود را ارسال فرمایید.');
-            setTimeout(() => setCloudNotice(null), 6000);
-          } else {
-            setCloudNotice(err.message || 'فایل مورد نظر در پایگاه داده ابری یافت نشد.');
-            setTimeout(() => setCloudNotice(null), 5000);
-          }
-        });
-    }
-  }, []);
-
-  // Handler to open cloud document from community
-  const handleOpenFileFromCommunity = useCallback((doc: MarkdownDoc) => {
-    setDocuments((prev) => {
-      const exists = prev.find((d) => d.id === doc.id);
-      if (exists) {
-        return prev.map((d) => (d.id === doc.id ? doc : d));
-      }
-      return [doc, ...prev];
-    });
-    setActiveDocId(doc.id);
-    cloudSyncedStateRef.current[doc.id] = { title: doc.title, content: doc.content };
-    setCloudSyncStatus('synced');
-    setCloudNotice(`فایل «${doc.title}» از مخزن ابری بارگذاری شد.`);
-    setTimeout(() => setCloudNotice(null), 4000);
-  }, []);
-
-  // Core function to push updates to Neon PostgreSQL
-  const executeCloudSave = useCallback(
-    async (id: string, title: string, content: string) => {
-      if (isAutoSavingRef.current) {
-        // Enqueue if another save request is in-flight
-        pendingAutoSaveRef.current = { id, title, content };
-        return;
-      }
-
-      isAutoSavingRef.current = true;
-      setCloudSyncStatus('saving');
-
-      try {
-        if (activeDoc?.isAiBrain || activeDoc?.folderPath?.includes('مغز')) {
-          await cloudApi.syncAiBrainDocs([
-            {
-              id,
-              title,
-              content,
-              folderPath: activeDoc?.folderPath || '🧠 مغز هوش مصنوعی',
-              tags: activeDoc?.tags,
-            },
-          ]);
-        } else {
-          await cloudApi.updateFile(id, { title, content });
+      if (pendingAutoSaveRef.current && pendingAutoSaveRef.current.id === id) {
+        const queued = pendingAutoSaveRef.current;
+        pendingAutoSaveRef.current = null;
+        isAutoSavingRef.current = false;
+        if (queued.title !== title || queued.content !== content) {
+          await executeCloudSave(queued.id, queued.title, queued.content);
         }
-        cloudSyncedStateRef.current[id] = { title, content };
-        setCloudSyncStatus('synced');
-
-        // Check if additional edits arrived while the request was in-flight
-        if (pendingAutoSaveRef.current && pendingAutoSaveRef.current.id === id) {
-          const queued = pendingAutoSaveRef.current;
-          pendingAutoSaveRef.current = null;
-          isAutoSavingRef.current = false;
-          if (queued.title !== title || queued.content !== content) {
-            await executeCloudSave(queued.id, queued.title, queued.content);
-          }
-        } else {
-          isAutoSavingRef.current = false;
-        }
-      } catch (err: any) {
-        console.error('Auto-save to Neon DB failed:', err);
-        setCloudSyncStatus('error');
+      } else {
         isAutoSavingRef.current = false;
       }
-    },
-    []
-  );
+    } catch (err) {
+      console.error('Auto-save failed:', err);
+      setCloudSyncStatus('error');
+      isAutoSavingRef.current = false;
+    }
+  }, []);
 
-  // Auto-Save Effect: Periodically debounces and pushes changes of shared / AI Brain documents to Neon database
   useEffect(() => {
-    const isBrainDoc = Boolean(activeDoc?.isAiBrain || activeDoc?.folderPath?.includes('مغز'));
-    if (!activeDoc || (!activeDoc.isCloudShared && !isBrainDoc)) {
+    if (!currentUser || workspaceView !== 'editor' || sharedViewDoc || !activeDoc || !activeDoc.isOwner) {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
         autoSaveTimerRef.current = null;
@@ -540,7 +417,6 @@ export default function App() {
     }
 
     const hasChanged = last.title !== activeDoc.title || last.content !== activeDoc.content;
-
     if (!hasChanged) {
       if (cloudSyncStatus !== 'saving') {
         setCloudSyncStatus('synced');
@@ -548,272 +424,413 @@ export default function App() {
       return;
     }
 
-    // Changes detected! Set status to pending and start debounce timer
     setCloudSyncStatus('pending');
-
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
     autoSaveTimerRef.current = setTimeout(() => {
       executeCloudSave(activeDoc.id, activeDoc.title, activeDoc.content);
-    }, 2000); // 2 second debounce for smooth typing
+    }, 1500);
 
     return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [activeDoc?.id, activeDoc?.title, activeDoc?.content, activeDoc?.isCloudShared, executeCloudSave]);
+  }, [
+    currentUser,
+    workspaceView,
+    sharedViewDoc,
+    activeDoc?.id,
+    activeDoc?.title,
+    activeDoc?.content,
+    activeDoc?.isOwner,
+    executeCloudSave,
+  ]);
 
-  // Local Document Auto-Save Status: provides pending -> saving -> synced transitions for local notes
-  useEffect(() => {
-    if (isFirstRenderRef.current) {
-      isFirstRenderRef.current = false;
-      return;
-    }
-    if (!activeDoc) return;
-
-    setLocalSaveStatus('pending');
-    if (localSaveTimerRef.current) {
-      clearTimeout(localSaveTimerRef.current);
-    }
-    localSaveTimerRef.current = setTimeout(async () => {
-      setLocalSaveStatus('saving');
-
-      // Write directly to local physical disk file (bidirectional Obsidian-like sync across multiple linked folders)
-      try {
-        if (linkedFolders.length > 0 && activeDoc) {
-          await writeDocToAppropriateFolder(linkedFolders, activeDoc);
-        }
-      } catch (err) {
-        console.warn('Auto-save to local disk error:', err);
-      }
-
-      setTimeout(() => {
-        setLocalSaveStatus('synced');
-      }, 400);
-    }, 700);
-
-    return () => {
-      if (localSaveTimerRef.current) {
-        clearTimeout(localSaveTimerRef.current);
-      }
-    };
-  }, [activeDoc?.title, activeDoc?.content, linkedFolders]);
-
-  const effectiveSyncStatus = activeDoc?.isCloudShared ? cloudSyncStatus : localSaveStatus;
-
-  // Flush pending auto-save if window is closed or refreshed
+  // Flush unsaved changes before tab close
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (activeDoc && activeDoc.isCloudShared) {
+      if (currentUser && activeDoc && activeDoc.isOwner && !sharedViewDoc) {
         const last = cloudSyncedStateRef.current[activeDoc.id];
         if (last && (last.title !== activeDoc.title || last.content !== activeDoc.content)) {
-          cloudApi
-            .updateFile(activeDoc.id, {
-              title: activeDoc.title,
-              content: activeDoc.content,
-            })
-            .catch(() => {});
+          cloudApi.updateFile(activeDoc.id, { title: activeDoc.title, content: activeDoc.content }).catch(() => {});
         }
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [activeDoc]);
+  }, [currentUser, activeDoc, sharedViewDoc]);
 
-  // Handler for manual retry / sync
   const handleManualSyncCloud = useCallback(() => {
-    if (!activeDoc || !activeDoc.isCloudShared) return;
+    if (!activeDoc || !activeDoc.isOwner) return;
     executeCloudSave(activeDoc.id, activeDoc.title, activeDoc.content);
   }, [activeDoc, executeCloudSave]);
-
-  // Handler for copying share link
-  const handleCopyShareLink = () => {
-    if (!activeDoc) return;
-    const url = `${window.location.origin}/?share=${activeDoc.id}`;
-    navigator.clipboard.writeText(url);
-    setCloudNotice('لینک اختصاصی اشتراک این سند در کلیپ‌بورد کپی شد.');
-    setTimeout(() => setCloudNotice(null), 3500);
-  };
-
-  // Handler for opening comments (opens drawer directly, auto-syncing if needed)
-  const handleOpenCommentsClick = useCallback(async () => {
-    if (!activeDoc) return;
-    if (!activeDoc.isCloudShared) {
-      setCloudNotice('در حال آماده‌سازی بخش نظرات و اتصال به دیتابیس ابری...');
-      try {
-        const res = await cloudApi.publishFile({
-          title: activeDoc.title || 'سند جدید',
-          content: activeDoc.content,
-          is_public: true,
-          author_name: currentUser?.displayName || currentUser?.username || 'کاربر ناشناس',
-        });
-        if (res.file) {
-          const cloudDoc: MarkdownDoc = {
-            ...activeDoc,
-            id: res.file.id,
-            isCloudShared: true,
-            cloudAuthor: res.file.author_name,
-            cloudSyncedAt: Date.now(),
-          };
-          setDocuments((prev) => prev.map((d) => (d.id === activeDoc.id ? cloudDoc : d)));
-          setActiveDocId(res.file.id);
-          cloudSyncedStateRef.current[res.file.id] = { title: res.file.title, content: activeDoc.content };
-          setCloudSyncStatus('synced');
-          setCloudNotice('سند با موفقیت در مخزن ابری ثبت شد. اکنون می‌توانید نظر خود را بنویسید.');
-          setTimeout(() => setCloudNotice(null), 4000);
-        }
-      } catch (err: any) {
-        console.error('Failed to auto-publish doc for comments:', err);
-      }
-    }
-    setIsCommentsOpen(true);
-  }, [activeDoc, currentUser]);
-
-  // Handler for setting / updating writing goal
-  const handleUpdateWordGoal = (newGoal: number | undefined) => {
-    if (!activeDoc) return;
-    setDocuments((prev) =>
-      prev.map((doc) =>
-        doc.id === activeDocId
-          ? { ...doc, wordGoal: newGoal, updatedAt: Date.now() }
-          : doc
-      )
-    );
-    if (newGoal) {
-      setCloudNotice(`🎯 هدف نگارش این سند روی ${newGoal.toLocaleString('fa-IR')} کلمه تنظیم شد.`);
-    } else {
-      setCloudNotice('هدف نگارش حذف شد.');
-    }
-    setTimeout(() => setCloudNotice(null), 3000);
-  };
-
-  // Handler to fork a cloud document to local notes
-  const handleForkDocument = (doc: MarkdownDoc) => {
-    const forkedDoc: MarkdownDoc = {
-      id: `doc-${Date.now()}`,
-      title: `کپی از ${doc.title}`,
-      content: doc.content,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      tags: doc.tags ? [...doc.tags] : [],
-      isForked: true,
-      isCloudShared: false,
-    };
-    setDocuments((prev) => [forkedDoc, ...prev]);
-    setActiveDocId(forkedDoc.id);
-    setViewMode('preview');
-    setCloudNotice(`سند با موفقیت به اسناد شما کپی شد (Fork). اکنون می‌توانید آن را آزادانه ویرایش کنید.`);
-    setTimeout(() => setCloudNotice(null), 5000);
-  };
-
-  // Handler to select and instantiate a template
-  const handleSelectTemplate = (template: MarkdownTemplate) => {
-    const newDoc: MarkdownDoc = {
-      id: `doc-${Date.now()}`,
-      title: template.title,
-      content: template.content,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      tags: [...template.tags],
-      isCloudShared: false,
-    };
-    setDocuments((prev) => [newDoc, ...prev]);
-    setActiveDocId(newDoc.id);
-    setViewMode('preview');
-    setCloudNotice(`سند جدید بر اساس الگوی «${template.title}» ساخته شد.`);
-    setTimeout(() => setCloudNotice(null), 4000);
-  };
-
-  // Re-parse markdown to HTML whenever active document content or documents list changes
-  useEffect(() => {
-    let isCancelled = false;
-    if (activeDoc) {
-      parseMarkdownToHtml(activeDoc.content, documents).then((html) => {
-        if (!isCancelled) {
-          setRenderedHtml(html);
-        }
-      });
-    }
-    return () => {
-      isCancelled = true;
-    };
-  }, [activeDoc?.content, documents]);
 
   // Compute stats and headings
   const stats: DocStats = useMemo(() => {
     return calculateStats(activeDoc?.content || '');
   }, [activeDoc?.content]);
 
-  // Celebrate when user reaches their word goal
   const hasCelebratedGoalRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
     if (activeDoc?.wordGoal && stats.words >= activeDoc.wordGoal) {
       if (!hasCelebratedGoalRef.current[activeDoc.id]) {
         hasCelebratedGoalRef.current[activeDoc.id] = true;
-        setCloudNotice(`🎉 تبریک! به هدف نگارش ${activeDoc.wordGoal.toLocaleString('fa-IR')} کلمه رسیدید!`);
-        setTimeout(() => setCloudNotice(null), 5000);
+        showNotice(`به هدف نگارش ${activeDoc.wordGoal.toLocaleString('fa-IR')} کلمه رسیدید!`, 5000);
       }
     } else if (activeDoc?.wordGoal && stats.words < activeDoc.wordGoal) {
       hasCelebratedGoalRef.current[activeDoc.id] = false;
     }
-  }, [activeDoc?.id, activeDoc?.wordGoal, stats.words]);
+  }, [activeDoc?.id, activeDoc?.wordGoal, stats.words, showNotice]);
 
   const headings: HeadingItem[] = useMemo(() => {
     return extractHeadings(activeDoc?.content || '');
   }, [activeDoc?.content]);
 
-  // Effective text direction (if 'auto', detect from content)
   const effectiveDirection = useMemo(() => {
     if (textDirection === 'auto') {
-      return detectDirection(activeDoc?.content || '');
+      return detectDirection(previewSourceContent);
     }
     return textDirection;
-  }, [textDirection, activeDoc?.content]);
+  }, [textDirection, previewSourceContent]);
+
+  // Guest local file opening
+  const openLocalFileForGuest = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      if (text !== undefined) {
+        const title = file.name.replace(/\.(md|markdown|txt)$/i, '') || file.name;
+        setGuestDoc({ title, content: text });
+        setGuestViewMode('preview');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleGuestFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      openLocalFileForGuest(e.target.files[0]);
+      e.target.value = '';
+    }
+  };
+
+  const handleGuestExportMarkdown = () => {
+    if (!guestDoc) return;
+    const blob = new Blob([guestDoc.content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${guestDoc.title || 'document'}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Authenticated Document Management (Persisted to Server under user's ID, default 'private')
+  const handleCreateDoc = useCallback(async () => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    const defaultTitle = 'سند جدید';
+    const defaultContent = `# سند جدید\n\nنوشتن را از اینجا شروع کنید...\n`;
+    try {
+      const res = await cloudApi.publishFile({
+        title: defaultTitle,
+        content: defaultContent,
+        visibility: 'private',
+        is_public: false,
+      });
+      const newDoc = mapServerFileToDoc(res.file, currentUser.id);
+      cloudSyncedStateRef.current[newDoc.id] = { title: newDoc.title, content: newDoc.content };
+      setDocuments((prev) => [newDoc, ...prev]);
+      setActiveDocId(newDoc.id);
+      setSharedViewDoc(null);
+      setWorkspaceView('editor');
+      setViewMode('split');
+    } catch (err: any) {
+      showNotice(err.message || 'خطا در ایجاد سند جدید');
+    }
+  }, [currentUser, showNotice]);
+
+  const handleDuplicateDoc = useCallback(
+    async (id: string) => {
+      if (!currentUser) return;
+      const target = documents.find((d) => d.id === id);
+      if (!target) return;
+      try {
+        const res = await cloudApi.publishFile({
+          title: `${target.title} (کپی)`,
+          content: target.content,
+          description: target.description || '',
+          tags: target.tags || [],
+          visibility: 'private',
+          is_public: false,
+        });
+        const duplicated = mapServerFileToDoc(res.file, currentUser.id);
+        cloudSyncedStateRef.current[duplicated.id] = {
+          title: duplicated.title,
+          content: duplicated.content,
+        };
+        setDocuments((prev) => [duplicated, ...prev]);
+        setActiveDocId(duplicated.id);
+        setWorkspaceView('editor');
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در تکثیر سند');
+      }
+    },
+    [currentUser, documents, showNotice]
+  );
+
+  const handleDeleteDoc = useCallback(
+    async (id: string) => {
+      try {
+        await cloudApi.deleteFile(id);
+        delete cloudSyncedStateRef.current[id];
+        setDocuments((prev) => {
+          const remaining = prev.filter((d) => d.id !== id);
+          if (activeDocId === id) {
+            if (remaining.length > 0) {
+              setActiveDocId(remaining[0].id);
+            } else {
+              setActiveDocId('');
+              setWorkspaceView('dashboard');
+            }
+          }
+          return remaining;
+        });
+        showNotice('سند با موفقیت حذف شد.');
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در حذف سند');
+      }
+    },
+    [activeDocId, showNotice]
+  );
+
+  const handleToggleFavorite = useCallback(
+    async (id: string) => {
+      const target = documents.find((d) => d.id === id);
+      if (!target) return;
+      const nextFav = !target.isFavorite;
+      setDocuments((prev) =>
+        prev.map((doc) => (doc.id === id ? { ...doc, isFavorite: nextFav } : doc))
+      );
+      try {
+        await cloudApi.updateFile(id, { is_favorite: nextFav });
+      } catch {}
+    },
+    [documents]
+  );
+
+  const handleImportFiles = useCallback(
+    (files: FileList) => {
+      if (!currentUser) return;
+      const validFiles = Array.from(files).filter((f) =>
+        /\.(md|markdown|txt)$/i.test(f.name)
+      );
+      if (validFiles.length === 0) {
+        showNotice('لطفاً فایل‌هایی با پسوند .md، .markdown یا .txt انتخاب کنید.');
+        return;
+      }
+
+      let importedCount = 0;
+      validFiles.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const text = e.target?.result as string;
+          if (text !== undefined) {
+            const title = file.name.replace(/\.(md|markdown|txt)$/i, '') || 'سند وارد شده';
+            try {
+              const res = await cloudApi.publishFile({
+                title,
+                content: text,
+                visibility: 'private',
+                is_public: false,
+              });
+              const newDoc = mapServerFileToDoc(res.file, currentUser.id);
+              cloudSyncedStateRef.current[newDoc.id] = { title: newDoc.title, content: newDoc.content };
+              setDocuments((prev) => [newDoc, ...prev]);
+              importedCount += 1;
+              if (validFiles.length === 1) {
+                setActiveDocId(newDoc.id);
+                setWorkspaceView('editor');
+                setViewMode('split');
+              }
+              if (importedCount === validFiles.length && validFiles.length > 1) {
+                showNotice(`${validFiles.length} فایل با موفقیت به اسناد من اضافه شد.`);
+              }
+            } catch (err: any) {
+              showNotice(err.message || 'خطا در ذخیره فایل وارد شده');
+            }
+          }
+        };
+        reader.readAsText(file);
+      });
+    },
+    [currentUser, showNotice]
+  );
+
+  const handleForkDocument = useCallback(
+    async (doc: MarkdownDoc) => {
+      if (!currentUser) {
+        setIsAuthModalOpen(true);
+        return;
+      }
+      try {
+        const res = await cloudApi.publishFile({
+          title: `کپی از ${doc.title}`,
+          content: doc.content,
+          description: doc.description || '',
+          tags: doc.tags ? [...doc.tags] : [],
+          visibility: 'private',
+          is_public: false,
+        });
+        const forkedDoc = mapServerFileToDoc(res.file, currentUser.id);
+        cloudSyncedStateRef.current[forkedDoc.id] = {
+          title: forkedDoc.title,
+          content: forkedDoc.content,
+        };
+        setDocuments((prev) => [forkedDoc, ...prev]);
+        setActiveDocId(forkedDoc.id);
+        setSharedViewDoc(null);
+        clearShareUrlParam();
+        setWorkspaceView('editor');
+        setViewMode('split');
+        showNotice('نسخه اختصاصی در اسناد شما ایجاد شد و آماده ویرایش است.');
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در کپی کردن سند');
+      }
+    },
+    [currentUser, showNotice]
+  );
+
+  const handleOpenExploreFile = useCallback(
+    async (file: SharedMarkdownFile) => {
+      try {
+        const fullDoc = await cloudApi.getFileById(file.id);
+        const mapped = mapServerFileToDoc(fullDoc, currentUser?.id);
+        if (currentUser && mapped.isOwner) {
+          setDocuments((prev) => {
+            const exists = prev.find((d) => d.id === mapped.id);
+            return exists ? prev.map((d) => (d.id === mapped.id ? mapped : d)) : [mapped, ...prev];
+          });
+          cloudSyncedStateRef.current[mapped.id] = { title: mapped.title, content: mapped.content };
+          setActiveDocId(mapped.id);
+          setSharedViewDoc(null);
+          setWorkspaceView('editor');
+          setViewMode('split');
+        } else {
+          setSharedViewDoc(mapped);
+        }
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در باز کردن سند');
+      }
+    },
+    [currentUser, showNotice]
+  );
+
+  const handleForkExploreFile = useCallback(
+    async (file: SharedMarkdownFile) => {
+      try {
+        const fullDoc = await cloudApi.getFileById(file.id);
+        const mapped = mapServerFileToDoc(fullDoc, currentUser?.id);
+        await handleForkDocument(mapped);
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در کپی سند');
+      }
+    },
+    [currentUser?.id, handleForkDocument, showNotice]
+  );
+
+  const handleOpenMyDocument = (file: SharedMarkdownFile) => {
+    const mapped = mapServerFileToDoc(file, currentUser?.id);
+    setDocuments((prev) => {
+      const exists = prev.find((d) => d.id === mapped.id);
+      return exists ? prev.map((d) => (d.id === mapped.id ? mapped : d)) : [mapped, ...prev];
+    });
+    cloudSyncedStateRef.current[mapped.id] = { title: mapped.title, content: mapped.content };
+    setActiveDocId(mapped.id);
+    setSharedViewDoc(null);
+    setWorkspaceView('editor');
+    setViewMode('split');
+  };
+
+  const handleOpenDocFromCommunity = useCallback(
+    (doc: MarkdownDoc) => {
+      if (currentUser && doc.userId === currentUser.id) {
+        setDocuments((prev) => {
+          const exists = prev.find((d) => d.id === doc.id);
+          return exists ? prev.map((d) => (d.id === doc.id ? doc : d)) : [doc, ...prev];
+        });
+        cloudSyncedStateRef.current[doc.id] = { title: doc.title, content: doc.content };
+        setActiveDocId(doc.id);
+        setSharedViewDoc(null);
+        setWorkspaceView('editor');
+        setViewMode('split');
+      } else {
+        setSharedViewDoc(doc);
+      }
+    },
+    [currentUser]
+  );
+
+  const handleCopyShareLink = () => {
+    if (!activeDoc) return;
+    const url = `${window.location.origin}/?share=${activeDoc.id}`;
+    navigator.clipboard.writeText(url);
+    showNotice('لینک مستقیم اشتراک سند کپی شد.');
+  };
+
+  const handleUpdateWordGoal = (newGoal: number | undefined) => {
+    if (!activeDoc) return;
+    setDocuments((prev) =>
+      prev.map((doc) =>
+        doc.id === activeDocId ? { ...doc, wordGoal: newGoal, updatedAt: Date.now() } : doc
+      )
+    );
+    if (newGoal) {
+      showNotice(`هدف نگارش روی ${newGoal.toLocaleString('fa-IR')} کلمه تنظیم شد.`);
+    } else {
+      showNotice('هدف نگارش حذف شد.');
+    }
+  };
 
   // Update active document content
-  const handleContentChange = useCallback((newContent: string, pushToHistory = true) => {
-    setDocuments((prevDocs) =>
-      prevDocs.map((doc) =>
-        doc.id === activeDocId
-          ? {
-              ...doc,
-              content: newContent,
-              updatedAt: Date.now(),
-            }
-          : doc
-      )
-    );
+  const handleContentChange = useCallback(
+    (newContent: string, pushToHistory = true) => {
+      if (!activeDoc || sharedViewDoc) return;
+      setDocuments((prevDocs) =>
+        prevDocs.map((doc) =>
+          doc.id === activeDocId ? { ...doc, content: newContent, updatedAt: Date.now() } : doc
+        )
+      );
 
-    if (pushToHistory) {
-      setHistory((prev) => {
-        const next = prev.slice(0, historyIndex + 1);
-        next.push(newContent);
-        if (next.length > 50) next.shift();
-        return next;
-      });
-      setHistoryIndex((prev) => Math.min(prev + 1, 49));
-    }
-  }, [activeDocId, historyIndex]);
+      if (pushToHistory) {
+        setHistory((prev) => {
+          const next = prev.slice(0, historyIndex + 1);
+          next.push(newContent);
+          if (next.length > 50) next.shift();
+          return next;
+        });
+        setHistoryIndex((prev) => Math.min(prev + 1, 49));
+      }
+    },
+    [activeDoc, activeDocId, historyIndex, sharedViewDoc]
+  );
 
   // Update active document title
-  const handleTitleChange = useCallback((newTitle: string) => {
-    setDocuments((prevDocs) =>
-      prevDocs.map((doc) =>
-        doc.id === activeDocId
-          ? {
-              ...doc,
-              title: newTitle,
-              updatedAt: Date.now(),
-            }
-          : doc
-      )
-    );
-  }, [activeDocId]);
+  const handleTitleChange = useCallback(
+    (newTitle: string) => {
+      if (!activeDoc || sharedViewDoc) return;
+      setDocuments((prevDocs) =>
+        prevDocs.map((doc) =>
+          doc.id === activeDocId ? { ...doc, title: newTitle, updatedAt: Date.now() } : doc
+        )
+      );
+    },
+    [activeDoc, activeDocId, sharedViewDoc]
+  );
 
-  // Undo / Redo Handlers
   const handleUndo = useCallback(() => {
     if (historyIndex > 0) {
       const prevContent = history[historyIndex - 1];
@@ -830,738 +847,90 @@ export default function App() {
     }
   }, [history, historyIndex, handleContentChange]);
 
-  // Document management: Create, Duplicate, Delete, Toggle Favorite
-  const handleCreateDoc = useCallback((initialFolderPath?: string) => {
-    const newDoc: MarkdownDoc = {
-      id: `doc-${Date.now()}`,
-      title: 'یادداشت جدید',
-      content: `# یادداشت جدید\n\nاینجا شروع به نوشتن کنید یا از ==هایلایت زرد== و ==green:هایلایت سبز== استفاده نمایید...\n`,
-      folderPath: initialFolderPath?.trim() || undefined,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      uploadedAt: Date.now(),
-    };
-    setDocuments((prev) => [newDoc, ...prev]);
-    setActiveDocId(newDoc.id);
-  }, []);
+  const handleToggleTask = useCallback(
+    (taskIndex: number) => {
+      if (!activeDoc || sharedViewDoc) return;
+      const updated = toggleTaskInMarkdown(activeDoc.content, taskIndex);
+      handleContentChange(updated, true);
+    },
+    [activeDoc, handleContentChange, sharedViewDoc]
+  );
 
-  const handleDuplicateDoc = useCallback((id: string) => {
-    const target = documents.find((d) => d.id === id);
-    if (!target) return;
-    const duplicated: MarkdownDoc = {
-      ...target,
-      id: `doc-${Date.now()}`,
-      title: `${target.title} (کپی)`,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    setDocuments((prev) => [duplicated, ...prev]);
-    setActiveDocId(duplicated.id);
-  }, [documents]);
+  const handleHighlightFromPreview = useCallback(
+    (selectedText: string, color: HighlightColor) => {
+      if (!activeDoc || sharedViewDoc || !selectedText.trim()) return;
+      const trimmed = selectedText.trim();
+      const currentContent = activeDoc.content;
+      const tagPrefix = color === 'yellow' ? '==' : `==${color}:`;
+      const tagSuffix = '==';
+      const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  const handleDeleteDoc = useCallback((id: string) => {
-    const docToDelete = documents.find((d) => d.id === id);
-    if (docToDelete) {
-      addTombstone(id, docToDelete.title, docToDelete.folderPath);
-      // Delete from cloud / Neon database (both ID and title variants)
-      cloudApi.deleteFile(docToDelete.id).catch(() => {});
-      if (docToDelete.title) {
-        cloudApi.deleteFile(docToDelete.title).catch(() => {});
-        const noExt = docToDelete.title.replace(/\.(md|markdown|txt)$/i, '').trim();
-        if (noExt !== docToDelete.title) {
-          cloudApi.deleteFile(noExt).catch(() => {});
-        }
+      const existingHighlightRegex = new RegExp(`==(?:[a-z]+:)?\\s*(${escapeRegex(trimmed)})\\s*==`, 'i');
+      if (existingHighlightRegex.test(currentContent)) {
+        handleContentChange(currentContent.replace(existingHighlightRegex, `${tagPrefix}$1${tagSuffix}`), true);
+        return;
       }
-      // Delete from local hard drive
-      if (linkedFolders.length > 0) {
-        deleteDocFromAppropriateFolder(linkedFolders, docToDelete).catch(() => {});
-      }
-    } else {
-      addTombstone(id);
-      cloudApi.deleteFile(id).catch(() => {});
-    }
-
-    setDocuments((prev) => {
-      const filtered = prev.filter((d) => d.id !== id);
-      if (filtered.length === 0) {
-        return SAMPLE_DOCUMENTS;
-      }
-      return filtered;
-    });
-    if (activeDocId === id) {
-      const remaining = documents.filter((d) => d.id !== id);
-      if (remaining.length > 0) {
-        setActiveDocId(remaining[0].id);
-      }
-    }
-  }, [activeDocId, documents, linkedFolders, addTombstone]);
-
-  const handleToggleFavorite = useCallback((id: string) => {
-    setDocuments((prev) =>
-      prev.map((doc) => (doc.id === id ? { ...doc, isFavorite: !doc.isFavorite } : doc))
-    );
-  }, []);
-
-  // Restore sample documents
-  const handleRestoreSamples = useCallback(() => {
-    if (confirm('آیا می‌خواهید اسناد نمونه اولیه را مجدداً به لیست یادداشت‌های خود اضافه کنید؟')) {
-      setDocuments(SAMPLE_DOCUMENTS);
-      setActiveDocId(SAMPLE_DOCUMENTS[0].id);
-    }
-  }, []);
-
-  // Import files (.md, .txt, .markdown) or entire folders with automatic upsert & deduplication
-  const handleImportFiles = useCallback(async (files: FileList | File[], targetFolderPath?: string) => {
-    const fileArray = Array.from(files).filter((file) =>
-      /\.(md|markdown|txt)$/i.test(file.name)
-    );
-    if (fileArray.length === 0) return;
-
-    const readPromises = fileArray.map((file) => {
-      return new Promise<{ file: File; text: string }>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          resolve({ file, text: (e.target?.result as string) || '' });
-        };
-        reader.readAsText(file);
-      });
-    });
-
-    const results = await Promise.all(readPromises);
-
-    setDocuments((prev) => {
-      let updatedList = [...prev];
-      let lastActiveId: string | null = null;
-
-      results.forEach(({ file, text }) => {
-        const title = file.name.replace(/\.(md|markdown|txt)$/i, '') || 'سند وارد شده';
-        let folderPath: string | undefined = targetFolderPath?.trim() || undefined;
-        const relPath = (file as any).webkitRelativePath || '';
-        if (relPath) {
-          const parts = relPath.replace(/\\/g, '/').split('/').filter(Boolean);
-          if (parts.length > 1) {
-            folderPath = parts.slice(0, -1).join('/');
-          }
-        }
-
-        const targetKey = normalizeDocKey(title, folderPath);
-
-        const matchIdx = updatedList.findIndex(
-          (d) => normalizeDocKey(d.title, d.folderPath) === targetKey
+      const exactIdx = currentContent.indexOf(trimmed);
+      if (exactIdx !== -1) {
+        handleContentChange(
+          currentContent.slice(0, exactIdx) +
+            `${tagPrefix}${trimmed}${tagSuffix}` +
+            currentContent.slice(exactIdx + trimmed.length),
+          true
         );
-
-        if (matchIdx !== -1) {
-          // Update existing document in-place
-          const existing = updatedList[matchIdx];
-          updatedList[matchIdx] = {
-            ...existing,
-            title,
-            content: text,
-            folderPath: folderPath || existing.folderPath,
-            updatedAt: Date.now(),
-            uploadedAt: Date.now(),
-          };
-          lastActiveId = existing.id;
-          // Clean up any other duplicates in state
-          updatedList = updatedList.filter(
-            (d, idx) => idx === matchIdx || normalizeDocKey(d.title, d.folderPath) !== targetKey
-          );
-        } else {
-          // Add new document
-          const newDoc: MarkdownDoc = {
-            id: `imported-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            title,
-            content: text,
-            folderPath,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            uploadedAt: Date.now(),
-          };
-          updatedList.unshift(newDoc);
-          lastActiveId = newDoc.id;
-        }
-      });
-
-      if (lastActiveId) {
-        setActiveDocId(lastActiveId);
-      }
-
-      return deduplicateDocs(updatedList);
-    });
-  }, []);
-
-  const handleUpdateDocFolder = useCallback((docId: string, folderPath?: string) => {
-    setDocuments((prev) =>
-      prev.map((d) =>
-        d.id === docId
-          ? { ...d, folderPath: folderPath?.trim() || undefined, updatedAt: Date.now() }
-          : d
-      )
-    );
-  }, []);
-
-  const handleRenameFolder = useCallback((oldPath: string, newPath: string) => {
-    const cleanOld = oldPath.trim();
-    const cleanNew = newPath.trim();
-    if (!cleanOld || !cleanNew || cleanOld === cleanNew) return;
-
-    setDocuments((prev) =>
-      prev.map((d) => {
-        const cur = (d.folderPath || '').trim();
-        if (cur === cleanOld) {
-          return { ...d, folderPath: cleanNew, updatedAt: Date.now() };
-        }
-        if (cur.startsWith(cleanOld + '/')) {
-          const rest = cur.slice(cleanOld.length);
-          return { ...d, folderPath: cleanNew + rest, updatedAt: Date.now() };
-        }
-        return d;
-      })
-    );
-  }, []);
-
-  // Load all stored local directory handles on mount & monitor permissions
-  useEffect(() => {
-    if (isFileSystemAccessSupported()) {
-      getAllStoredDirectoryHandles().then((records) => {
-        setLinkedFolders(records);
-        if (records.length > 0) {
-          checkFoldersPermissionStatus(records).then((status) => {
-            setDiskPermissionNeedsPrompt(status.needsPrompt);
-          });
-        }
-      });
-    }
-
-    const unsubscribe = subscribeToPendingQueue((queue) => {
-      setPendingDiskWritesCount(queue.length);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Multi-Folder 1-Click Sync
-  const handleSyncFromLocalDisk = useCallback(async (forceAddNew = false) => {
-    if (!isFileSystemAccessSupported()) {
-      alert('مرورگر شما از دسترسی مستقیم به فایل‌های سیستمی پشتیبانی نمی‌کند. لطفاً از دکمه آپلود پوشه استفاده فرمایید.');
-      return;
-    }
-
-    setIsSyncingLocal(true);
-    try {
-      let foldersToSync = [...linkedFolders];
-
-      // If user requested to add another folder OR no folders are linked yet
-      if (forceAddNew || foldersToSync.length === 0) {
-        // @ts-ignore
-        let newHandle: FileSystemDirectoryHandle | null = null;
-        try {
-          // @ts-ignore
-          newHandle = await window.showDirectoryPicker({
-            id: 'md_sync_dir',
-            mode: 'readwrite',
-          });
-        } catch (pickerErr: any) {
-          if (pickerErr.name === 'AbortError') throw pickerErr;
-          // Fallback if browser is strict about id
-          // @ts-ignore
-          newHandle = await window.showDirectoryPicker({
-            mode: 'readwrite',
-          });
-        }
-
-        if (newHandle) {
-          const updated = await addStoredDirectoryHandle(newHandle);
-          foldersToSync = updated;
-          setLinkedFolders(updated);
-        }
-      }
-
-      if (foldersToSync.length === 0) {
-        setIsSyncingLocal(false);
         return;
       }
-
-      const { files, successCount, errorsCount } = await scanAllLinkedDirectories(foldersToSync);
-
-      if (files.length === 0) {
-        setCloudNotice(`پوشه‌های متصل بررسی شدند اما فایل مارک‌دانی در آن‌ها یافت نشد.`);
-        setTimeout(() => setCloudNotice(null), 4000);
-        setIsSyncingLocal(false);
-        return;
-      }
-
-      let updatedCount = 0;
-      let newCount = 0;
-
-      setDocuments((prev) => {
-        let updatedList = [...prev];
-
-        files.forEach((f) => {
-          const targetKey = normalizeDocKey(f.title, f.folderPath);
-          const matchIdx = updatedList.findIndex(
-            (d) => normalizeDocKey(d.title, d.folderPath) === targetKey
+      const words = trimmed.split(/\s+/).filter(Boolean).map(escapeRegex);
+      if (words.length > 0) {
+        const flexRegex = new RegExp(words.join('[\\s\\*\\_]+'));
+        const match = flexRegex.exec(currentContent);
+        if (match) {
+          handleContentChange(
+            currentContent.slice(0, match.index) +
+              `${tagPrefix}${match[0]}${tagSuffix}` +
+              currentContent.slice(match.index + match[0].length),
+            true
           );
-
-          if (matchIdx !== -1) {
-            const existing = updatedList[matchIdx];
-            if (existing.content !== f.content) {
-              updatedCount++;
-            }
-            updatedList[matchIdx] = {
-              ...existing,
-              title: f.title,
-              content: f.content,
-              folderPath: f.folderPath || existing.folderPath,
-              updatedAt: Date.now(),
-              uploadedAt: Date.now(),
-            };
-            updatedList = updatedList.filter(
-              (d, idx) => idx === matchIdx || normalizeDocKey(d.title, d.folderPath) !== targetKey
-            );
-          } else {
-            newCount++;
-            const newDoc: MarkdownDoc = {
-              id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-              title: f.title,
-              content: f.content,
-              folderPath: f.folderPath,
-              createdAt: f.lastModified,
-              updatedAt: Date.now(),
-              uploadedAt: Date.now(),
-            };
-            updatedList.unshift(newDoc);
-          }
-        });
-
-        return deduplicateDocs(updatedList);
-      });
-
-      setCloudNotice(
-        `✅ همگام‌سازی ${successCount} پوشه انجام شد (${files.length} سند بررسی شد: ${updatedCount} به‌روزرسانی، ${newCount} جدید)`
-      );
-      setTimeout(() => setCloudNotice(null), 4500);
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        console.error('Local disk sync failed:', err);
-        setCloudNotice('خطا در همگام‌سازی پوشه‌های محلی کامپیوتر.');
-        setTimeout(() => setCloudNotice(null), 3500);
+        }
       }
-    } finally {
-      setIsSyncingLocal(false);
-    }
-  }, [linkedFolders]);
+    },
+    [activeDoc, handleContentChange, sharedViewDoc]
+  );
 
-  const handleUnlinkLocalFolder = useCallback(async (folderName?: string) => {
-    if (folderName) {
-      const updated = await removeStoredDirectoryHandle(folderName);
-      setLinkedFolders(updated);
-      setCloudNotice(`اتصال به پوشه «${folderName}» لغو گردید.`);
-    } else {
-      await clearAllStoredDirectoryHandles();
-      setLinkedFolders([]);
-      setCloudNotice('اتصال به تمام پوشه‌های کامپیوتر لغو گردید.');
-    }
-    setTimeout(() => setCloudNotice(null), 3000);
-  }, []);
-
-  const handleDeleteFolder = useCallback((folderPath: string) => {
-    const cleanPath = folderPath.trim();
-    if (!cleanPath) return;
-
-    const affected = documents.filter((d) => {
-      const cur = (d.folderPath || '').trim();
-      return cur === cleanPath || cur.startsWith(cleanPath + '/');
-    });
-
-    if (affected.length === 0) return;
-
-    const confirmed = confirm(
-      `آیا از حذف پوشه «${cleanPath}» و تمامی اسناد آن اطمینان دارید؟\nاین پوشه شامل ${affected.length} سند است و همه آنها حذف خواهند شد.`
-    );
-    if (!confirmed) return;
-
-    // Delete all affected documents from cloud, local disk and add to tombstones
-    affected.forEach((d) => {
-      addTombstone(d.id, d.title, d.folderPath);
-      cloudApi.deleteFile(d.id).catch(() => {});
-      if (d.title) {
-        cloudApi.deleteFile(d.title).catch(() => {});
+  const handleRemoveHighlightFromPreview = useCallback(
+    (highlightedText: string) => {
+      if (!activeDoc || sharedViewDoc || !highlightedText.trim()) return;
+      const trimmed = highlightedText.trim();
+      const currentContent = activeDoc.content;
+      const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const highlightRegex = new RegExp(`==(?:[a-z]+:)?\\s*(${escapeRegex(trimmed)})\\s*==`, 'i');
+      if (highlightRegex.test(currentContent)) {
+        handleContentChange(currentContent.replace(highlightRegex, '$1'), true);
       }
-      if (linkedFolders.length > 0) {
-        deleteDocFromAppropriateFolder(linkedFolders, d).catch(() => {});
-      }
-    });
+    },
+    [activeDoc, handleContentChange, sharedViewDoc]
+  );
 
-    setDocuments((prev) => {
-      const remaining = prev.filter((d) => {
-        const cur = (d.folderPath || '').trim();
-        return !(cur === cleanPath || cur.startsWith(cleanPath + '/'));
-      });
-      return remaining.length > 0 ? remaining : SAMPLE_DOCUMENTS;
-    });
+  const handleAddTeacherNote = useCallback(
+    (targetText: string, noteText: string) => {
+      if (!activeDoc || sharedViewDoc || !noteText.trim()) return;
+      const currentContent = activeDoc.content;
+      const trimmedTarget = targetText.trim();
+      const noteCallout = `\n\n> [!TIP]\n> **یادداشت:** ${noteText.trim()}\n\n`;
 
-    if (activeDoc && (activeDoc.folderPath || '').trim().startsWith(cleanPath)) {
-      const remaining = documents.filter((d) => {
-        const cur = (d.folderPath || '').trim();
-        return !(cur === cleanPath || cur.startsWith(cleanPath + '/'));
-      });
-      if (remaining.length > 0) {
-        setActiveDocId(remaining[0].id);
-      }
-    }
-
-    if (linkedFolders.some((f) => f.name.toLowerCase() === cleanPath.toLowerCase())) {
-      handleUnlinkLocalFolder(cleanPath);
-    }
-
-    setCloudNotice(`پوشه «${cleanPath}» و ${affected.length} سند داخل آن با موفقیت حذف شدند.`);
-    setTimeout(() => setCloudNotice(null), 3500);
-  }, [documents, activeDoc, linkedFolders, handleUnlinkLocalFolder]);
-
-  // 1-Click user gesture to grant readwrite disk permissions and flush pending writes
-  const handleGrantDiskPermission = useCallback(async () => {
-    if (linkedFolders.length === 0) return;
-    try {
-      const res = await requestPermissionAndFlushQueue(linkedFolders);
-      if (res.success) {
-        setDiskPermissionNeedsPrompt(false);
-        setCloudNotice(`✅ مجوز نوشتن روی دیسک تأیید شد و ${res.writtenCount} سند معوقه روی هارد کامپیوتر ذخیره شدند.`);
-        setTimeout(() => setCloudNotice(null), 4000);
+      if (trimmedTarget && currentContent.includes(trimmedTarget)) {
+        const targetIndex = currentContent.indexOf(trimmedTarget);
+        const nextNewline = currentContent.indexOf('\n', targetIndex);
+        const insertAt = nextNewline !== -1 ? nextNewline : currentContent.length;
+        handleContentChange(currentContent.slice(0, insertAt) + noteCallout + currentContent.slice(insertAt), true);
       } else {
-        setCloudNotice(res.error || 'خطا در اخذ مجوز نوشتن روی دیسک');
-        setTimeout(() => setCloudNotice(null), 3000);
+        handleContentChange(currentContent + noteCallout, true);
       }
-    } catch (err: any) {
-      console.warn('Grant permission error:', err);
-    }
-  }, [linkedFolders]);
+    },
+    [activeDoc, handleContentChange, sharedViewDoc]
+  );
 
-  // Fetch AI Brain docs created/updated by Claude / MCP in Neon cloud database and merge locally & write to disk
-  const handleFetchAndMergeAiBrainDocs = useCallback(async (isSilent = false) => {
-    try {
-      const res = await cloudApi.fetchAiBrainDocs();
-      if (!res.success || !Array.isArray(res.files) || res.files.length === 0) {
-        if (!isSilent) {
-          setCloudNotice('اسناد جدیدی در مغز هوش مصنوعی یافت نشد.');
-          setTimeout(() => setCloudNotice(null), 3000);
-        }
-        return;
-      }
-
-      let newOrUpdatedCount = 0;
-      const filesToWriteToDisk: { title: string; content: string; folderPath?: string }[] = [];
-
-      setDocuments((prev) => {
-        let updatedList = [...prev];
-
-        res.files.forEach((remoteFile) => {
-          const remoteTitle = remoteFile.title || 'سند کلود';
-          const remoteContent = remoteFile.content || '';
-          const remoteFolder = remoteFile.folder_path || remoteFile.folderPath || '🧠 مغز هوش مصنوعی';
-          const remoteUpdatedAt = remoteFile.updated_at ? new Date(remoteFile.updated_at).getTime() : Date.now();
-          const targetKey = normalizeDocKey(remoteTitle, remoteFolder);
-
-          const cleanRemoteTitle = remoteTitle.replace(/\.(md|markdown|txt)$/i, '').toLowerCase().trim();
-
-          // Only ignore if the exact remote ID was explicitly deleted by user
-          if (
-            tombstonesRef.current.has(remoteFile.id) ||
-            /^[?\s؟]+$/.test(remoteTitle)
-          ) {
-            cloudApi.deleteFile(remoteFile.id).catch(() => {});
-            return;
-          }
-
-          const existingIdx = updatedList.findIndex(
-            (d) => d.id === remoteFile.id || normalizeDocKey(d.title, d.folderPath) === targetKey
-          );
-
-          if (existingIdx !== -1) {
-            const existing = updatedList[existingIdx];
-            if (existing.content !== remoteContent || existing.title !== remoteTitle) {
-              newOrUpdatedCount++;
-              filesToWriteToDisk.push({
-                title: remoteTitle,
-                content: remoteContent,
-                folderPath: remoteFolder,
-              });
-              updatedList[existingIdx] = {
-                ...existing,
-                title: remoteTitle,
-                content: remoteContent,
-                folderPath: remoteFolder,
-                isAiBrain: true,
-                tags: Array.from(new Set([...(existing.tags || []), 'ai-brain', ...(remoteFile.tags || [])])),
-                updatedAt: remoteUpdatedAt,
-              };
-            }
-          } else {
-            // New file from Claude / MCP
-            newOrUpdatedCount++;
-            filesToWriteToDisk.push({
-              title: remoteTitle,
-              content: remoteContent,
-              folderPath: remoteFolder,
-            });
-            const newDoc: MarkdownDoc = {
-              id: remoteFile.id || `brain-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-              title: remoteTitle,
-              content: remoteContent,
-              folderPath: remoteFolder,
-              isAiBrain: true,
-              tags: Array.from(new Set(['ai-brain', ...(remoteFile.tags || [])])),
-              createdAt: remoteFile.created_at ? new Date(remoteFile.created_at).getTime() : Date.now(),
-              updatedAt: remoteUpdatedAt,
-            };
-            updatedList.unshift(newDoc);
-          }
-        });
-
-        return deduplicateDocs(updatedList);
-      });
-
-      // Write newly fetched or modified documents to user's local disk
-      if (filesToWriteToDisk.length > 0 && linkedFolders.length > 0) {
-        (async () => {
-          for (const item of filesToWriteToDisk) {
-            await writeDocToAppropriateFolder(linkedFolders, item).catch(() => {});
-          }
-        })();
-      } else if (filesToWriteToDisk.length > 0 && linkedFolders.length === 0) {
-        setCloudNotice(`🧠 سند «${filesToWriteToDisk[0].title}» از Claude دریافت شد. برای ذخیره روی هارد، لطفاً یک پوشه محلی متصل کنید.`);
-        setTimeout(() => setCloudNotice(null), 5000);
-      }
-
-      if (newOrUpdatedCount > 0) {
-        setCloudNotice(`🧠 ${newOrUpdatedCount} سند جدید/به‌روزرسانی‌شده از Claude و سرور ابری دریافت و همگام شد.`);
-        setTimeout(() => setCloudNotice(null), 4000);
-      } else if (!isSilent) {
-        setCloudNotice('تمام اسناد مغز هوش مصنوعی شما با سرور ابری کاملاً همگام است.');
-        setTimeout(() => setCloudNotice(null), 3000);
-      }
-    } catch (err: any) {
-      if (!isSilent) {
-        console.warn('Fetch AI Brain docs error:', err);
-      }
-    }
-  }, [linkedFolders]);
-
-
-  // Debounced auto-sync to Neon cloud so Claude MCP always has real-time access to user files
-  const autoSyncTimerRef = useRef<any>(null);
-  useEffect(() => {
-    if (documents.length === 0) return;
-    if (autoSyncTimerRef.current) {
-      clearTimeout(autoSyncTimerRef.current);
-    }
-    autoSyncTimerRef.current = setTimeout(() => {
-      cloudApi.syncAiBrainDocs(documents).catch(() => {});
-    }, 4000);
-    return () => {
-      if (autoSyncTimerRef.current) {
-        clearTimeout(autoSyncTimerRef.current);
-      }
-    };
-  }, [documents]);
-
-  // Periodic intelligent background polling (every 4s) when tab is active and on focus
-  useEffect(() => {
-    // Fetch immediately on mount / tab change
-    handleFetchAndMergeAiBrainDocs(true);
-
-    const onFocus = () => {
-      handleFetchAndMergeAiBrainDocs(true);
-    };
-    window.addEventListener('focus', onFocus);
-
-    const pollInterval = setInterval(() => {
-      handleFetchAndMergeAiBrainDocs(true);
-    }, 4000);
-
-    return () => {
-      window.removeEventListener('focus', onFocus);
-      clearInterval(pollInterval);
-    };
-  }, [handleFetchAndMergeAiBrainDocs]);
-
-  // Sync all AI Brain documents to Neon Cloud Database for Claude / MCP access
-  const handleSyncAiBrain = useCallback(async (customBrainDocs?: MarkdownDoc[]) => {
-    setIsSyncingBrain(true);
-    try {
-      let brainDocs = customBrainDocs || documents;
-
-      if (brainDocs.length === 0) {
-        setIsSyncingBrain(false);
-        setIsBrainManagerOpen(true);
-        return;
-      }
-
-      const res = await cloudApi.syncAiBrainDocs(brainDocs);
-      setCloudNotice(`🧠 ${res.message || 'اسناد مغز هوش مصنوعی با سرور همگام شدند.'}`);
-      setTimeout(() => setCloudNotice(null), 4500);
-    } catch (err: any) {
-      console.error('Brain sync error:', err);
-      setCloudNotice('خطا در همگام‌سازی مغز هوش مصنوعی با سرور ابری.');
-      setTimeout(() => setCloudNotice(null), 3500);
-    } finally {
-      setIsSyncingBrain(false);
-    }
-  }, [documents]);
-
-  const handlePurgeServerBrain = useCallback(async () => {
-    try {
-      const res = await cloudApi.purgeAiBrain();
-      setCloudNotice(`🗑️ ${res.message || 'مغز هوش مصنوعی در سرور با موفقیت تخلیه شد.'}`);
-      setTimeout(() => setCloudNotice(null), 4000);
-    } catch (err: any) {
-      console.error('Brain purge error:', err);
-      setCloudNotice('خطا در تخلیه مغز هوش مصنوعی.');
-      setTimeout(() => setCloudNotice(null), 3000);
-    }
-  }, []);
-
-  const handleToggleFolderBrain = useCallback((folderPath: string) => {
-    const cleanPath = getEffectiveFolderPath(folderPath);
-    const affected = documents.filter((d) => getEffectiveFolderPath(d.folderPath) === cleanPath);
-    const anyInBrain = affected.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'));
-    const targetState = !anyInBrain;
-
-    setDocuments((prev) =>
-      prev.map((d) => {
-        if (getEffectiveFolderPath(d.folderPath) === cleanPath) {
-          return {
-            ...d,
-            isAiBrain: targetState,
-            tags: targetState
-              ? Array.from(new Set([...(d.tags || []), 'ai-brain']))
-              : (d.tags || []).filter((t) => t !== 'ai-brain'),
-            updatedAt: Date.now(),
-          };
-        }
-        return d;
-      })
-    );
-
-    setCloudNotice(
-      targetState
-        ? `🧠 تمام اسناد پوشه «${cleanPath}» به مغز هوش مصنوعی اضافه شدند.`
-        : `پوشه «${cleanPath}» از مغز هوش مصنوعی خارج شد.`
-    );
-    setTimeout(() => setCloudNotice(null), 3000);
-  }, [documents]);
-
-  const handleToggleDocAiBrain = useCallback(() => {
-    if (!activeDoc) return;
-    const newIsBrain = !activeDoc.isAiBrain;
-    setDocuments((prev) =>
-      prev.map((d) =>
-        d.id === activeDoc.id
-          ? {
-              ...d,
-              isAiBrain: newIsBrain,
-              folderPath:
-                newIsBrain && (!d.folderPath || d.folderPath === 'عمومی')
-                  ? '🧠 مغز هوش مصنوعی'
-                  : d.folderPath,
-              updatedAt: Date.now(),
-            }
-          : d
-      )
-    );
-    setCloudNotice(
-      newIsBrain
-        ? '🧠 سند به مغز هوش مصنوعی (AI Brain) افزوده شد.'
-        : 'سند از مغز هوش مصنوعی خارج شد.'
-    );
-    setTimeout(() => setCloudNotice(null), 3000);
-  }, [activeDoc]);
-
-  // Interactive Task List Checkbox Click
-  const handleToggleTask = useCallback((taskIndex: number) => {
-    if (!activeDoc) return;
-    const updated = toggleTaskInMarkdown(activeDoc.content, taskIndex);
-    handleContentChange(updated, true);
-  }, [activeDoc, handleContentChange]);
-
-  // Live Teacher Highlighter from Preview
-  const handleHighlightFromPreview = useCallback((selectedText: string, color: HighlightColor) => {
-    if (!activeDoc || !selectedText.trim()) return;
-
-    const trimmed = selectedText.trim();
-    const currentContent = activeDoc.content;
-    const tagPrefix = color === 'yellow' ? '==' : `==${color}:`;
-    const tagSuffix = '==';
-
-    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    // 1. If already highlighted, update color
-    const existingHighlightRegex = new RegExp(`==(?:[a-z]+:)?\\s*(${escapeRegex(trimmed)})\\s*==`, 'i');
-    if (existingHighlightRegex.test(currentContent)) {
-      const updated = currentContent.replace(existingHighlightRegex, `${tagPrefix}$1${tagSuffix}`);
-      handleContentChange(updated, true);
-      return;
-    }
-
-    // 2. Exact match
-    const exactIdx = currentContent.indexOf(trimmed);
-    if (exactIdx !== -1) {
-      const updated =
-        currentContent.slice(0, exactIdx) +
-        `${tagPrefix}${trimmed}${tagSuffix}` +
-        currentContent.slice(exactIdx + trimmed.length);
-      handleContentChange(updated, true);
-      return;
-    }
-
-    // 3. Flexible words match
-    const words = trimmed.split(/\s+/).filter(Boolean).map(escapeRegex);
-    if (words.length > 0) {
-      const flexRegex = new RegExp(words.join('[\\s\\*\\_]+'));
-      const match = flexRegex.exec(currentContent);
-      if (match) {
-        const matchedStr = match[0];
-        const updated =
-          currentContent.slice(0, match.index) +
-          `${tagPrefix}${matchedStr}${tagSuffix}` +
-          currentContent.slice(match.index + matchedStr.length);
-        handleContentChange(updated, true);
-      }
-    }
-  }, [activeDoc, handleContentChange]);
-
-  // Remove highlight from Preview
-  const handleRemoveHighlightFromPreview = useCallback((highlightedText: string) => {
-    if (!activeDoc || !highlightedText.trim()) return;
-    const trimmed = highlightedText.trim();
-    const currentContent = activeDoc.content;
-    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const highlightRegex = new RegExp(`==(?:[a-z]+:)?\\s*(${escapeRegex(trimmed)})\\s*==`, 'i');
-    if (highlightRegex.test(currentContent)) {
-      const updated = currentContent.replace(highlightRegex, '$1');
-      handleContentChange(updated, true);
-    }
-  }, [activeDoc, handleContentChange]);
-
-  // Add Teacher Callout / Note
-  const handleAddTeacherNote = useCallback((targetText: string, noteText: string) => {
-    if (!activeDoc || !noteText.trim()) return;
-    const currentContent = activeDoc.content;
-    const trimmedTarget = targetText.trim();
-    const noteCallout = `\n\n> [!TIP]\n> **یادداشت مدرس:** ${noteText.trim()}\n\n`;
-
-    if (trimmedTarget && currentContent.includes(trimmedTarget)) {
-      const targetIndex = currentContent.indexOf(trimmedTarget);
-      const nextNewline = currentContent.indexOf('\n', targetIndex);
-      const insertAt = nextNewline !== -1 ? nextNewline : currentContent.length;
-      const updated = currentContent.slice(0, insertAt) + noteCallout + currentContent.slice(insertAt);
-      handleContentChange(updated, true);
-    } else {
-      handleContentChange(currentContent + noteCallout, true);
-    }
-  }, [activeDoc, handleContentChange]);
-
-  // Export handlers
+  // Export handlers (Authenticated only)
   const handleExportMarkdown = useCallback(() => {
     if (!activeDoc) return;
     const blob = new Blob([activeDoc.content], { type: 'text/markdown;charset=utf-8' });
@@ -1617,69 +986,59 @@ export default function App() {
     URL.revokeObjectURL(url);
   }, [activeDoc, effectiveDirection, renderedHtml]);
 
-  const handlePrint = useCallback(async () => {
+  const handlePrint = useCallback(() => {
     setBookletConfig(null);
-    await triggerDocumentPrint({
-      theme: 'light',
-      containerElement: (document.querySelector('.markdown-body') as HTMLElement) || null,
-    });
+    setTimeout(() => window.print(), 50);
   }, []);
 
-  const handlePrintBooklet = useCallback(async (config: BookletConfig) => {
+  const handlePrintBooklet = useCallback((config: BookletConfig) => {
     setBookletConfig(config);
-    await triggerDocumentPrint({
-      theme: 'light',
-      containerElement: (document.querySelector('.markdown-body') as HTMLElement) || null,
-    });
+    setTimeout(() => window.print(), 150);
   }, []);
 
   const handleCopyMarkdown = useCallback(() => {
-    if (activeDoc) {
-      navigator.clipboard.writeText(activeDoc.content);
-    }
+    if (activeDoc) navigator.clipboard.writeText(activeDoc.content);
   }, [activeDoc]);
 
   const handleCopyHtml = useCallback(() => {
     navigator.clipboard.writeText(renderedHtml);
   }, [renderedHtml]);
 
-  // Jump to heading in preview or editor
   const handleSelectHeading = useCallback((id: string, line?: number) => {
-    if (line && editorRef.current) {
-      editorRef.current.scrollToLine(line);
-    }
+    if (line && editorRef.current) editorRef.current.scrollToLine(line);
     const previewEl = previewScrollRef.current;
     if (previewEl) {
       const headingTarget = previewEl.querySelector(`#${id}`);
-      if (headingTarget) {
-        headingTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+      if (headingTarget) headingTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, []);
 
   // Search & Replace handlers
-  const handleSearch = useCallback((query: string, matchCase: boolean) => {
-    if (!activeDoc || !query) {
-      setSearchMatches([]);
-      return 0;
-    }
-    const text = activeDoc.content;
-    const flags = matchCase ? 'g' : 'gi';
-    try {
-      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(escaped, flags);
-      const matches: number[] = [];
-      let match;
-      while ((match = regex.exec(text)) !== null) {
-        matches.push(match.index);
+  const handleSearch = useCallback(
+    (query: string, matchCase: boolean) => {
+      if (!activeDoc || !query) {
+        setSearchMatches([]);
+        return 0;
       }
-      setSearchMatches(matches);
-      setCurrentMatchIndex(0);
-      return matches.length;
-    } catch {
-      return 0;
-    }
-  }, [activeDoc]);
+      const text = activeDoc.content;
+      const flags = matchCase ? 'g' : 'gi';
+      try {
+        const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, flags);
+        const matches: number[] = [];
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          matches.push(match.index);
+        }
+        setSearchMatches(matches);
+        setCurrentMatchIndex(0);
+        return matches.length;
+      } catch {
+        return 0;
+      }
+    },
+    [activeDoc]
+  );
 
   const handleNextMatch = useCallback(() => {
     if (searchMatches.length === 0) return;
@@ -1705,77 +1064,118 @@ export default function App() {
     }
   }, [searchMatches, currentMatchIndex]);
 
-  const handleReplace = useCallback((replaceWith: string) => {
-    if (!activeDoc || searchMatches.length === 0) return;
-    const matchIndex = searchMatches[currentMatchIndex];
-    if (matchIndex === undefined) return;
+  const handleReplace = useCallback(
+    (replaceWith: string) => {
+      if (!activeDoc || searchMatches.length === 0) return;
+      const matchIndex = searchMatches[currentMatchIndex];
+      if (matchIndex === undefined) return;
+      const textarea = editorRef.current?.getTextarea();
+      const queryLen = textarea ? textarea.selectionEnd - textarea.selectionStart : 0;
+      const newContent =
+        activeDoc.content.substring(0, matchIndex) +
+        replaceWith +
+        activeDoc.content.substring(matchIndex + Math.max(1, queryLen));
+      handleContentChange(newContent, true);
+    },
+    [activeDoc, searchMatches, currentMatchIndex, handleContentChange]
+  );
 
-    // Get current query length
-    const textarea = editorRef.current?.getTextarea();
-    const queryLen = textarea ? textarea.selectionEnd - textarea.selectionStart : 0;
-    const newContent =
-      activeDoc.content.substring(0, matchIndex) +
-      replaceWith +
-      activeDoc.content.substring(matchIndex + Math.max(1, queryLen));
+  const handleReplaceAll = useCallback(
+    (query: string, replaceWith: string, matchCase: boolean) => {
+      if (!activeDoc || !query) return 0;
+      const flags = matchCase ? 'g' : 'gi';
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, flags);
+      const matchesCount = (activeDoc.content.match(regex) || []).length;
+      const replaced = activeDoc.content.replace(regex, replaceWith);
+      handleContentChange(replaced, true);
+      setSearchMatches([]);
+      return matchesCount;
+    },
+    [activeDoc, handleContentChange]
+  );
 
-    handleContentChange(newContent, true);
-  }, [activeDoc, searchMatches, currentMatchIndex, handleContentChange]);
-
-  const handleReplaceAll = useCallback((query: string, replaceWith: string, matchCase: boolean) => {
-    if (!activeDoc || !query) return 0;
-    const flags = matchCase ? 'g' : 'gi';
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escaped, flags);
-    const matchesCount = (activeDoc.content.match(regex) || []).length;
-    const replaced = activeDoc.content.replace(regex, replaceWith);
-    handleContentChange(replaced, true);
-    setSearchMatches([]);
-    return matchesCount;
-  }, [activeDoc, handleContentChange]);
-
-  // Insert markdown helpers from toolbar
   const handleInsertMarkdown = useCallback((prefix: string, suffix?: string, defaultText?: string) => {
     editorRef.current?.insertMarkdown(prefix, suffix, defaultText);
   }, []);
-
   const handleInsertHighlight = useCallback((color: HighlightColor) => {
     editorRef.current?.insertHighlight(color);
   }, []);
-
   const handleInsertTable = useCallback((rows: number, cols: number) => {
     editorRef.current?.insertTable(rows, cols);
   }, []);
-
   const handleInsertCallout = useCallback((type: 'NOTE' | 'TIP' | 'IMPORTANT' | 'WARNING' | 'CAUTION') => {
     editorRef.current?.insertCallout(type);
   }, []);
 
+  // Determine top-level render mode
+  const isGuestMode = !currentUser && !sharedViewDoc && !sharedLinkError;
+  const isReadOnlyShared = Boolean(sharedViewDoc);
+
+  if (isAuthChecking || sharedLinkLoading) {
+    return (
+      <div className={`theme-${theme} flex flex-col items-center justify-center h-screen w-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans gap-3`} dir="rtl">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+        <p className="text-xs text-[var(--text-muted)]">در حال بارگذاری فضای کار...</p>
+      </div>
+    );
+  }
+
   return (
     <div className={`theme-${theme} flex flex-col h-screen w-screen overflow-hidden bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans`}>
+      {/* Hidden Guest Local File Input */}
+      <input
+        ref={guestFileInputRef}
+        type="file"
+        accept=".md,.markdown,.txt"
+        onChange={handleGuestFileChange}
+        className="hidden"
+      />
+
       {/* Top Navbar */}
       <Navbar
-        title={activeDoc?.title || ''}
-        onTitleChange={handleTitleChange}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        title={
+          isReadOnlyShared
+            ? sharedViewDoc?.title || ''
+            : isGuestMode
+            ? guestDoc?.title || ''
+            : activeDoc?.title || ''
+        }
+        onTitleChange={(newTitle) => {
+          if (isGuestMode) {
+            setGuestDoc((prev) => (prev ? { ...prev, title: newTitle } : null));
+          } else {
+            handleTitleChange(newTitle);
+          }
+        }}
+        viewMode={isGuestMode ? guestViewMode : viewMode}
+        onViewModeChange={(mode) => {
+          if (isGuestMode) {
+            if (mode !== 'presentation') setGuestViewMode(mode);
+          } else {
+            setViewMode(mode);
+          }
+        }}
         theme={theme}
         onThemeChange={setTheme}
         fontFamily={fontFamily}
         onFontFamilyChange={setFontFamily}
         direction={textDirection}
         onDirectionChange={setTextDirection}
-        onExportMarkdown={handleExportMarkdown}
+        onExportMarkdown={isGuestMode ? handleGuestExportMarkdown : handleExportMarkdown}
         onExportHtml={handleExportHtml}
         onPrint={handlePrint}
         onOpenBookletModal={() => setIsBookletModalOpen(true)}
         onOpenCommunity={() => setIsCommunityOpen(true)}
-        onOpenShareModal={() => setIsShareModalOpen(true)}
-        onOpenTemplates={() => setIsTemplatesOpen(true)}
+        onOpenShareModal={() => {
+          setShareTargetDocId(activeDoc?.id || null);
+          setIsShareModalOpen(true);
+        }}
         isCloudShared={activeDoc?.isCloudShared}
         cloudSyncStatus={cloudSyncStatus}
         onManualSyncCloud={handleManualSyncCloud}
         onCopyShareLink={handleCopyShareLink}
-        cloudFilesCount={cloudFilesCount}
+        cloudFilesCount={exploreFilesCount}
         onCopyMarkdown={handleCopyMarkdown}
         onCopyHtml={handleCopyHtml}
         onToggleSearch={() => setIsSearchOpen(!isSearchOpen)}
@@ -1787,551 +1187,542 @@ export default function App() {
         onOpenProfile={() => setIsProfileModalOpen(true)}
         onOpenMyDocuments={() => setIsMyDocumentsModalOpen(true)}
         onLogout={handleLogout}
-        onToggleComments={handleOpenCommentsClick}
-        commentsCount={activeDocCommentsCount}
-        folderPath={activeDoc?.folderPath}
-        onUpdateFolder={(newFolder) => activeDoc && handleUpdateDocFolder(activeDoc.id, newFolder)}
-        onSyncLocalDisk={handleSyncFromLocalDisk}
-        linkedLocalFolder={linkedFolders.length > 0 ? (linkedFolders.length === 1 ? linkedFolders[0].name : `${linkedFolders.length} پوشه`) : null}
-        isSyncingLocal={isSyncingLocal}
-        onOpenTopology={() => setIsTopologyOpen(true)}
-        isAiBrain={activeDoc?.isAiBrain}
-        onToggleAiBrain={handleToggleDocAiBrain}
-        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        isSidebarOpen={isSidebarOpen}
+        isGuestMode={isGuestMode}
+        isDashboardView={Boolean(currentUser && workspaceView === 'dashboard' && !sharedViewDoc && !sharedLinkError)}
+        isReadOnlyShared={isReadOnlyShared}
+        onBackToDashboard={() => {
+          setSharedViewDoc(null);
+          setSharedLinkError(null);
+          clearShareUrlParam();
+          setWorkspaceView('dashboard');
+        }}
+        onGuestOpenLocalFile={() => guestFileInputRef.current?.click()}
       />
 
-      {/* Disk Permission Recovery Banner (Visible when Chromium restricts write permission after refresh) */}
-      {(diskPermissionNeedsPrompt || pendingDiskWritesCount > 0) && linkedFolders.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-600/90 via-orange-600/90 to-amber-700/90 text-white px-4 py-2 text-xs flex items-center justify-between gap-3 shadow-md border-b border-amber-500/40 z-30 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <span className="text-base animate-pulse">⚠️</span>
-            <span className="font-semibold">
-              {pendingDiskWritesCount > 0
-                ? `${pendingDiskWritesCount} فایل دریافتی از Claude / مغز هوش مصنوعی منتظر ذخیره روی هارد هستند.`
-                : 'دسترسی نوشتن روی هارد دیسک پس از رفرش مرورگر نیازمند تأیید است.'}
-            </span>
+      {/* CASE 1: SHARED LINK ACCESS ERROR */}
+      {sharedLinkError ? (
+        <div className="flex-1 flex items-center justify-center p-6" dir="rtl">
+          <div className="max-w-md w-full rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-color)] p-8 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-500 flex items-center justify-center mx-auto">
+              <Lock className="w-7 h-7" />
+            </div>
+            <h2 className="text-base font-extrabold text-[var(--text-primary)]">
+              دسترسی به این سند امکان‌پذیر نیست
+            </h2>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed">{sharedLinkError}</p>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              {!currentUser ? (
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs cursor-pointer"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>ورود به حساب کاربری</span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setSharedLinkError(null);
+                  clearShareUrlParam();
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs font-semibold cursor-pointer"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>{currentUser ? 'بازگشت به داشبورد' : 'بازگشت به صفحه اصلی'}</span>
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={handleGrantDiskPermission}
-            className="px-3 py-1 bg-white text-amber-900 hover:bg-amber-100 font-bold rounded-lg shadow-xs transition-colors cursor-pointer shrink-0 text-[11px] flex items-center gap-1.5"
-          >
-            <span>🔓</span>
-            <span>تأیید دسترسی و ذخیره خودکار فایل‌ها روی کامپیوتر</span>
-          </button>
         </div>
-      )}
+      ) : isReadOnlyShared && sharedViewDoc ? (
+        /* CASE 2: READ-ONLY SHARED LINK OR PUBLIC EXPLORE READER */
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="no-print mx-4 mt-3 p-3 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex flex-wrap items-center justify-between gap-3 text-xs shrink-0" dir="rtl">
+            <div className="flex items-center gap-2.5">
+              <Eye className="w-4 h-4 text-amber-500 shrink-0" />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-bold text-[var(--text-primary)]">حالت مطالعه</span>
+                <span className="text-[var(--text-muted)]">·</span>
+                <span className="text-[var(--text-secondary)]">
+                  نویسنده: <strong className="text-[var(--text-primary)]">{sharedViewDoc.cloudAuthor || 'کاربر'}</strong>
+                </span>
+              </div>
+            </div>
 
-      {/* Formatting Toolbar (shown only in split and editor modes) */}
-      {viewMode !== 'preview' && viewMode !== 'workspace' && (
-        <Toolbar
-          onInsertMarkdown={handleInsertMarkdown}
-          onInsertHighlight={handleInsertHighlight}
-          onInsertTable={handleInsertTable}
-          onInsertCallout={handleInsertCallout}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          canUndo={historyIndex > 0}
-          canRedo={historyIndex < history.length - 1}
-          onOpenCheatsheet={() => setIsCheatsheetOpen(true)}
-        />
-      )}
+            <div className="flex items-center gap-2">
+              {currentUser ? (
+                <button
+                  type="button"
+                  onClick={() => handleForkDocument(sharedViewDoc)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs whitespace-nowrap cursor-pointer"
+                >
+                  <GitFork className="w-3.5 h-3.5" />
+                  <span>کپی به اسناد من و ویرایش</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs whitespace-nowrap cursor-pointer"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>ورود برای کپی و ویرایش در اسناد من</span>
+                </button>
+              )}
 
-      {/* Main Workspace: Sidebar + Editor/Preview + Outline */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Dark Navigation Sidebar (only shown in editing/preview modes, hidden in DocSend Workspace) */}
-        {viewMode !== 'workspace' && (
-          <Sidebar
-            documents={documents}
-            activeDocId={activeDocId}
-            onSelectDoc={setActiveDocId}
-            onCreateDoc={handleCreateDoc}
-            onOpenTemplates={() => setIsTemplatesOpen(true)}
-            onDeleteDoc={handleDeleteDoc}
-            onDuplicateDoc={handleDuplicateDoc}
-            onToggleFavorite={handleToggleFavorite}
-            onImportFiles={handleImportFiles}
-            onRestoreSamples={handleRestoreSamples}
-            isOpen={isSidebarOpen}
-            onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
-            onOpenCloudDoc={handleOpenFileFromCommunity}
-            onOpenPublishModal={() => setIsShareModalOpen(true)}
-            currentUser={currentUser}
-            onRequestAccess={(file) => setRequestedAccessFile(file)}
-            onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
-            pendingRequestsCount={pendingRequestsCount}
-            onBackToWorkspace={() => setViewMode('workspace')}
-            onUpdateDocFolder={handleUpdateDocFolder}
-            onSyncLocalDisk={handleSyncFromLocalDisk}
-            linkedLocalFolder={linkedFolders.length > 0 ? (linkedFolders.length === 1 ? linkedFolders[0].name : `${linkedFolders.length} پوشه`) : null}
-            isSyncingLocal={isSyncingLocal}
-            onDeleteFolder={handleDeleteFolder}
-            onToggleFolderBrain={handleToggleFolderBrain}
+              <button
+                type="button"
+                onClick={() => {
+                  setSharedViewDoc(null);
+                  clearShareUrlParam();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs font-medium cursor-pointer"
+              >
+                بستن
+              </button>
+            </div>
+          </div>
+
+          <Preview
+            scrollRef={previewScrollRef}
+            html={renderedHtml}
+            fontFamily={fontFamily}
+            direction={effectiveDirection}
           />
-        )}
-
-        {/* Central Panes */}
-        {viewMode === 'workspace' ? (
-          <DocSendSpaceView
-            documents={documents}
-            currentUser={currentUser}
-            onOpenDoc={(docId, mode = 'preview') => {
-              setActiveDocId(docId);
-              setViewMode(mode);
+        </div>
+      ) : isGuestMode ? (
+        /* CASE 3: GUEST LOCAL-ONLY MODE (Strictly opening, reading, editing, and saving a local file) */
+        guestDoc === null ? (
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsGuestDragging(true);
             }}
-            onCreateDoc={(folderPath) => {
-              handleCreateDoc(folderPath);
-              setViewMode('split');
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setIsGuestDragging(false);
             }}
-            onOpenCloudDoc={async (file) => {
-              const isOwner = currentUser && file.user_id === currentUser.id;
-              const isApproved = file.my_access_status === 'approved';
-              if (!file.is_public && !isOwner && !isApproved) {
-                setRequestedAccessFile(file);
-                return;
-              }
-              try {
-                const fullDoc = await cloudApi.getFileById(file.id);
-                const doc: MarkdownDoc = {
-                  id: fullDoc.id,
-                  title: fullDoc.title,
-                  content: fullDoc.content || '',
-                  createdAt: new Date(fullDoc.created_at).getTime(),
-                  updatedAt: new Date(fullDoc.updated_at).getTime(),
-                  tags: fullDoc.tags,
-                  isCloudShared: true,
-                  cloudAuthor: fullDoc.author_name,
-                  cloudSyncedAt: Date.now(),
-                };
-                handleOpenFileFromCommunity(doc);
-                setViewMode('preview');
-              } catch (err: any) {
-                if (err.isLocked) {
-                  setRequestedAccessFile(file);
-                } else {
-                  alert(err.message || 'خطا در بارگذاری فایل');
-                }
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsGuestDragging(false);
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                openLocalFileForGuest(e.dataTransfer.files[0]);
               }
             }}
-            onImportFiles={handleImportFiles}
-            onOpenTemplates={() => setIsTemplatesOpen(true)}
-            onOpenProfile={() => setIsProfileModalOpen(true)}
-            onOpenAuth={() => setIsAuthModalOpen(true)}
-            onOpenAccessRequestsManager={() => setIsAccessManagerOpen(true)}
-            pendingRequestsCount={pendingRequestsCount}
-            onUpdateDocFolder={handleUpdateDocFolder}
-            onDeleteDoc={handleDeleteDoc}
-            onOpenQuickSwitcher={() => setIsQuickSwitcherOpen(true)}
-            onRenameFolder={handleRenameFolder}
-            onDeleteFolder={handleDeleteFolder}
-            onSyncLocalDisk={handleSyncFromLocalDisk}
-            linkedLocalFolder={linkedFolders.length > 0 ? linkedFolders.map(f => f.name).join('، ') : null}
-            linkedFolders={linkedFolders}
-            onAddLocalFolder={() => handleSyncFromLocalDisk(true)}
-            isSyncingLocal={isSyncingLocal}
-            onUnlinkLocalFolder={handleUnlinkLocalFolder}
-            onOpenTopology={() => setIsTopologyOpen(true)}
-            onSyncAiBrain={handleSyncAiBrain}
-            isSyncingBrain={isSyncingBrain}
-            onOpenBrainManager={() => setIsBrainManagerOpen(true)}
-            onToggleFolderBrain={handleToggleFolderBrain}
-          />
+            className="flex-1 flex items-center justify-center p-6 overflow-y-auto"
+            dir="rtl"
+          >
+            <div
+              className={`max-w-lg w-full rounded-3xl bg-[var(--bg-secondary)] border p-8 sm:p-10 text-center space-y-6 transition-colors ${
+                isGuestDragging ? 'border-amber-500 bg-amber-500/5' : 'border-[var(--border-color)]'
+              }`}
+            >
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-500 flex items-center justify-center mx-auto">
+                <FileText className="w-7 h-7" />
+              </div>
+
+              <div className="space-y-2">
+                <h1 className="text-lg font-extrabold text-[var(--text-primary)]">
+                  مطالعه و ویرایش فایل مارک‌دان محلی
+                </h1>
+                <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                  پیش از ورود به حساب کاربری، می‌توانید فایل <span dir="ltr" className="font-mono">.md</span> یا <span dir="ltr" className="font-mono">.txt</span> را از سیستم خود باز کرده، مطالعه یا ویرایش کنید و خروجی آن را ذخیره نمایید.
+                </p>
+              </div>
+
+              <div
+                onClick={() => guestFileInputRef.current?.click()}
+                className="border-2 border-dashed border-[var(--border-color)] hover:border-amber-500/60 rounded-2xl p-6 cursor-pointer transition-colors space-y-2 bg-[var(--bg-primary)]/60"
+              >
+                <Upload className="w-6 h-6 text-amber-500 mx-auto" />
+                <div className="text-xs font-semibold text-[var(--text-primary)]">
+                  فایل را اینجا بکشید و رها کنید یا کلیک کنید
+                </div>
+                <div className="text-[11px] text-[var(--text-muted)]">
+                  پشتیبانی از فایل‌های .md، .markdown و .txt (بدون ذخیره در پلتفرم)
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[var(--border-color)] flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => guestFileInputRef.current?.click()}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs font-semibold cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 text-amber-500" />
+                  <span>باز کردن فایل از سیستم</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 text-xs font-bold cursor-pointer"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>ورود به فضای کار پلتفرم</span>
+                </button>
+              </div>
+            </div>
+          </div>
         ) : (
+          /* Guest Local File Reader / Editor */
           <main className="flex-1 flex overflow-hidden relative">
-          {/* Editor Pane (on mobile in split mode, desktop gets split view while mobile gets full view) */}
-          {(viewMode === 'split' || viewMode === 'editor') && (
-            <div className={`h-full ${viewMode === 'split' ? 'hidden md:flex flex-1' : 'flex-1 flex'} overflow-hidden`}>
+            {(guestViewMode === 'split' || guestViewMode === 'editor') && (
               <Editor
                 ref={editorRef}
-                value={activeDoc?.content || ''}
-                onChange={handleContentChange}
+                value={guestDoc.content}
+                onChange={(val) => setGuestDoc((prev) => (prev ? { ...prev, content: val } : null))}
                 fontFamily={fontFamily}
                 direction={effectiveDirection}
                 showLineNumbers={true}
-                onCursorChange={(line, col) => setCursorPos({ line, col })}
-                onSelectionChange={setSelectionStats}
-                onOpenSearch={() => setIsSearchOpen(true)}
-                onSave={handleExportMarkdown}
-                allDocs={documents}
+                onSave={handleGuestExportMarkdown}
               />
-            </div>
-          )}
+            )}
 
-          {/* Divider in Split Mode */}
-          {viewMode === 'split' && (
-            <div className="hidden md:block w-[1px] bg-[var(--border-color)] shrink-0 select-none relative group">
-              <div className="absolute inset-y-0 -start-1 -end-1 cursor-col-resize hover:bg-[#0061FF]/20" />
-            </div>
-          )}
+            {guestViewMode === 'split' && (
+              <div className="w-[1px] bg-[var(--border-color)] shrink-0 select-none" />
+            )}
 
-          {/* Preview Pane with Reader Mode Header for Shared Docs */}
-          {(viewMode === 'split' || viewMode === 'preview') && (
-            <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-              {/* Shared Doc Reader Mode Banner (DocSend Clean Style) */}
-              {activeDoc?.isCloudShared && (
-                <div className="no-print mx-2 sm:mx-4 mt-2 px-3 py-1.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-between gap-2 text-xs shrink-0 shadow-xs overflow-x-auto no-scrollbar">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('workspace')}
-                      className="me-2 text-[#0061FF] hover:bg-[#0061FF]/10 px-2 py-0.5 rounded-md font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
-                      title="بازگشت به داشبورد اصلی اسناد"
-                    >
-                      <LayoutDashboard className="w-3.5 h-3.5" />
-                      <span>داشبورد اسناد</span>
-                    </button>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="font-semibold text-xs text-[var(--text-secondary)]">
-                      سند اشتراکی ابری
-                    </span>
-                    {activeDoc.cloudAuthor && (
-                      <span className="text-[11px] text-[var(--text-muted)]">
-                        • نویسنده: <strong className="text-[var(--text-primary)]">{activeDoc.cloudAuthor}</strong>
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsCommentsOpen(true)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[#0061FF]/10 hover:text-[#0061FF] text-[var(--text-secondary)] text-xs font-semibold transition-colors cursor-pointer"
-                      title="مشاهده و ثبت نظرات این سند"
-                    >
-                      <MessageSquare className="w-3.5 h-3.5 text-[#0061FF]" />
-                      <span>نظرات ({activeDocCommentsCount})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleForkDocument(activeDoc)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0061FF]/10 hover:bg-[#0061FF]/20 text-[#0061FF] border border-[#0061FF]/25 font-bold text-xs transition-colors"
-                      title="ایجاد نسخه کپی در اسناد محلی شما جهت ویرایش"
-                    >
-                      <GitFork className="w-3 h-3" />
-                      <span>کپی و ویرایش (Fork)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('presentation')}
-                      className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[#0061FF] transition-colors"
-                      title="مشاهده در حالت ارائه / اسلاید"
-                    >
-                      <PresentationIcon className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
+            {(guestViewMode === 'split' || guestViewMode === 'preview') && (
               <Preview
                 scrollRef={previewScrollRef}
                 html={renderedHtml}
                 fontFamily={fontFamily}
                 direction={effectiveDirection}
-                onToggleTask={handleToggleTask}
-                onHighlightText={handleHighlightFromPreview}
-                onRemoveHighlight={handleRemoveHighlightFromPreview}
-                onAddTeacherNote={handleAddTeacherNote}
-                onToggleComments={handleOpenCommentsClick}
-                commentsCount={activeDocCommentsCount}
-                onBackToWorkspace={() => setViewMode('workspace')}
-                allDocs={documents}
-                activeDocTitle={activeDoc?.title}
-                onNavigateToDoc={(target, heading) => {
-                  const found = documents.find(
-                    (d) =>
-                      d.id === target ||
-                      d.title.trim().toLowerCase() === target.trim().toLowerCase()
-                  );
-                  if (found) {
-                    setActiveDocId(found.id);
-                    if (heading) {
-                      setTimeout(() => {
-                        const anchor = document.getElementById(slugify(heading));
-                        if (anchor) anchor.scrollIntoView({ behavior: 'smooth' });
-                      }, 100);
-                    }
-                  } else {
-                    setCloudNotice(`سند با عنوان «${target}» یافت نشد.`);
-                    setTimeout(() => setCloudNotice(null), 3000);
-                  }
-                }}
               />
-            </div>
-          )}
-
-          {/* Search & Replace Floating Window */}
-          <SearchReplaceModal
-            isOpen={isSearchOpen}
-            onClose={() => setIsSearchOpen(false)}
-            onSearch={handleSearch}
-            onReplace={handleReplace}
-            onReplaceAll={handleReplaceAll}
-            onNextMatch={handleNextMatch}
-            onPrevMatch={handlePrevMatch}
-            currentMatchIndex={currentMatchIndex}
-            totalMatches={searchMatches.length}
-          />
-        </main>
-        )}
-
-        {/* Document Outline / TOC Drawer */}
-        <Outline
-          headings={headings}
-          isOpen={isOutlineOpen}
-          onClose={() => setIsOutlineOpen(false)}
-          onSelectHeading={handleSelectHeading}
-        />
-      </div>
-
-      {/* Bottom Status Bar (hidden in Workspace / Space mode) */}
-      {viewMode !== 'workspace' && (
-        <StatsBar
-          stats={stats}
-          direction={effectiveDirection}
-          cursorPos={cursorPos}
-          selectionStats={selectionStats}
-          wordGoal={activeDoc?.wordGoal}
-          onUpdateWordGoal={handleUpdateWordGoal}
-          onGoalMet={() => setIsConfettiActive(true)}
-          syncStatus={effectiveSyncStatus}
-        />
-      )}
-
-      {/* Interactive Full-Screen Confetti Celebration Overlay */}
-      {isConfettiActive && (
-        <ConfettiOverlay
-          targetWords={activeDoc?.wordGoal}
-          currentWords={stats.words}
-          onClose={() => setIsConfettiActive(false)}
-        />
-      )}
-
-      {/* Cheatsheet Modal */}
-      <CheatsheetModal
-        isOpen={isCheatsheetOpen}
-        onClose={() => setIsCheatsheetOpen(false)}
-        onInsertExample={(text) => handleInsertMarkdown(text + '\n')}
-      />
-
-      {/* Pro Booklet Modal (Print / Save-as-PDF Publisher) */}
-      <BookletModal
-        isOpen={isBookletModalOpen}
-        onClose={() => setIsBookletModalOpen(false)}
-        documentTitle={activeDoc?.title || ''}
-        onPrintBooklet={handlePrintBooklet}
-      />
-
-      {/* Templates Modal */}
-      <TemplatesModal
-        isOpen={isTemplatesOpen}
-        onClose={() => setIsTemplatesOpen(false)}
-        onSelectTemplate={handleSelectTemplate}
-      />
-
-      {/* Cloud Community Files Modal */}
-      <CommunityModal
-        isOpen={isCommunityOpen}
-        onClose={() => {
-          setIsCommunityOpen(false);
-          cloudApi
-            .getHealth()
-            .then((h) => {
-              if (h?.stats?.totalFiles !== undefined) {
-                setCloudFilesCount(h.stats.totalFiles);
-              }
-            })
-            .catch(() => {});
-        }}
-        onOpenFileInEditor={handleOpenFileFromCommunity}
-        onOpenPublishModal={() => setIsShareModalOpen(true)}
-      />
-
-      {/* Cloud Share & Publish Modal */}
-      <SharePublishModal
-        isOpen={isShareModalOpen}
-        onClose={() => setIsShareModalOpen(false)}
-        documentTitle={activeDoc?.title || ''}
-        documentContent={activeDoc?.content || ''}
-        defaultAuthor={currentUser?.displayName}
-        folderPath={activeDoc?.folderPath}
-        onPublishedSuccess={(shareId) => {
-          setCloudFilesCount((prev) => prev + 1);
-          setDocuments((prev) =>
-            prev.map((d) =>
-              d.id === activeDocId
-                ? { ...d, isCloudShared: true, cloudSyncedAt: Date.now() }
-                : d
-            )
-          );
-          if (activeDoc) {
-            cloudSyncedStateRef.current[activeDoc.id] = { title: activeDoc.title, content: activeDoc.content };
-            setCloudSyncStatus('synced');
-          }
-          setCloudNotice('سند با موفقیت در پایگاه داده ابری Neon منتشر شد.');
-          setTimeout(() => setCloudNotice(null), 4000);
-        }}
-        onOpenCommunity={() => setIsCommunityOpen(true)}
-      />
-
-      {/* User Authentication Modal (Login / Register / Password Reset) */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => {
-          setIsAuthModalOpen(false);
-          setResetPasswordToken(null);
-        }}
-        onSuccess={handleLoginSuccess}
-        initialMode={resetPasswordToken ? 'reset' : 'login'}
-        resetToken={resetPasswordToken}
-      />
-
-      {/* Access Request Modal (for locked/private files) */}
-      <AccessRequestModal
-        isOpen={Boolean(requestedAccessFile)}
-        file={requestedAccessFile}
-        currentUser={currentUser}
-        onClose={() => setRequestedAccessFile(null)}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
-        onRequestSent={() => {
-          setCloudNotice("درخواست دسترسی با موفقیت ارسال شد.");
-          setTimeout(() => setCloudNotice(null), 4000);
-        }}
-      />
-
-      {/* Access Requests Manager Modal (for document owners) */}
-      <AccessRequestsManagerModal
-        isOpen={isAccessManagerOpen}
-        onClose={() => setIsAccessManagerOpen(false)}
-        onRequestsUpdated={fetchPendingRequestsCount}
-      />
-
-      {/* Document Comments Drawer */}
-      {activeDoc && (
-        <DocumentComments
-          isOpen={isCommentsOpen}
-          onClose={() => setIsCommentsOpen(false)}
-          fileId={activeDoc.id}
-          documentTitle={activeDoc.title}
+            )}
+          </main>
+        )
+      ) : workspaceView === 'dashboard' && currentUser ? (
+        /* CASE 4: AUTHENTICATED PERSONAL WORKSPACE DASHBOARD */
+        <WorkspaceDashboard
           currentUser={currentUser}
-          onOpenAuth={() => setIsAuthModalOpen(true)}
-          onCommentsCountChange={setActiveDocCommentsCount}
+          documents={documents}
+          isLoadingDocs={isLoadingDocs}
+          onCreateDoc={handleCreateDoc}
+          onImportFiles={handleImportFiles}
+          onOpenDoc={(docId, mode) => {
+            setActiveDocId(docId);
+            setViewMode(mode);
+            setWorkspaceView('editor');
+          }}
+          onShareDoc={(docId) => {
+            setActiveDocId(docId);
+            setShareTargetDocId(docId);
+            setIsShareModalOpen(true);
+          }}
+          onDeleteDoc={handleDeleteDoc}
+          onToggleFavorite={handleToggleFavorite}
+          onOpenExploreDoc={handleOpenExploreFile}
+          onForkExploreDoc={handleForkExploreFile}
+          exploreCountHint={exploreFilesCount}
         />
-      )}
-
-      {/* User Profile Modal */}
-      {currentUser && (
-        <ProfileModal
-          isOpen={isProfileModalOpen}
-          onClose={() => setIsProfileModalOpen(false)}
-          user={currentUser}
-          onUserUpdated={setCurrentUser}
-          onLogout={handleLogout}
-        />
-      )}
-
-      {/* User's Cloud Documents Modal */}
-      <MyDocumentsModal
-        isOpen={isMyDocumentsModalOpen}
-        onClose={() => setIsMyDocumentsModalOpen(false)}
-        onOpenDocument={handleOpenMyDocument}
-        userName={currentUser?.displayName}
-      />
-
-      {/* Quick Switcher Spotlight Modal (Ctrl+K) */}
-      <QuickSwitcherModal
-        isOpen={isQuickSwitcherOpen}
-        onClose={() => setIsQuickSwitcherOpen(false)}
-        documents={documents}
-        onSelectDoc={(docId, mode = 'split') => {
-          setActiveDocId(docId);
-          setViewMode(mode);
-        }}
-      />
-
-      {/* Neural Topology Interactive Graph Modal */}
-      <NeuralTopologyModal
-        isOpen={isTopologyOpen}
-        onClose={() => setIsTopologyOpen(false)}
-        documents={documents}
-        activeDocId={activeDocId}
-        onSelectDoc={(docId) => {
-          setActiveDocId(docId);
-          setViewMode('preview');
-        }}
-      />
-
-      {/* AI Brain Vault Manager Modal (Empty / Populate / Select Folders) */}
-      <AiBrainManagerModal
-        isOpen={isBrainManagerOpen}
-        onClose={() => setIsBrainManagerOpen(false)}
-        documents={documents}
-        onUpdateDocuments={setDocuments}
-        onSyncBrainToServer={handleSyncAiBrain}
-        onPurgeServerBrain={handlePurgeServerBrain}
-        isSyncing={isSyncingBrain}
-        onFetchFromCloud={() => handleFetchAndMergeAiBrainDocs(false)}
-        linkedFolders={linkedFolders}
-        onGrantDiskPermission={handleGrantDiskPermission}
-        onSyncLocalDisk={() => handleSyncFromLocalDisk(true)}
-      />
-
-      {/* Cloud Toast Notice */}
-      {cloudNotice && (
-        <div className="fixed bottom-12 start-1/2 -translate-x-1/2 z-50 bg-white border border-[#e5e5e5] text-[#1a1a1a] px-4 py-2.5 rounded-lg shadow-lg text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <Database className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{cloudNotice}</span>
-        </div>
-      )}
-
-      {/* Presentation / Teacher Slides Mode */}
-      {viewMode === 'presentation' && activeDoc && (
-        <PresentationView
-          markdown={activeDoc.content}
-          title={activeDoc.title}
-          fontFamily={fontFamily}
-          direction={effectiveDirection}
-          onExit={() => setViewMode('preview')}
-          onToggleTask={handleToggleTask}
-        />
-      )}
-
-      {/* Hidden Booklet Cover & Watermark (Rendered during Print) */}
-      {bookletConfig && (
+      ) : (
+        /* CASE 5: AUTHENTICATED FULL EDITOR WORKSPACE */
         <>
-          {bookletConfig.includeCover && (
-            <div className="booklet-cover-page" dir={effectiveDirection}>
-              <div className="text-sm font-semibold tracking-wider text-neutral-500 uppercase border-b border-neutral-300 pb-4">
-                {bookletConfig.institution || 'آکادمی آموزش تخصصی'}
-              </div>
-              <div className="my-auto space-y-6 py-12">
-                <h1 className="text-4xl font-extrabold text-neutral-900 leading-tight">
-                  {activeDoc?.title || 'کتابچه و جزوه آموزشی'}
-                </h1>
-                {bookletConfig.subtitle && (
-                  <p className="text-xl text-neutral-600 font-medium">
-                    {bookletConfig.subtitle}
-                  </p>
-                )}
-                <div className="w-24 h-1 bg-[#0061FF] mx-auto rounded-full mt-6" />
-              </div>
-              <div className="border-t border-neutral-300 pt-4 flex items-center justify-between text-xs text-neutral-600">
-                <div>
-                  <strong>مدرس / مؤلف:</strong> {bookletConfig.authorName || 'مدرس دوره'}
-                </div>
-                {bookletConfig.showDate && (
-                  <div>
-                    <strong>تاریخ انتشار:</strong> {new Date().toLocaleDateString('fa-IR')}
-                  </div>
-                )}
-              </div>
-            </div>
+          {viewMode !== 'preview' && (
+            <Toolbar
+              onInsertMarkdown={handleInsertMarkdown}
+              onInsertHighlight={handleInsertHighlight}
+              onInsertTable={handleInsertTable}
+              onInsertCallout={handleInsertCallout}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              canUndo={historyIndex > 0}
+              canRedo={historyIndex < history.length - 1}
+              onOpenCheatsheet={() => setIsCheatsheetOpen(true)}
+            />
           )}
-          {bookletConfig.watermark && (
-            <div className="booklet-watermark-overlay" aria-hidden="true">
-              {bookletConfig.watermark}
-            </div>
+
+          <div className="flex-1 flex overflow-hidden relative">
+            <Sidebar
+              documents={documents}
+              activeDocId={activeDocId}
+              onSelectDoc={(id) => {
+                setActiveDocId(id);
+                setWorkspaceView('editor');
+              }}
+              onCreateDoc={handleCreateDoc}
+              onDeleteDoc={handleDeleteDoc}
+              onDuplicateDoc={handleDuplicateDoc}
+              onToggleFavorite={handleToggleFavorite}
+              onImportFiles={handleImportFiles}
+              isOpen={isSidebarOpen}
+              onToggleOpen={() => setIsSidebarOpen(!isSidebarOpen)}
+              onOpenCloudDoc={handleOpenDocFromCommunity}
+              onOpenPublishModal={() => {
+                setShareTargetDocId(activeDoc?.id || null);
+                setIsShareModalOpen(true);
+              }}
+            />
+
+            <main className="flex-1 flex overflow-hidden relative">
+              {!activeDoc ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3" dir="rtl">
+                  <FileText className="w-10 h-10 text-[var(--text-muted)]" />
+                  <p className="text-sm font-bold">هیچ سندی انتخاب نشده است</p>
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceView('dashboard')}
+                    className="px-4 py-2 rounded-xl bg-amber-500 text-neutral-950 font-bold text-xs cursor-pointer"
+                  >
+                    بازگشت به داشبورد اسناد
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {(viewMode === 'split' || viewMode === 'editor') && (
+                    <Editor
+                      ref={editorRef}
+                      value={activeDoc.content}
+                      onChange={handleContentChange}
+                      fontFamily={fontFamily}
+                      direction={effectiveDirection}
+                      showLineNumbers={true}
+                      onCursorChange={(line, col) => setCursorPos({ line, col })}
+                      onSelectionChange={setSelectionStats}
+                      onOpenSearch={() => setIsSearchOpen(true)}
+                      onSave={handleExportMarkdown}
+                    />
+                  )}
+
+                  {viewMode === 'split' && (
+                    <div className="w-[1px] bg-[var(--border-color)] shrink-0 select-none relative group">
+                      <div className="absolute inset-y-0 -start-1 -end-1 cursor-col-resize hover:bg-amber-500/20" />
+                    </div>
+                  )}
+
+                  {(viewMode === 'split' || viewMode === 'preview') && (
+                    <div className="flex-1 flex flex-col h-full overflow-hidden">
+                      <Preview
+                        scrollRef={previewScrollRef}
+                        html={renderedHtml}
+                        fontFamily={fontFamily}
+                        direction={effectiveDirection}
+                        onToggleTask={handleToggleTask}
+                        onHighlightText={handleHighlightFromPreview}
+                        onRemoveHighlight={handleRemoveHighlightFromPreview}
+                        onAddTeacherNote={handleAddTeacherNote}
+                      />
+                    </div>
+                  )}
+
+                  <SearchReplaceModal
+                    isOpen={isSearchOpen}
+                    onClose={() => setIsSearchOpen(false)}
+                    onSearch={handleSearch}
+                    onReplace={handleReplace}
+                    onReplaceAll={handleReplaceAll}
+                    onNextMatch={handleNextMatch}
+                    onPrevMatch={handlePrevMatch}
+                    currentMatchIndex={currentMatchIndex}
+                    totalMatches={searchMatches.length}
+                  />
+                </>
+              )}
+            </main>
+
+            <Outline
+              headings={headings}
+              isOpen={isOutlineOpen}
+              onClose={() => setIsOutlineOpen(false)}
+              onSelectHeading={handleSelectHeading}
+            />
+          </div>
+
+          {activeDoc && (
+            <StatsBar
+              stats={stats}
+              direction={effectiveDirection}
+              cursorPos={cursorPos}
+              selectionStats={selectionStats}
+              wordGoal={activeDoc.wordGoal}
+              onUpdateWordGoal={handleUpdateWordGoal}
+              onGoalMet={() => setIsConfettiActive(true)}
+              syncStatus={cloudSyncStatus}
+            />
           )}
         </>
+      )}
+
+      {/* AUTHENTICATED MODALS ONLY */}
+      {currentUser && (
+        <>
+          {isConfettiActive && (
+            <ConfettiOverlay
+              targetWords={activeDoc?.wordGoal}
+              currentWords={stats.words}
+              onClose={() => setIsConfettiActive(false)}
+            />
+          )}
+
+          <CheatsheetModal
+            isOpen={isCheatsheetOpen}
+            onClose={() => setIsCheatsheetOpen(false)}
+            onInsertExample={(text) => handleInsertMarkdown(text + '\n')}
+          />
+
+          <BookletModal
+            isOpen={isBookletModalOpen}
+            onClose={() => setIsBookletModalOpen(false)}
+            documentTitle={activeDoc?.title || ''}
+            onPrintBooklet={handlePrintBooklet}
+          />
+
+          <CommunityModal
+            isOpen={isCommunityOpen}
+            onClose={() => {
+              setIsCommunityOpen(false);
+              cloudApi
+                .getHealth()
+                .then((h) => {
+                  if (h?.stats?.totalFiles !== undefined) {
+                    setExploreFilesCount(h.stats.totalFiles);
+                  }
+                })
+                .catch(() => {});
+            }}
+            onOpenFileInEditor={handleOpenDocFromCommunity}
+            onOpenPublishModal={() => {
+              setShareTargetDocId(activeDoc?.id || null);
+              setIsShareModalOpen(true);
+            }}
+            currentUserId={currentUser.id}
+          />
+
+          <SharePublishModal
+            isOpen={isShareModalOpen}
+            onClose={() => {
+              setIsShareModalOpen(false);
+              setShareTargetDocId(null);
+            }}
+            documentId={shareTargetDoc?.id}
+            isExistingCloudDoc={Boolean(shareTargetDoc?.isCloudShared && shareTargetDoc?.isOwner)}
+            documentTitle={shareTargetDoc?.title || ''}
+            documentContent={shareTargetDoc?.content || ''}
+            initialDescription={shareTargetDoc?.description || ''}
+            initialTags={shareTargetDoc?.tags || []}
+            initialVisibility={shareTargetDoc?.visibility || 'private'}
+            defaultAuthor={currentUser.displayName}
+            onPublishedSuccess={(shareId, meta) => {
+              const targetId = shareTargetDoc?.id || shareId;
+              setDocuments((prev) =>
+                prev.map((d) =>
+                  d.id === targetId
+                    ? {
+                        ...d,
+                        id: shareId,
+                        title: meta.title,
+                        description: meta.description,
+                        tags: meta.tags,
+                        visibility: meta.visibility,
+                        isCloudShared: true,
+                        isOwner: true,
+                        cloudSyncedAt: Date.now(),
+                      }
+                    : d
+                )
+              );
+              cloudApi
+                .getHealth()
+                .then((h) => {
+                  if (h?.stats?.totalFiles !== undefined) {
+                    setExploreFilesCount(h.stats.totalFiles);
+                  }
+                })
+                .catch(() => {});
+              showNotice('تنظیمات دسترسی سند با موفقیت ذخیره شد.');
+            }}
+            onOpenCommunity={() => setIsCommunityOpen(true)}
+          />
+
+          <ProfileModal
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+            user={currentUser}
+            onUserUpdated={(updatedUser) => {
+              setCurrentUser(updatedUser);
+              setDocuments((prev) =>
+                prev.map((d) =>
+                  d.isOwner ? { ...d, cloudAuthor: updatedUser.displayName } : d
+                )
+              );
+            }}
+            onLogout={handleLogout}
+          />
+
+          <MyDocumentsModal
+            isOpen={isMyDocumentsModalOpen}
+            onClose={() => setIsMyDocumentsModalOpen(false)}
+            onOpenDocument={handleOpenMyDocument}
+            userName={currentUser.displayName}
+          />
+
+          {viewMode === 'presentation' && activeDoc && workspaceView === 'editor' && (
+            <PresentationView
+              markdown={activeDoc.content}
+              title={activeDoc.title}
+              fontFamily={fontFamily}
+              direction={effectiveDirection}
+              onExit={() => setViewMode('preview')}
+              onToggleTask={handleToggleTask}
+            />
+          )}
+
+          {bookletConfig && (
+            <>
+              {bookletConfig.includeCover && (
+                <div className="booklet-cover-page" dir={effectiveDirection}>
+                  <div className="text-sm font-semibold tracking-wider text-neutral-500 uppercase border-b border-neutral-300 pb-4">
+                    {bookletConfig.institution || 'آکادمی آموزش تخصصی'}
+                  </div>
+                  <div className="my-auto space-y-6 py-12">
+                    <h1 className="text-4xl font-extrabold text-neutral-900 leading-tight">
+                      {activeDoc?.title || 'کتابچه و جزوه آموزشی'}
+                    </h1>
+                    {bookletConfig.subtitle && (
+                      <p className="text-xl text-neutral-600 font-medium">
+                        {bookletConfig.subtitle}
+                      </p>
+                    )}
+                    <div className="w-24 h-1 bg-amber-500 mx-auto rounded-full mt-6" />
+                  </div>
+                  <div className="border-t border-neutral-300 pt-4 flex items-center justify-between text-xs text-neutral-600">
+                    <div>
+                      <strong>مؤلف:</strong> {bookletConfig.authorName || currentUser.displayName}
+                    </div>
+                    {bookletConfig.showDate && (
+                      <div>
+                        <strong>تاریخ:</strong> {new Date().toLocaleDateString('fa-IR')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {bookletConfig.watermark && (
+                <div className="booklet-watermark-overlay" aria-hidden="true">
+                  {bookletConfig.watermark}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* User Authentication Modal (Accessible in Guest / Shared modes) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={handleLoginSuccess}
+      />
+
+      {/* Toast Notice */}
+      {toastNotice && (
+        <div className="fixed bottom-12 start-1/2 -translate-x-1/2 z-50 bg-neutral-900 border border-emerald-500/40 text-emerald-400 px-4 py-2.5 rounded-2xl shadow-2xl text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastNotice}</span>
+        </div>
       )}
     </div>
   );

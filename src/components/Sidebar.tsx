@@ -1,59 +1,40 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   FileText,
-  FolderTree,
-  Folder,
-  FolderOpen,
-  FolderUp,
-  Star,
-  Trash2,
-  Search,
-  X,
-  RotateCcw,
-  FolderKanban,
-  LayoutDashboard,
-  BarChart3,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
   Plus,
   Upload,
-  User,
-  ArrowUpDown,
-  Link2,
+  Search,
+  Star,
+  Trash2,
+  Copy,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+  RefreshCw,
+  FileCode,
+  Globe,
   Check,
+  Share2,
+  Loader2,
+  Lock,
+  Link2,
 } from 'lucide-react';
-import { MarkdownDoc, UserProfile, DocSortOption } from '../types';
-import { SharedMarkdownFile } from '../services/cloudApi';
-import { buildDocTree, DocTreeNode, countTreeDocs, getFolderTheme } from '../utils/docTree';
+import { MarkdownDoc } from '../types';
+import { cloudApi, SharedMarkdownFile } from '../services/cloudApi';
 
 interface SidebarProps {
   documents: MarkdownDoc[];
   activeDocId: string;
   onSelectDoc: (id: string) => void;
   onCreateDoc: () => void;
-  onOpenTemplates?: () => void;
   onDeleteDoc: (id: string) => void;
   onDuplicateDoc: (id: string) => void;
   onToggleFavorite: (id: string) => void;
-  onImportFiles: (files: FileList | File[]) => void;
-  onRestoreSamples: () => void;
+  onImportFiles: (files: FileList) => void;
   isOpen: boolean;
   onToggleOpen: () => void;
   onOpenCloudDoc?: (doc: MarkdownDoc) => void;
   onOpenPublishModal?: () => void;
-  currentUser?: UserProfile | null;
-  onRequestAccess?: (file: SharedMarkdownFile) => void;
-  onOpenAccessRequestsManager?: () => void;
-  pendingRequestsCount?: number;
-  onBackToWorkspace?: () => void;
-  onUpdateDocFolder?: (docId: string, folderPath?: string) => void;
-  onDeleteFolder?: (folderPath: string) => void;
-  onToggleFolderBrain?: (folderPath: string) => void;
-  onSyncLocalDisk?: (forcePickNew?: boolean) => void;
-  linkedLocalFolder?: string | null;
-  isSyncingLocal?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -62,64 +43,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectDoc,
   onCreateDoc,
   onDeleteDoc,
+  onDuplicateDoc,
   onToggleFavorite,
-  onOpenTemplates,
   onImportFiles,
-  onRestoreSamples,
-  onUpdateDocFolder,
-  onDeleteFolder,
-  onToggleFolderBrain,
   isOpen,
   onToggleOpen,
-  currentUser,
-  pendingRequestsCount = 0,
-  onBackToWorkspace,
-  onSyncLocalDisk,
-  linkedLocalFolder,
-  isSyncingLocal = false,
+  onOpenCloudDoc,
+  onOpenPublishModal,
 }) => {
-  const [activeNavItem, setActiveNavItem] = useState<'content' | 'spaces' | 'analytics' | 'settings'>('content');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<'my-docs' | 'explore'>('my-docs');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<DocSortOption>('upload-desc');
-  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
-  const [copiedEmbedTitle, setCopiedEmbedTitle] = useState<string | null>(null);
+  const [filterFavorite, setFilterFavorite] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleCopyEmbedTag = (title: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(`![[${title}]]`);
-    setCopiedEmbedTitle(title);
-    setTimeout(() => setCopiedEmbedTitle(null), 2000);
-  };
+  // Public Explore state inside sidebar
+  const [exploreFiles, setExploreFiles] = useState<SharedMarkdownFile[]>([]);
+  const [isExploreLoading, setIsExploreLoading] = useState(false);
+  const [exploreSearch, setExploreSearch] = useState('');
+  const [exploreError, setExploreError] = useState<string | null>(null);
+  const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
 
-  const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      onImportFiles(e.target.files);
-      if (folderInputRef.current) folderInputRef.current.value = '';
+  const fetchExploreFiles = useCallback(async () => {
+    setIsExploreLoading(true);
+    setExploreError(null);
+    try {
+      const res = await cloudApi.getFiles({ search: exploreSearch, limit: 30 });
+      setExploreFiles(res.files);
+    } catch (err: any) {
+      setExploreError(err.message || 'خطا در دریافت اسناد اکسپلور عمومی');
+    } finally {
+      setIsExploreLoading(false);
     }
-  };
+  }, [exploreSearch]);
 
-  const toggleFolderCollapse = (path: string) => {
-    setCollapsedFolders((prev) => ({
-      ...prev,
-      [path]: !prev[path],
-    }));
-  };
+  useEffect(() => {
+    if (activeTab === 'explore') {
+      fetchExploreFiles();
+    }
+  }, [activeTab, fetchExploreFiles]);
 
-  const filteredDocs = useMemo(() => {
-    if (!searchQuery.trim()) return documents;
-    const q = searchQuery.toLowerCase();
-    return documents.filter(
-      (d) =>
-        d.title.toLowerCase().includes(q) ||
-        Boolean(d.folderPath && d.folderPath.toLowerCase().includes(q))
-    );
-  }, [documents, searchQuery]);
-
-  const docTree = useMemo(() => {
-    return buildDocTree(filteredDocs, sortBy);
-  }, [filteredDocs, sortBy]);
+  const filteredDocs = documents.filter((doc) => {
+    const matchesSearch =
+      doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      doc.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (doc.tags && doc.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
+    const matchesFav = filterFavorite ? doc.isFavorite : true;
+    return matchesSearch && matchesFav;
+  });
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -128,215 +100,82 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const navItems = [
-    {
-      id: 'spaces',
-      label: 'داشبورد اسناد',
-      icon: <LayoutDashboard className="w-5 h-5 text-[#0061FF]" />,
-      onClick: () => {
-        setActiveNavItem('spaces');
-        if (onBackToWorkspace) onBackToWorkspace();
-      },
-      badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined
-    },
-    {
-      id: 'content',
-      label: 'سرفصل‌ها و اسناد',
-      icon: <FolderTree className="w-5 h-5" />,
-      onClick: () => {
-        setActiveNavItem('content');
-        if (!isOpen) onToggleOpen();
-      }
-    },
-    {
-      id: 'analytics',
-      label: 'آمار',
-      icon: <BarChart3 className="w-5 h-5" />,
-      onClick: () => setActiveNavItem('analytics')
-    },
-    {
-      id: 'settings',
-      label: 'تنظیمات',
-      icon: <Settings className="w-5 h-5" />,
-      onClick: () => setActiveNavItem('settings')
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      onImportFiles(e.dataTransfer.files);
     }
-  ];
+  };
 
-  const totalWords = useMemo(() => {
-    return documents.reduce((sum, d) => sum + (d.content ? d.content.trim().split(/\s+/).length : 0), 0);
-  }, [documents]);
+  const handleCopyShareLink = (e: React.MouseEvent, fileId: string) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/?share=${fileId}`;
+    navigator.clipboard.writeText(url);
+    setCopiedShareId(fileId);
+    setTimeout(() => setCopiedShareId(null), 2000);
+  };
 
-  const renderTreeNode = (node: DocTreeNode, depth: number = 0): React.ReactNode => {
+  const handleOpenExploreDoc = async (file: SharedMarkdownFile) => {
+    if (!onOpenCloudDoc) return;
+    setExploreError(null);
+    try {
+      const fullDoc = await cloudApi.getFileById(file.id);
+      const doc: MarkdownDoc = {
+        id: fullDoc.id,
+        title: fullDoc.title,
+        content: fullDoc.content || '',
+        description: fullDoc.description,
+        createdAt: new Date(fullDoc.created_at).getTime(),
+        updatedAt: new Date(fullDoc.updated_at).getTime(),
+        tags: fullDoc.tags,
+        visibility: fullDoc.visibility || (fullDoc.is_public ? 'public' : 'private'),
+        isCloudShared: true,
+        cloudAuthor: fullDoc.author_name,
+        userId: fullDoc.user_id,
+        isOwner: fullDoc.is_owner,
+        cloudSyncedAt: Date.now(),
+      };
+      onOpenCloudDoc(doc);
+    } catch (err: any) {
+      setExploreError(err.message || 'خطا در باز کردن سند');
+    }
+  };
+
+  if (!isOpen) {
     return (
-      <div key={node.fullPath || 'root-level'} className="flex flex-col">
-        {node.children.map((child) => {
-          const isCollapsed = Boolean(collapsedFolders[child.fullPath]);
-          const docCount = countTreeDocs(child);
-          const theme = getFolderTheme(child.name);
-          return (
-            <div key={child.fullPath} className="flex flex-col">
-              <button
-                type="button"
-                onClick={() => toggleFolderCollapse(child.fullPath)}
-                style={{ paddingInlineStart: `${Math.max(8, depth * 12 + 6)}px` }}
-                className="flex items-center justify-between py-1.5 px-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--tile-hover)] rounded-lg transition-colors group cursor-pointer text-start w-full"
-                title={child.fullPath}
-              >
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  {isCollapsed ? (
-                    <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)] rtl:rotate-180" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
-                  )}
-                  {isCollapsed ? (
-                    <Folder className={`w-3.5 h-3.5 shrink-0 ${theme.icon}`} />
-                  ) : (
-                    <FolderOpen className={`w-3.5 h-3.5 shrink-0 ${theme.icon}`} />
-                  )}
-                  <span className="truncate font-semibold text-[11px] text-[var(--text-primary)]">
-                    {child.name}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0 ms-1">
-                  {onToggleFolderBrain && (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleFolderBrain(child.fullPath);
-                      }}
-                      className={`p-0.5 rounded transition-all cursor-pointer ${
-                        child.docs.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'))
-                          ? 'opacity-100 hover:scale-110'
-                          : 'opacity-0 group-hover:opacity-100 hover:scale-110 text-gray-400'
-                      }`}
-                      title={
-                        child.docs.some((d) => d.isAiBrain || d.tags?.includes('ai-brain'))
-                          ? 'پوشه در مغز هوش مصنوعی است (کلیک برای خروج)'
-                          : 'افزودن این پوشه به مغز هوش مصنوعی'
-                      }
-                    >
-                      🧠
-                    </span>
-                  )}
-                  {onDeleteFolder && child.name !== 'عمومی' && (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteFolder(child.fullPath);
-                      }}
-                      className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer"
-                      title={`حذف پوشه «${child.name}» و اسناد داخل آن`}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </span>
-                  )}
-                  <span className={`text-[10px] ${theme.badge} border px-1.5 py-0.2 rounded-full font-mono`}>
-                    {docCount}
-                  </span>
-                </div>
-              </button>
-              {!isCollapsed && renderTreeNode(child, depth + 1)}
-            </div>
-          );
-        })}
-        {node.docs.map((doc) => {
-          const isActive = activeDocId === doc.id;
-          return (
-            <div
-              key={doc.id}
-              style={{ paddingInlineStart: `${Math.max(12, (depth + 1) * 12 + 6)}px` }}
-              onClick={() => onSelectDoc(doc.id)}
-              className={`group flex items-center justify-between py-1.5 px-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                isActive
-                  ? 'bg-[var(--tile-active)] text-[#0061FF] dark:text-blue-400 font-bold border-e-2 border-[#0061FF] shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--tile-hover)]'
-              }`}
-              title={doc.title}
-            >
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <FileText
-                  className={`w-3.5 h-3.5 shrink-0 ${
-                    isActive ? 'text-[#0061FF] dark:text-blue-400' : 'text-[var(--text-muted)]'
-                  }`}
-                />
-                <span className="truncate text-[11px]">{doc.title || 'سند بدون عنوان'}</span>
-              </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                <button
-                  type="button"
-                  onClick={(e) => handleCopyEmbedTag(doc.title, e)}
-                  className="p-1 text-gray-400 hover:text-[#0061FF] transition-colors cursor-pointer"
-                  title={`کپی تگ جاسازی (Embed): ![[${doc.title}]]`}
-                >
-                  {copiedEmbedTitle === doc.title ? (
-                    <Check className="w-3 h-3 text-emerald-400" />
-                  ) : (
-                    <Link2 className="w-3 h-3" />
-                  )}
-                </button>
-                {onToggleFavorite && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleFavorite(doc.id);
-                    }}
-                    className="p-1 text-gray-400 hover:text-amber-400 transition-colors cursor-pointer"
-                    title="نشان‌کردن"
-                  >
-                    <Star
-                      className={`w-3 h-3 ${
-                        doc.isFavorite ? 'fill-amber-400 text-amber-400' : ''
-                      }`}
-                    />
-                  </button>
-                )}
-                {onDeleteDoc && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(`سند «${doc.title}» حذف شود؟`)) {
-                        onDeleteDoc(doc.id);
-                      }
-                    }}
-                    className="p-1 text-gray-400 hover:text-rose-400 transition-colors cursor-pointer"
-                    title="حذف"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div className="shrink-0 p-2 z-20">
+        <button
+          type="button"
+          onClick={onToggleOpen}
+          className="p-2 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors shadow-sm cursor-pointer"
+          title="باز کردن فهرست اسناد"
+        >
+          <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
+        </button>
       </div>
     );
-  };
-
-  const getInitials = (name: string) => {
-    if (!name) return 'U';
-    return name.substring(0, 2).toUpperCase();
-  };
+  }
 
   return (
-    <>
-      {/* Mobile Drawer Backdrop */}
-      {isOpen && (
-        <div
-          onClick={onToggleOpen}
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 md:hidden transition-opacity"
-          aria-hidden="true"
-        />
-      )}
-
-      <aside
-        className={`h-full flex flex-col frosted-sidebar text-[var(--text-primary)] select-none transition-all duration-200 ${
-          isOpen
-            ? 'fixed inset-y-0 start-0 z-50 w-72 max-w-[85vw] shadow-2xl md:relative md:inset-auto md:w-64 md:shadow-none'
-            : 'hidden md:flex md:relative md:w-16'
-        }`}
-      >
+    <aside
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`relative w-80 h-full flex flex-col bg-[var(--bg-secondary)] border-e border-[var(--border-color)] shrink-0 z-20 transition-all select-none ${
+        isDragging ? 'ring-2 ring-amber-500 bg-amber-500/10' : ''
+      }`}
+    >
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -347,373 +186,369 @@ export const Sidebar: React.FC<SidebarProps> = ({
         className="hidden"
       />
 
-      {/* Hidden folder input */}
-      <input
-        ref={folderInputRef}
-        type="file"
-        {...({ webkitdirectory: '', directory: '' } as any)}
-        multiple
-        onChange={handleFolderInputChange}
-        className="hidden"
-      />
+      {/* Top Header & Branding */}
+      <div className="p-3.5 border-b border-[var(--border-color)] flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-amber-500 flex items-center justify-center text-neutral-950 font-bold">
+            <FileCode className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-[var(--text-primary)]">
+              استودیو مارک‌دان
+            </div>
+            <div className="text-[10px] text-[var(--text-muted)]">فضای کار اختصاصی شما</div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onToggleOpen}
+          className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+          title="بستن پنل"
+        >
+          <ChevronRight className="w-4 h-4 rtl:rotate-180" />
+        </button>
+      </div>
 
-      {/* 1. Logo Area */}
-      <div
-        className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-[var(--tile-hover)] transition-colors border-b border-[var(--glass-border)]"
-        onClick={() => {
-          if (onBackToWorkspace) onBackToWorkspace();
-          else onToggleOpen();
-        }}
-        title="بازگشت به داشبورد اصلی اسناد"
-      >
-        <div className="flex items-center min-w-0">
-          <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-[#0061FF] flex items-center justify-center text-white font-bold shadow-md">
-            M
+      {/* TAB SELECTOR: My Documents vs Public Explore */}
+      <div className="p-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)]/40 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab('my-docs')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+            activeTab === 'my-docs'
+              ? 'bg-amber-500 text-neutral-950 font-bold'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
+          }`}
+        >
+          <FileText className="w-3.5 h-3.5 shrink-0" />
+          <span>اسناد من</span>
+          <span className="tabular-nums text-[11px] opacity-80">({documents.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('explore')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+            activeTab === 'explore'
+              ? 'bg-amber-500 text-neutral-950 font-bold'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5 shrink-0" />
+          <span>اکسپلور عمومی</span>
+        </button>
+      </div>
+
+      {/* TAB 1: MY DOCUMENTS */}
+      {activeTab === 'my-docs' && (
+        <>
+          <div className="p-2.5 space-y-1.5 border-b border-[var(--border-color)]">
+            <button
+              type="button"
+              onClick={onCreateDoc}
+              className="w-full flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-semibold text-xs whitespace-nowrap transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>سند جدید</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] border border-[var(--border-color)] font-medium text-[11px] transition-colors cursor-pointer"
+              title="افزودن فایل .md یا .txt به اسناد من"
+            >
+              <Upload className="w-3.5 h-3.5 text-amber-500" />
+              <span>افزودن فایل از سیستم (.md)</span>
+            </button>
           </div>
 
-          {isOpen && (
-            <div className="ms-2.5 flex-1 overflow-hidden">
-              <div className="text-[var(--text-primary)] font-bold text-xs truncate">MD Studio</div>
-              <div className="text-[var(--text-muted)] text-[10px] truncate">داشبورد و سرفصل‌ها</div>
+          <div className="p-2.5 space-y-1.5 border-b border-[var(--border-color)]">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="جستجو در اسناد من..."
+                className="w-full ps-8 pe-3 py-1.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] focus:border-amber-500 focus:outline-none text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-colors"
+              />
+              <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute start-2.5 top-2.5" />
             </div>
-          )}
-        </div>
 
-        {isOpen && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleOpen();
-            }}
-            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-md cursor-pointer transition-colors"
-            title="بستن سایدبار"
-          >
-            <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
-          </button>
-        )}
-      </div>
+            <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] px-1">
+              <span className="tabular-nums">{filteredDocs.length} سند</span>
+              <button
+                type="button"
+                onClick={() => setFilterFavorite(!filterFavorite)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                  filterFavorite
+                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 font-medium'
+                    : 'hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <Star className={`w-3 h-3 ${filterFavorite ? 'fill-amber-400 text-amber-400' : ''}`} />
+                <span>ستاره‌دارها</span>
+              </button>
+            </div>
+          </div>
 
-      {/* 2. Navigation Items (Compact Header) */}
-      <div className="px-2 py-2 border-b border-[var(--glass-border)] flex flex-col gap-1">
-        {navItems.map((item) => {
-          const isActive = activeNavItem === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={item.onClick}
-              title={!isOpen ? item.label : undefined}
-              className={`relative flex items-center w-full transition-all rounded-lg cursor-pointer ${
-                isOpen ? 'px-3 py-2' : 'justify-center py-2.5'
-              } ${
-                isActive
-                  ? 'bg-[var(--tile-active)] text-[#0061FF] dark:text-blue-400 font-bold border-e-2 border-[#0061FF] shadow-xs'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--tile-hover)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <div className="flex-shrink-0 relative">
-                {item.icon}
-                {!isOpen && item.badge && (
-                  <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] text-white">
-                    {item.badge}
-                  </span>
-                )}
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {filteredDocs.length === 0 ? (
+              <div className="p-6 text-center text-xs text-[var(--text-muted)]">
+                {searchQuery ? 'سندی با این عبارت پیدا نشد.' : 'هنوز سندی در این بخش وجود ندارد.'}
               </div>
+            ) : (
+              filteredDocs.map((doc) => {
+                const isActive = doc.id === activeDocId;
+                const updatedDate = new Date(doc.updatedAt).toLocaleDateString('fa-IR', {
+                  month: 'short',
+                  day: 'numeric',
+                });
+                const isConfirming = confirmDeleteId === doc.id;
 
-              {isOpen && (
-                <div className="ms-2.5 flex items-center justify-between flex-1">
-                  <span className="text-xs">{item.label}</span>
-                  {item.badge && (
-                    <span className="flex h-4 min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                      {item.badge}
-                    </span>
-                  )}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 3. Middle Area: Educational Tree or Content */}
-      <div className="flex-1 overflow-y-auto flex flex-col">
-        {activeNavItem === 'content' ? (
-          isOpen ? (
-            <div className="p-3 flex-1 flex flex-col">
-              {/* Quick Actions Strip */}
-              <div className="flex items-center gap-1.5 mb-3">
-                <button
-                  type="button"
-                  onClick={onCreateDoc}
-                  className="flex-1 bg-[#0061FF] hover:bg-[#0052cc] text-white text-[11px] font-bold py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
-                  title="سند جدید"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>جدید</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-1.5 bg-[var(--tile)] hover:bg-[var(--tile-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--glass-border)] rounded-lg transition-colors cursor-pointer"
-                  title="آپلود فایل‌های مارک‌دان"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => folderInputRef.current?.click()}
-                  className="p-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-500 rounded-lg transition-colors border border-amber-500/20 cursor-pointer"
-                  title="آپلود پوشه / درخت سرفصل‌های آموزشی"
-                >
-                  <FolderUp className="w-3.5 h-3.5" />
-                </button>
-                {onSyncLocalDisk && (
-                  <button
-                    type="button"
-                    onClick={() => onSyncLocalDisk(false)}
-                    disabled={isSyncingLocal}
-                    className="p-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-500 rounded-lg transition-colors border border-blue-500/20 cursor-pointer"
-                    title={
-                      linkedLocalFolder
-                        ? `بروزرسانی تغییرات فایل‌ها از پوشه «${linkedLocalFolder}» کامپیوتر`
-                        : 'اتصال به پوشه لوکال کامپیوتر برای بروزرسانی خودکار'
-                    }
+                return (
+                  <div
+                    key={doc.id}
+                    onClick={() => onSelectDoc(doc.id)}
+                    className={`group relative p-2.5 rounded-xl cursor-pointer transition-all border ${
+                      isActive
+                        ? 'bg-amber-500/10 border-amber-500/30 text-[var(--text-primary)]'
+                        : 'border-transparent hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
+                    }`}
                   >
-                    <RotateCcw className={`w-3.5 h-3.5 ${isSyncingLocal ? 'animate-spin' : ''}`} />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSortBy((curr) =>
-                      curr === 'upload-desc'
-                        ? 'upload-asc'
-                        : curr === 'upload-asc'
-                        ? 'title-asc'
-                        : 'upload-desc'
-                    )
-                  }
-                  className="p-1.5 bg-[var(--tile)] hover:bg-[var(--tile-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--glass-border)] rounded-lg transition-colors cursor-pointer"
-                  title={`مرتب‌سازی سرفصل‌ها: ${
-                    sortBy === 'upload-desc'
-                      ? 'جدیدترین زمان آپلود'
-                      : sortBy === 'upload-asc'
-                      ? 'قدیمی‌ترین زمان آپلود'
-                      : 'بر اساس نام (الفبا)'
-                  }`}
-                >
-                  <ArrowUpDown className="w-3.5 h-3.5 text-[#0061FF]" />
-                </button>
-              </div>
+                    <div className="flex items-start justify-between gap-1 mb-1">
+                      <div className="flex items-center gap-1.5 font-medium text-xs truncate flex-1">
+                        <FileText
+                          className={`w-3.5 h-3.5 shrink-0 ${
+                            isActive ? 'text-amber-500' : 'text-[var(--text-muted)]'
+                          }`}
+                        />
+                        <span className="truncate">{doc.title || 'سند بدون عنوان'}</span>
+                      </div>
 
-              {/* Search Inside Tree */}
-              <div className="relative mb-2.5">
-                <Search className="w-3 h-3 text-[var(--text-muted)] absolute start-2.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="جستجوی سرفصل و درس..."
-                  className="w-full ps-8 pe-6 py-1.5 rounded-lg bg-[var(--tile)] border border-[var(--glass-border)] focus:border-[#0061FF] text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none transition-colors"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFavorite(doc.id);
+                        }}
+                        className="p-0.5 rounded hover:text-amber-400 text-[var(--text-muted)] transition-colors cursor-pointer"
+                      >
+                        <Star
+                          className={`w-3.5 h-3.5 ${
+                            doc.isFavorite
+                              ? 'fill-amber-400 text-amber-400'
+                              : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                        />
+                      </button>
+                    </div>
 
-              {/* Tree Container */}
-              <div className="flex-1 overflow-y-auto space-y-1">
-                {filteredDocs.length === 0 ? (
-                  <div className="text-center py-6 text-gray-500 text-xs">
-                    {searchQuery ? 'موردی یافت نشد.' : 'سندی وجود ندارد.'}
-                  </div>
-                ) : (
-                  <>
-                    {renderTreeNode(docTree, 0)}
-                    {docTree.docs.length > 0 && docTree.children.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-[#2a2a4a]/40">
-                        <div className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                          <FileText className="w-3 h-3" />
-                          <span>سایر اسناد</span>
+                    {isConfirming ? (
+                      <div
+                        className="flex items-center justify-between gap-1.5 pt-1 text-[10px]"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-rose-500 font-semibold">حذف شود؟</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onDeleteDoc(doc.id);
+                              setConfirmDeleteId(null);
+                            }}
+                            className="px-2 py-0.5 rounded bg-rose-500 text-white font-bold cursor-pointer"
+                          >
+                            حذف
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-1.5 py-0.5 rounded bg-[var(--bg-secondary)] text-[var(--text-muted)] cursor-pointer"
+                          >
+                            لغو
+                          </button>
                         </div>
-                        {docTree.docs.map((doc) => {
-                          const isActive = activeDocId === doc.id;
-                          return (
-                            <div
-                              key={doc.id}
-                              onClick={() => onSelectDoc(doc.id)}
-                              className={`group flex items-center justify-between py-1 px-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                                isActive
-                                  ? 'bg-[#0061FF]/20 text-white font-medium border-e-2 border-[#0061FF]'
-                                  : 'text-gray-300 hover:text-white hover:bg-white/5'
-                              }`}
-                            >
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                <FileText className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                                <span className="truncate text-[11px]">
-                                  {doc.title || 'سند بدون عنوان'}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleCopyEmbedTag(doc.title, e)}
-                                  className="p-0.5 text-gray-400 hover:text-[#0061FF] cursor-pointer"
-                                  title={`کپی تگ جاسازی (Embed): ![[${doc.title}]]`}
-                                >
-                                  {copiedEmbedTitle === doc.title ? (
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                  ) : (
-                                    <Link2 className="w-3 h-3" />
-                                  )}
-                                </button>
-                                {onToggleFavorite && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onToggleFavorite(doc.id);
-                                    }}
-                                    className="p-0.5 text-gray-400 hover:text-amber-400 cursor-pointer"
-                                  >
-                                    <Star
-                                      className={`w-3 h-3 ${
-                                        doc.isFavorite ? 'fill-amber-400 text-amber-400' : ''
-                                      }`}
-                                    />
-                                  </button>
-                                )}
-                                {onDeleteDoc && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (confirm(`سند «${doc.title}» حذف شود؟`)) {
-                                        onDeleteDoc(doc.id);
-                                      }
-                                    }}
-                                    className="p-0.5 text-gray-400 hover:text-rose-400 cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] pt-0.5">
+                        <div className="flex items-center gap-1.5 tabular-nums">
+                          <span>{updatedDate}</span>
+                          <span>·</span>
+                          <span className="inline-flex items-center gap-0.5">
+                            {doc.visibility === 'public' ? (
+                              <>
+                                <Globe className="w-2.5 h-2.5 text-emerald-500" />
+                                <span>عمومی</span>
+                              </>
+                            ) : doc.visibility === 'unlisted' ? (
+                              <>
+                                <Link2 className="w-2.5 h-2.5 text-sky-500" />
+                                <span>لینک‌دار</span>
+                              </>
+                            ) : (
+                              <>
+                                <Lock className="w-2.5 h-2.5" />
+                                <span>خصوصی</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDuplicateDoc(doc.id);
+                            }}
+                            className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                            title="تکثیر سند"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(doc.id);
+                            }}
+                            className="p-1 rounded hover:bg-rose-500/20 text-[var(--text-muted)] hover:text-rose-500 cursor-pointer"
+                            title="حذف سند"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     )}
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="py-3 flex flex-col items-center gap-2">
-              <button
-                type="button"
-                onClick={onCreateDoc}
-                className="w-10 h-10 rounded-xl bg-[#0061FF] text-white flex items-center justify-center hover:bg-[#0052cc] transition-colors cursor-pointer"
-                title="سند جدید"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => folderInputRef.current?.click()}
-                className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center hover:bg-amber-500/25 transition-colors border border-amber-500/20 cursor-pointer"
-                title="آپلود پوشه / سرفصل آموزشی"
-              >
-                <FolderUp className="w-4 h-4" />
-              </button>
-            </div>
-          )
-        ) : activeNavItem === 'analytics' && isOpen ? (
-          <div className="p-4 space-y-3 text-xs text-gray-300">
-            <div className="font-bold text-white mb-2 flex items-center gap-1.5">
-              <BarChart3 className="w-4 h-4 text-[#0061FF]" />
-              <span>خلاصه آمار محتوا</span>
-            </div>
-            <div className="p-3 rounded-xl bg-[#121224] border border-[#2a2a4a] space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-400">تعداد کل اسناد:</span>
-                <span className="font-bold text-white font-mono">{documents.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">تعداد کلمات کل:</span>
-                <span className="font-bold text-emerald-400 font-mono">
-                  {totalWords.toLocaleString('fa-IR')}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">سرفصل‌های آموزشی:</span>
-                <span className="font-bold text-amber-400 font-mono">
-                  {docTree.children.length}
-                </span>
-              </div>
-            </div>
-          </div>
-        ) : activeNavItem === 'settings' && isOpen ? (
-          <div className="p-4 space-y-3 text-xs">
-            <div className="font-bold text-[var(--text-primary)] mb-2 flex items-center gap-1.5">
-              <Settings className="w-4 h-4 text-[#0061FF]" />
-              <span>تنظیمات اسناد</span>
-            </div>
-            <button
-              type="button"
-              onClick={onRestoreSamples}
-              className="w-full py-2 px-3 rounded-xl bg-[var(--tile)] hover:bg-[var(--tile-hover)] border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-blue-400" />
-              <span>بازیابی اسناد و سرفصل‌های نمونه</span>
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      {/* 4. User Section */}
-      <div className="border-t border-[var(--glass-border)] p-3 flex flex-col gap-2">
-        {!isOpen && (
-          <button
-            onClick={onToggleOpen}
-            className="w-full flex justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] p-2 rounded-lg hover:bg-[var(--tile-hover)] transition-colors mb-2 cursor-pointer"
-          >
-            <ChevronLeft className="w-5 h-5 rtl:rotate-180" />
-          </button>
-        )}
-
-        {currentUser ? (
-          <div className={`flex items-center ${isOpen ? 'justify-start' : 'justify-center'} gap-3`}>
-            <div className="w-10 h-10 rounded-full bg-[var(--tile)] border border-[var(--glass-border)] flex items-center justify-center text-[var(--text-primary)] font-bold flex-shrink-0 shadow-xs">
-              {getInitials(currentUser.username || currentUser.email)}
-            </div>
-            {isOpen && (
-              <div className="flex-1 overflow-hidden">
-                <div className="text-[var(--text-primary)] text-sm font-medium truncate">{currentUser.username || 'کاربر'}</div>
-                <div className="text-[var(--text-muted)] text-xs truncate">{currentUser.email}</div>
-              </div>
+                  </div>
+                );
+              })
             )}
           </div>
-        ) : (
-          <button
-            type="button"
-            className={`flex items-center justify-center rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--tile-hover)] transition-colors ${
-              isOpen ? 'w-full py-2 px-3 gap-2' : 'w-10 h-10 p-0'
-            }`}
-            title="ورود به حساب"
-          >
-            <User className="w-5 h-5" />
-            {isOpen && <span className="text-sm font-medium">ورود</span>}
-          </button>
-        )}
-      </div>
+
+          <div className="p-3 border-t border-[var(--border-color)] bg-[var(--bg-tertiary)]">
+            <div className="border border-dashed border-[var(--border-color)] rounded-xl p-2 text-center text-[10px] text-[var(--text-muted)]">
+              فایل‌های <span className="text-amber-500 font-semibold">.md</span> را بکشید و اینجا رها کنید
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* TAB 2: PUBLIC EXPLORE */}
+      {activeTab === 'explore' && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="p-2.5 space-y-2 border-b border-[var(--border-color)] bg-[var(--bg-primary)]/30">
+            <div className="relative">
+              <input
+                type="text"
+                value={exploreSearch}
+                onChange={(e) => setExploreSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') fetchExploreFiles();
+                }}
+                placeholder="جستجو در اکسپلور عمومی..."
+                className="w-full ps-8 pe-8 py-1.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] focus:border-amber-500 focus:outline-none text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)]"
+              />
+              <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute start-2.5 top-2.5" />
+              <button
+                type="button"
+                onClick={fetchExploreFiles}
+                className="p-1 rounded text-[var(--text-muted)] hover:text-amber-500 absolute end-2 top-1.5 cursor-pointer"
+                title="بروزرسانی"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isExploreLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {onOpenPublishModal && (
+              <button
+                type="button"
+                onClick={onOpenPublishModal}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs transition-colors cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>تنظیم اشتراک سند فعلی</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            {exploreError && (
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[11px]">
+                {exploreError}
+              </div>
+            )}
+
+            {isExploreLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)] space-y-2 text-xs">
+                <Loader2 className="w-5 h-5 animate-spin text-amber-500" />
+                <span>در حال دریافت اسناد عمومی...</span>
+              </div>
+            ) : exploreFiles.length === 0 ? (
+              <div className="p-6 text-center text-xs text-[var(--text-muted)] space-y-2">
+                <Globe className="w-8 h-8 text-[var(--text-muted)] mx-auto opacity-50" />
+                <p>سند عمومی یافت نشد.</p>
+              </div>
+            ) : (
+              exploreFiles.map((file) => {
+                const isCopied = copiedShareId === file.id;
+                return (
+                  <div
+                    key={file.id}
+                    onClick={() => handleOpenExploreDoc(file)}
+                    className="group p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] hover:border-amber-500/50 hover:bg-[var(--bg-tertiary)] transition-all cursor-pointer flex flex-col gap-1.5"
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="font-semibold text-xs text-[var(--text-primary)] group-hover:text-amber-500 transition-colors line-clamp-1 flex-1">
+                        {file.title}
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-amber-500 shrink-0 tabular-nums">
+                        <Star className="w-3 h-3" />
+                        <span>{file.stars_count}</span>
+                      </div>
+                    </div>
+
+                    {file.description && (
+                      <p className="text-[10px] text-[var(--text-muted)] line-clamp-1">
+                        {file.description}
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1 border-t border-[var(--border-color)]/60 text-[10px] text-[var(--text-muted)]">
+                      <span className="truncate max-w-[120px]">
+                        {file.author_name || 'کاربر'}
+                      </span>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyShareLink(e, file.id)}
+                          className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-emerald-500 transition-colors cursor-pointer"
+                          title="کپی لینک اشتراک"
+                        >
+                          {isCopied ? (
+                            <Check className="w-3 h-3 text-emerald-500" />
+                          ) : (
+                            <Share2 className="w-3 h-3" />
+                          )}
+                        </button>
+                        <span className="text-[10px] text-amber-500 font-bold group-hover:underline">
+                          مطالعه
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="p-2.5 border-t border-[var(--border-color)] bg-[var(--bg-tertiary)] flex items-center justify-between text-[10px] text-[var(--text-muted)] tabular-nums">
+            <span>اکسپلور عمومی</span>
+            <span>{exploreFiles.length} سند منتشرشده</span>
+          </div>
+        </div>
+      )}
     </aside>
-    </>
   );
 };

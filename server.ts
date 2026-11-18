@@ -1,26 +1,54 @@
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
-import dns from 'dns';
-dns.setDefaultResultOrder('ipv4first');
+import { initStorage, storage, type DocVisibility } from './server/storage.ts';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const PORT = Number(process.env.PORT) || 3005;
-const JWT_SECRET = process.env.JWT_SECRET as string;
-if (!JWT_SECRET) {
-  console.error("FATAL: JWT_SECRET is not set in environment variables.");
-  process.exit(1);
+function resolvePort(): number {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--port' && args[i + 1]) {
+      const parsed = Number(args[i + 1]);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    } else if (args[i].startsWith('--port=')) {
+      const parsed = Number(args[i].split('=')[1]);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return Number(process.env.PORT) || 3000;
+  }
+  const envPort = Number(process.env.PORT);
+  if (Number.isFinite(envPort) && envPort > 0 && envPort !== 8080) {
+    return envPort;
+  }
+  return 3000;
 }
+
+function resolveHost(): string {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--host' && args[i + 1]) {
+      return args[i + 1];
+    } else if (args[i].startsWith('--host=')) {
+      return args[i].split('=')[1];
+    }
+  }
+  return '0.0.0.0';
+}
+
+const app = express();
+const PORT = resolvePort();
+const HOST = resolveHost();
+const JWT_SECRET = process.env.JWT_SECRET || 'markdown-studio-secret-jwt-key-2025';
 
 interface JwtPayload {
   id: string;
@@ -29,7 +57,6 @@ interface JwtPayload {
   displayName: string;
 }
 
-// Extract authenticated user from Bearer token
 function getAuthUser(req: Request): JwtPayload | null {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -37,55 +64,15 @@ function getAuthUser(req: Request): JwtPayload | null {
   }
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as unknown as JwtPayload;
-    return decoded;
+    return jwt.verify(token, JWT_SECRET) as JwtPayload;
   } catch {
     return null;
   }
 }
 
-
-// Simple In-Memory Rate Limiter
-interface RateLimitRecord {
-  count: number;
-  resetAt: number;
-}
-const rateLimitMap = new Map<string, RateLimitRecord>();
-
-function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
-  const now = Date.now();
-  const record = rateLimitMap.get(key);
-  if (!record || now > record.resetAt) {
-    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (record.count >= limit) {
-    return false;
-  }
-  record.count += 1;
-  return true;
-}
-
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Database connection
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("FATAL: DATABASE_URL is not set in environment variables.");
-  process.exit(1);
-}
-
-const pool = new pg.Pool({
-  connectionString,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-  max: 10,
-  idleTimeoutMillis: 30000,
-});
-
-// Helper to generate unique friendly ID
 function generateFileId(title: string): string {
   const cleanTitle = title
     .trim()
@@ -97,172 +84,56 @@ function generateFileId(title: string): string {
   return cleanTitle ? `${cleanTitle}-${randomSuffix}` : `doc-${randomSuffix}`;
 }
 
-// Initialize PostgreSQL schema and seed data
-async function initDatabase() {
-  try {
-    const client = await pool.connect();
-    try {
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS users (
-          id VARCHAR(100) PRIMARY KEY,
-          email VARCHAR(255) UNIQUE,
-          username VARCHAR(100) UNIQUE NOT NULL,
-          display_name VARCHAR(150) NOT NULL,
-          password_hash VARCHAR(255) NOT NULL,
-          avatar_url VARCHAR(500) DEFAULT '',
-          bio TEXT DEFAULT '',
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
+function signUserToken(user: {
+  id: string;
+  email: string;
+  username: string;
+  display_name: string;
+}): string {
+  return jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      displayName: user.display_name,
+    },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+}
 
-        ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
-        ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
-        ALTER TABLE users ALTER COLUMN username DROP NOT NULL;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE;
-
-        CREATE TABLE IF NOT EXISTS shared_markdown_files (
-          id VARCHAR(100) PRIMARY KEY,
-          title VARCHAR(255) NOT NULL,
-          content TEXT NOT NULL,
-          description VARCHAR(500) DEFAULT '',
-          author_name VARCHAR(100) DEFAULT 'کاربر ناشناس',
-          user_id VARCHAR(100),
-          tags TEXT[] DEFAULT '{}'::text[],
-          is_public BOOLEAN DEFAULT true,
-          views_count INTEGER DEFAULT 0,
-          stars_count INTEGER DEFAULT 0,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-
-        ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS user_id VARCHAR(100);
-        ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS folder_path VARCHAR(255) DEFAULT '';
-        ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
-
-        CREATE INDEX IF NOT EXISTS idx_shared_files_created ON shared_markdown_files(created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_shared_files_public ON shared_markdown_files(is_public);
-        CREATE INDEX IF NOT EXISTS idx_shared_files_user ON shared_markdown_files(user_id);
-
-        CREATE TABLE IF NOT EXISTS document_access_requests (
-          id VARCHAR(100) PRIMARY KEY,
-          file_id VARCHAR(100) NOT NULL REFERENCES shared_markdown_files(id) ON DELETE CASCADE,
-          requester_id VARCHAR(100) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          owner_id VARCHAR(100) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          status VARCHAR(20) DEFAULT 'pending',
-          message VARCHAR(500) DEFAULT '',
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW(),
-          UNIQUE(file_id, requester_id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_doc_access_owner ON document_access_requests(owner_id, status);
-        CREATE INDEX IF NOT EXISTS idx_doc_access_requester ON document_access_requests(requester_id, file_id);
-
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT true;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR(255);
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token_expires_at TIMESTAMPTZ;
-        CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(verification_token);
-
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_password_token VARCHAR(255);
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_password_expires_at TIMESTAMPTZ;
-        CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_password_token);
-
-        CREATE TABLE IF NOT EXISTS document_comments (
-          id VARCHAR(100) PRIMARY KEY,
-          file_id VARCHAR(100) NOT NULL REFERENCES shared_markdown_files(id) ON DELETE CASCADE,
-          user_id VARCHAR(100) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          content TEXT NOT NULL,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-        CREATE INDEX IF NOT EXISTS idx_doc_comments_file ON document_comments(file_id, created_at ASC);
-
-        -- Ensure all documents authored by registered users display their chosen registration display_name
-        UPDATE shared_markdown_files f
-        SET author_name = u.display_name
-        FROM users u
-        WHERE f.user_id = u.id AND u.display_name IS NOT NULL AND u.display_name != '';
-      `);
-
-      // Check if we need to seed
-      const countRes = await client.query('SELECT COUNT(*) FROM shared_markdown_files');
-      const count = parseInt(countRes.rows[0].count, 10);
-
-      if (count === 0) {
-        console.log('Seeding initial community markdown files to Neon database...');
-        await client.query(`
-          INSERT INTO shared_markdown_files (id, title, content, description, author_name, tags, is_public, views_count, stars_count)
-          VALUES 
-          (
-            'ai-llm-guide-2025',
-            'راهنمای جامع هوش مصنوعی و مدل‌های زبانی بزرگ (LLMs)',
-            '# راهنمای جامع معماری مدل‌های زبانی بزرگ (LLMs)\n\nاین سند حاوی مفاهیم کلیدی یادگیری عمیق، ترنسفورمرها و پرامپت‌نویسی پیشرفته است.\n\n---\n\n## ۱. ساختار توجه (Self-Attention)\n\nمکانیزم توجه در ترنسفورمرها به مدل اجازه می‌دهد ارتباط بین تمام کلمات یک جمله را به صورت موازی محاسبه کند:\n\n$$\n\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n$$\n\n---\n\n## ۲. الگوی معماری RAG\n\nبرای کاهش توهمات و دسترسی به اطلاعات سازمانی از الگوی **Retrieval-Augmented Generation** استفاده می‌شود:\n\n1. تبدیل پرسش به بردار عددی (Embedding)\n2. جستجوی نزدیک‌ترین اسناد در پایگاه برداری (Vector Database)\n3. ارسال زمینه بازیابی‌شده به همراه پرامپت به مدل\n\n> [!TIP]\n> استفاده از هایبریدریسرچ (Hybrid Search: BM25 + Vector) دقت بازیابی را تا ۳۵٪ ارتقا می‌دهد.',
-            'سند آموزشی بررسی مکانیزم Self-Attention، فرمول‌های ریاضی و الگوی معماری سیستم‌های RAG',
-            'دکتر فرهاد مرادی',
-            ARRAY['هوش مصنوعی', 'آموزشی', 'RAG', 'مهندسی'],
-            true,
-            142,
-            28
-          ),
-          (
-            'react-clean-architecture',
-            'اصول معماری تمیز در پروژه‌های مدرن ری‌اکت و تایپ‌اسکریپت',
-            '# اصول معماری تمیز در پروژه‌های مدرن ری‌اکت\n\nبرای نگهداری آسان و مقیاس‌پذیری نرم‌افزار، ساختار پوشه‌بندی و جداسازی دغدغه‌ها (Separation of Concerns) الزامی است.\n\n---\n\n## لایه‌های معماری پیشنهادی\n\n- \`src/features\`: ماژول‌های مستقل مبتنی بر دامنه کسب‌وکار\n- \`src/components/ui\`: کامپوننت‌های اتمیک پایه بدون بیزینس‌لاجیک\n- \`src/hooks\`: هوک‌های اختصاصی و منطق محاسباتی\n- \`src/api\`: توابع ارتباط با پایگاه داده و سرویس‌ها\n\n---\n\n## کد نمونه هوک کاستوم\n\n\`\`\`typescript\nimport { useState, useEffect } from \"react\";\n\nexport function useDebounce<T>(value: T, delay: number): T {\n  const [debouncedValue, setDebouncedValue] = useState<T>(value);\n\n  useEffect(() => {\n    const timer = setTimeout(() => setDebouncedValue(value), delay);\n    return () => clearTimeout(timer);\n  }, [value, delay]);\n\n  return debouncedValue;\n}\n\`\`\`\n\n> [!NOTE]\n> مدیریت وضعیت سرور باید از وضعیت کلاینت جدا شود.',
-            'راهنمای ساختار پوشه‌بندی، الگوهای طراحی و کد تمیز برای توسعه‌دهندگان فرانت‌اند',
-            'تیم فنی توسعه',
-            ARRAY['برنامه‌نویسی', 'ری‌اکت', 'معماری', 'تایپ‌اسکریپت'],
-            true,
-            98,
-            19
-          ),
-          (
-            'deep-work-summary-book',
-            'خلاصه کتاب کار عمیق (Deep Work) - کال نیوپورت',
-            '# خلاصه راهبردی کتاب کار عمیق (Cal Newport)\n\nتوانایی تمرکز بدون حواس‌پرتی روی یک کار پیچیده با بار فکری بالا، ارزشمندترین مهارت قرن بیست و یکم است.\n\n---\n\n## چهار قانون بنیادین\n\n1. **قانون اول:** به طور عمیق کار کنید (ایجاد ریچوال و زمان‌های مشخص)\n2. **قانون دوم:** خستگی و بی‌حوصلگی را بپذیرید (ترک اسکرول ناخودآگاه)\n3. **قانون سوم:** شبکه‌های اجتماعی را محدود کنید\n4. **قانون چهارم:** کارهای سطحی (Shallow Work) را تا ۶۰٪ کاهش دهید\n\n---\n\n## چک‌لیست روزانه تمرکز\n\n- [x] مسدودسازی نوتیفیکیشن‌ها تا ساعت ۱۲ ظهر\n- [x] بلوک ۹۰ دقیقه‌ای بدون اینترنت برای کار عمیق\n- [ ] پیاده‌روی ۲۰ دقیقه‌ای در هوای آزاد\n- [ ] مرور ایمیل‌ها فقط در یک ساعت مشخص پایانی روز',
-            'خلاصه کاربردی قوانین کار عمیق، تکنیک‌های حذف حواس‌پرتی و چک‌لیست روزانه بهره‌وری',
-            'سارا ناصری',
-            ARRAY['بهره‌وری', 'خلاصه کتاب', 'مدیریت زمان'],
-            true,
-            215,
-            47
-          )
-        `);
-      }
-
-      console.log('PostgreSQL database initialized successfully.');
-    } finally {
-      client.release();
-    }
-  } catch (err: any) {
-    console.error('Failed to initialize PostgreSQL table:', err.message);
-  }
+function formatUserResponse(user: {
+  id: string;
+  email: string;
+  username: string;
+  display_name: string;
+  avatar_url?: string;
+  bio?: string;
+  created_at?: string;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    username: user.username,
+    displayName: user.display_name,
+    avatarUrl: user.avatar_url || '',
+    bio: user.bio || '',
+    createdAt: user.created_at,
+  };
 }
 
 // -------------------------------------------------------------
 // REST API ROUTES (/api/*)
 // -------------------------------------------------------------
 
-// 1. Health check & DB statistics
-app.get('/api/health', async (req: Request, res: Response) => {
+// 1. Health check & Public Explore statistics
+app.get('/api/health', async (_req: Request, res: Response) => {
   try {
-    const statsRes = await pool.query(`
-      SELECT 
-        COUNT(*) as total_files,
-        COALESCE(SUM(views_count), 0) as total_views,
-        COALESCE(SUM(stars_count), 0) as total_stars
-      FROM shared_markdown_files
-      WHERE is_public = true
-    `);
-    const usersCountRes = await pool.query(`SELECT COUNT(*) as total_users FROM users`);
+    const stats = await storage.getHealthStats();
     res.json({
       status: 'healthy',
-      database: 'Neon PostgreSQL (Connected)',
-      stats: {
-        totalFiles: Number(statsRes.rows[0].total_files),
-        totalViews: Number(statsRes.rows[0].total_views),
-        totalStars: Number(statsRes.rows[0].total_stars),
-        totalUsers: Number(usersCountRes.rows[0].total_users),
-      },
+      database: 'Connected',
+      stats,
     });
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message });
@@ -273,268 +144,93 @@ app.get('/api/health', async (req: Request, res: Response) => {
 // AUTHENTICATION & USER ACCOUNTS (/api/auth/*)
 // =============================================================
 
-// In-memory store for email verification OTP codes (email -> { code, expiresAt })
 const emailVerificationCodes = new Map<string, { code: string; expiresAt: number }>();
 
-// Helper to configure SMTP Transporter for actual email dispatch
 const getMailTransporter = () => {
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    if (process.env.SMTP_USER.endsWith('@gmail.com') || process.env.SMTP_HOST?.includes('gmail')) {
-      return nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-        connectionTimeout: 8000,
-        greetingTimeout: 8000,
-        socketTimeout: 10000,
-      });
-    }
-
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
     return nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT) || 587,
       secure: Number(process.env.SMTP_PORT) === 465,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 10000,
+    });
+  }
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
     });
   }
   return null;
 };
 
-// Helper to send Hugging Face style email verification
-async function sendVerificationEmail(email: string, username: string, token: string, req: Request): Promise<boolean> {
-  const transporter = getMailTransporter();
-  if (!transporter) {
-    console.warn('[AUTH] SMTP not configured. Cannot dispatch verification email.');
-    return false;
-  }
-
-  const hostHeader = req.get('x-forwarded-host') || req.get('host') || 'localhost:3000';
-  const protocol = req.get('x-forwarded-proto') || req.protocol || 'http';
-  const baseUrl = process.env.APP_URL || `${protocol}://${hostHeader}`;
-  const verifyUrl = `${baseUrl}/?verify_token=${token}`;
-
-  try {
-    await transporter.sendMail({
-      from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
-      to: email,
-      subject: 'تأیید نشانی ایمیل و فعال‌سازی حساب کاربری در Markdown Studio Pro',
-      html: `
-        <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f8fafc; padding: 40px 20px; color: #1e293b;">
-          <div style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 20px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <h2 style="color: #d97706; margin: 0; font-size: 24px;">خوش آمدید! 🎉</h2>
-              <p style="color: #64748b; font-size: 13px; margin-top: 6px;">استودیو مارک‌دان پرو</p>
-            </div>
-            <p style="font-size: 14px; line-height: 1.8; color: #475569;">
-              سلام <strong>@${username}</strong> گرامی،<br/>
-              از ثبت‌نام شما در پلتفرم Markdown Studio Pro سپاسگزاریم. برای تأیید ایمیل و فعال‌سازی حساب خود، روی دکمه زیر کلیک نمایید:
-            </p>
-            <div style="text-align: center; margin: 32px 0;">
-              <a href="${verifyUrl}" style="background-color: #f59e0b; color: #000000; font-weight: bold; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 14px; display: inline-block;">
-                تأیید و فعال‌سازی حساب کاربری
-              </a>
-            </div>
-            <p style="font-size: 12px; color: #64748b; line-height: 1.7; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px;">
-              این پیوند به مدت ۲۴ ساعت معتبر خواهد بود. اگر دکمه بالا عمل نکرد، این نشانی را در مرورگر وارد کنید:<br/>
-              <span style="font-family: monospace; font-size: 11px; color: #0284c7; word-break: break-all;" dir="ltr">${verifyUrl}</span>
-            </p>
-          </div>
-        </div>
-      `,
-    });
-    console.log(`[AUTH] Verification email dispatched to ${email}`);
-    return true;
-  } catch (err: any) {
-    console.error(`[AUTH] Failed to dispatch verification email to ${email}:`, err.message);
-    return false;
-  }
-}
-
-// Helper to send Password Reset Email
-async function sendPasswordResetEmail(email: string, username: string, token: string, req: Request): Promise<boolean> {
-  const transporter = getMailTransporter();
-  if (!transporter) {
-    console.warn('[AUTH] SMTP not configured. Cannot dispatch reset email.');
-    return false;
-  }
-
-  const hostHeader = req.get('x-forwarded-host') || req.get('host') || 'localhost:3000';
-  const protocol = req.get('x-forwarded-proto') || req.protocol || 'http';
-  const baseUrl = process.env.APP_URL || `${protocol}://${hostHeader}`;
-  const resetUrl = `${baseUrl}/?reset_token=${token}`;
-
-  try {
-    await transporter.sendMail({
-      from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
-      to: email,
-      subject: 'بازیابی کلمه عبور در Markdown Studio Pro',
-      html: `
-        <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f8fafc; padding: 40px 20px; color: #1e293b;">
-          <div style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 20px; padding: 36px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <h2 style="color: #d97706; margin: 0; font-size: 24px;">بازیابی رمز عبور 🔑</h2>
-              <p style="color: #64748b; font-size: 13px; margin-top: 6px;">استودیو مارک‌دان پرو</p>
-            </div>
-            <p style="font-size: 14px; line-height: 1.8; color: #475569;">
-              سلام <strong>@${username}</strong> گرامی،<br/>
-              درخواستی برای تغییر و بازیابی رمز عبور حساب کاربری شما ثبت گردید. برای تعیین رمز عبور جدید، لطفاً روی پیوند زیر کلیک کنید:
-            </p>
-            <div style="text-align: center; margin: 32px 0;">
-              <a href="${resetUrl}" style="background-color: #f59e0b; color: #000000; font-weight: bold; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 14px; display: inline-block;">
-                تعیین رمز عبور جدید
-              </a>
-            </div>
-            <p style="font-size: 12px; color: #64748b; line-height: 1.7; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px;">
-              این پیوند به مدت ۱ ساعت معتبر خواهد بود. اگر این درخواست توسط شما ثبت نشده است، لطفاً این ایمیل را نادیده بگیرید.<br/>
-              <span style="font-family: monospace; font-size: 11px; color: #0284c7; word-break: break-all;" dir="ltr">${resetUrl}</span>
-            </p>
-          </div>
-        </div>
-      `,
-    });
-    console.log(`[AUTH] Password reset email dispatched to ${email}`);
-    return true;
-  } catch (err: any) {
-    console.error(`[AUTH] Failed to dispatch password reset email to ${email}:`, err.message);
-    return false;
-  }
-}
-
-// 1. Send Email Verification Code for Email-First Authorization (OTP)
+// 1. Send Email Verification Code (OTP)
 app.post('/api/auth/send-email-code', async (req: Request, res: Response) => {
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
-    if (!checkRateLimit('otp_' + clientIp, 5, 10 * 60 * 1000)) {
-      return res.status(429).json({ error: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً ۱۰ دقیقه دیگر مجدداً تلاش کنید.' });
-    }
   try {
     const { email } = req.body;
     if (!email || !email.includes('@')) {
       return res.status(400).json({ error: 'لطفاً یک آدرس ایمیل معتبر وارد کنید.' });
     }
     const cleanEmail = email.trim().toLowerCase();
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+
+    emailVerificationCodes.set(cleanEmail, { code, expiresAt });
+    console.log(`[AUTH] Verification code for ${cleanEmail}: ${code}`);
 
     const transporter = getMailTransporter();
-    if (!transporter) {
-      return res.status(503).json({ error: 'تنظیمات سرور ایمیل (SMTP) در سرور یافت نشد.' });
-    }
+    let emailSentToInbox = false;
 
-    // Generate cryptographically secure 6-digit code
-    const cryptoMod = await import('crypto');
-    const code = cryptoMod.randomInt(100000, 999999).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-    try {
-      await transporter.sendMail({
-        from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
-        to: cleanEmail,
-        subject: `کد ۶ رقمی تأیید و اتورایز شما: ${code}`,
-        html: `
-          <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f3f4f6; padding: 32px 16px; color: #1f2937;">
-            <div style="max-width: 480px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e5e7eb; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
-              <h2 style="color: #d97706; margin-top: 0; font-size: 20px;">احراز هویت و ورود به سیستم</h2>
-              <p style="font-size: 14px; line-height: 1.7; color: #374151;">
-                سلام،<br/>
-                کد یک‌بار مصرف زیر جهت اتورایز و احراز هویت شما صادر شده است:
-              </p>
-              <div style="background: #fffbeb; border: 2px dashed #f59e0b; border-radius: 12px; padding: 16px; text-align: center; margin: 24px 0;">
-                <span style="font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #b45309;">${code}</span>
+    if (transporter) {
+      try {
+        await transporter.sendMail({
+          from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || process.env.GMAIL_USER || 'no-reply@markdown-studio.app'}>`,
+          to: cleanEmail,
+          subject: `کد ۶ رقمی تأیید ورود: ${code}`,
+          html: `
+            <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f3f4f6; padding: 32px 16px; color: #1f2937;">
+              <div style="max-width: 480px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e5e7eb;">
+                <h2 style="color: #d97706; margin-top: 0; font-size: 20px;">احراز هویت و ورود به حساب</h2>
+                <p style="font-size: 14px; line-height: 1.7; color: #374151;">
+                  سلام،<br/>
+                  کد یک‌بار مصرف زیر جهت ورود به حساب کاربری شما ایجاد شده است:
+                </p>
+                <div style="background: #fffbeb; border: 2px dashed #f59e0b; border-radius: 12px; padding: 16px; text-align: center; margin: 24px 0;">
+                  <span style="font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #b45309;">${code}</span>
+                </div>
+                <p style="font-size: 12px; color: #6b7280; line-height: 1.6; margin-bottom: 0;">
+                  این کد به مدت ۱۰ دقیقه معتبر است.
+                </p>
               </div>
-              <p style="font-size: 12px; color: #6b7280; line-height: 1.6; margin-bottom: 0;">
-                این کد به مدت ۱۰ دقیقه معتبر است. در صورت عدم درخواست، این پیام را نادیده بگیرید.
-              </p>
             </div>
-          </div>
-        `,
-      });
-
-      emailVerificationCodes.set(cleanEmail, { code, expiresAt });
-      console.log(`[AUTH] Real verification email dispatched successfully to ${cleanEmail}`);
-
-      res.json({
-        success: true,
-        message: `کد تأیید ۶ رقمی به صندوق ورودی ایمیل ${cleanEmail} ارسال گردید.`,
-      });
-    } catch (mailErr: any) {
-      console.error('[AUTH] SMTP dispatch failed:', mailErr);
-      return res.status(500).json({ error: 'خطا در ارسال ایمیل تأیید: ' + mailErr.message });
+          `,
+        });
+        emailSentToInbox = true;
+      } catch (mailErr: any) {
+        console.error('[AUTH] SMTP dispatch failed:', mailErr.message);
+      }
     }
+
+    res.json({
+      success: true,
+      emailSentToInbox,
+      message: emailSentToInbox
+        ? `کد تأیید ۶ رقمی به صندوق ورودی ایمیل ${cleanEmail} ارسال گردید.`
+        : 'کد تأیید ۶ رقمی صادر شد. (به دلیل تنظیم نشدن سرور ایمیل SMTP، کد موقت در پایین نمایش داده شد)',
+      devCode: !emailSentToInbox ? code : undefined,
+    });
   } catch (error: any) {
     res.status(500).json({ error: 'خطا در صدور کد تأیید', details: error.message });
   }
 });
 
-// Google One-Tap / Fast Login & Register
-app.post('/api/auth/google', async (req: Request, res: Response) => {
-  try {
-    const { googleId, email, displayName, avatarUrl } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'آدرس ایمیل گوگل نامعتبر است.' });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanGoogleId = googleId || null;
-    const name = displayName && displayName.trim() ? displayName.trim() : cleanEmail.split('@')[0];
-    const avatar = avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
-    const autoUsername = cleanEmail.split('@')[0].replace(/[^\w]/g, '').toLowerCase() || 'user';
-    const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-
-    // Exact Neon PostgreSQL UPSERT for Google users
-    const result = await pool.query(
-      `
-      INSERT INTO users (id, google_id, email, username, display_name, avatar_url, is_verified, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
-      ON CONFLICT (email) DO UPDATE 
-      SET google_id = COALESCE(EXCLUDED.google_id, users.google_id),
-          display_name = COALESCE(users.display_name, EXCLUDED.display_name),
-          avatar_url = EXCLUDED.avatar_url,
-          is_verified = true,
-          updated_at = NOW()
-      RETURNING id, google_id, email, username, display_name, avatar_url, bio, created_at
-      `,
-      [userId, cleanGoogleId, cleanEmail, autoUsername, name, avatar]
-    );
-
-    const user = result.rows[0];
-
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        username: user.username || autoUsername,
-        displayName: user.display_name,
-      },
-      JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      success: true,
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username || autoUsername,
-        displayName: user.display_name,
-        avatarUrl: user.avatar_url,
-        bio: user.bio || '',
-        createdAt: user.created_at,
-      },
-      message: `ورود موفق با حساب گوگل (${cleanEmail})`,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: 'خطا در ورود با حساب گوگل', details: error.message });
-  }
-});
-
-// 2. Verify Email Code & Complete Email Authorization (Auto-login or Auto-register)
+// 2. Verify Email Code
 app.post('/api/auth/verify-email-code', async (req: Request, res: Response) => {
   try {
     const { email, code, displayName } = req.body;
@@ -549,159 +245,132 @@ app.post('/api/auth/verify-email-code', async (req: Request, res: Response) => {
     const stored = emailVerificationCodes.get(cleanEmail);
 
     if (!stored || stored.code !== code.trim()) {
-      return res.status(400).json({ error: 'کد واردشده نادرست است. لطفاً کد را بررسی کنید.' });
+      return res.status(400).json({ error: 'کد واردشده نادرست است.' });
     }
     if (Date.now() > stored.expiresAt) {
       emailVerificationCodes.delete(cleanEmail);
       return res.status(400).json({ error: 'کد منقضی شده است. لطفاً مجدداً درخواست کد کنید.' });
     }
 
-    // Code is valid! Consume it
     emailVerificationCodes.delete(cleanEmail);
 
-    // Check if user already exists with this email
-    const userRes = await pool.query(
-      'SELECT id, email, username, display_name, avatar_url, bio, created_at FROM users WHERE LOWER(email) = $1',
-      [cleanEmail]
-    );
-
-    let user;
-    if (userRes.rows.length > 0) {
-      user = userRes.rows[0];
-      // Update display name if user specified one (or if it was generic 'کاربر گرامی')
+    let user = await storage.findUserByEmail(cleanEmail);
+    if (user) {
       const newName = displayName && displayName.trim();
       if (newName) {
-        const updateRes = await pool.query(
-          `UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2
-           RETURNING id, email, username, display_name, avatar_url, bio, created_at`,
-          [newName, user.id]
-        );
-        user = updateRes.rows[0];
-        // Also update all documents created by this user
-        await pool.query(
-          'UPDATE shared_markdown_files SET author_name = $1 WHERE user_id = $2',
-          [newName, user.id]
-        );
+        user = await storage.updateUser(user.id, { displayName: newName });
       }
     } else {
-      // Auto-create user account with clean username without random ugly suffixes
       let cleanUsername = cleanEmail.split('@')[0].replace(/[^\w]/g, '').toLowerCase() || 'user';
-      const existingUserCheck = await pool.query('SELECT id FROM users WHERE LOWER(username) = $1', [cleanUsername]);
-      if (existingUserCheck.rows.length > 0) {
+      if (await storage.isUsernameTaken(cleanUsername)) {
         cleanUsername = `${cleanUsername}${Math.floor(10 + Math.random() * 89)}`;
       }
-      const name = (displayName && displayName.trim()) ? displayName.trim() : cleanEmail.split('@')[0];
+      const name = displayName && displayName.trim() ? displayName.trim() : cleanEmail.split('@')[0];
       const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       const dummyPasswordHash = await bcrypt.hash(Math.random().toString(36), 10);
-
-      const insertRes = await pool.query(
-        `
-        INSERT INTO users (id, email, username, display_name, password_hash, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-        RETURNING id, email, username, display_name, avatar_url, bio, created_at
-        `,
-        [userId, cleanEmail, cleanUsername, name, dummyPasswordHash]
-      );
-      user = insertRes.rows[0];
+      user = await storage.createUser({
+        id: userId,
+        email: cleanEmail,
+        username: cleanUsername,
+        displayName: name,
+        passwordHash: dummyPasswordHash,
+      });
     }
 
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-      },
-      JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
+    const token = signUserToken(user);
     res.json({
       success: true,
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-        avatarUrl: user.avatar_url,
-        bio: user.bio,
-        createdAt: user.created_at,
-      },
-      message: `اتورایز موفقیت‌آمیز با ایمیل ${cleanEmail}`,
+      user: formatUserResponse(user),
+      message: `ورود موفقیت‌آمیز با ایمیل ${cleanEmail}`,
     });
   } catch (error: any) {
-    res.status(500).json({ error: 'خطا در اتورایز ایمیل', details: error.message });
+    res.status(500).json({ error: 'خطا در بررسی کد تأیید', details: error.message });
   }
 });
 
-// Register new user account (Fast signup with username + password, optional email)
+// 3. Google Account Authorization
+app.post('/api/auth/google-authorize', async (req: Request, res: Response) => {
+  try {
+    const { email, displayName, avatarUrl } = req.body;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'آدرس ایمیل گوگل نامعتبر است.' });
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    let user = await storage.findUserByEmail(cleanEmail);
+
+    if (!user) {
+      let cleanUsername = cleanEmail.split('@')[0].replace(/[^\w-]/g, '').slice(0, 20) || 'user';
+      if (await storage.isUsernameTaken(cleanUsername)) {
+        cleanUsername = `${cleanUsername}${Math.floor(10 + Math.random() * 89)}`;
+      }
+      const name = displayName?.trim() || cleanEmail.split('@')[0];
+      const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const dummyPasswordHash = await bcrypt.hash(Math.random().toString(36), 10);
+      user = await storage.createUser({
+        id: userId,
+        email: cleanEmail,
+        username: cleanUsername,
+        displayName: name,
+        passwordHash: dummyPasswordHash,
+        avatarUrl: avatarUrl || '',
+      });
+    }
+
+    const token = signUserToken(user);
+    res.json({
+      success: true,
+      token,
+      user: formatUserResponse(user),
+      message: `ورود موفق با حساب گوگل (${cleanEmail})`,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در ورود با حساب گوگل', details: error.message });
+  }
+});
+
+// Register new user account
 app.post('/api/auth/register', async (req: Request, res: Response) => {
   try {
     const { email, username, password, displayName } = req.body;
-    if (!email || !email.trim() || !email.includes('@')) {
-      return res.status(400).json({ error: 'لطفاً یک آدرس ایمیل معتبر وارد کنید.' });
-    }
     if (!username || username.trim().length < 3) {
       return res.status(400).json({ error: 'نام کاربری باید حداقل ۳ کاراکتر انگلیسی باشد.' });
-    }
-    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    if (cleanUsername.length < 3) {
-      return res.status(400).json({ error: 'نام کاربری فقط می‌تواند شامل حروف کوچک انگلیسی، اعداد، _ و - باشد.' });
     }
     if (!password || password.length < 6) {
       return res.status(400).json({ error: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanUsername = username.trim().toLowerCase().replace(/[^\w-]/g, '');
+    if (cleanUsername.length < 3) {
+      return res.status(400).json({ error: 'نام کاربری باید شامل حروف یا اعداد انگلیسی باشد.' });
+    }
+    const cleanEmail = email && email.trim() ? email.trim().toLowerCase() : `${cleanUsername}@local.user`;
+    const name = displayName?.trim() || username.trim();
 
-    // Check existing email
-    const existingEmail = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
-    if (existingEmail.rows.length > 0) {
-      return res.status(400).json({ error: 'این ایمیل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.' });
+    if (await storage.isUsernameTaken(cleanUsername)) {
+      return res.status(400).json({ error: 'این نام کاربری قبلاً ثبت شده است. لطفاً نام دیگری انتخاب کنید.' });
+    }
+    if (email && email.trim() && (await storage.isEmailTaken(cleanEmail))) {
+      return res.status(400).json({ error: 'این ایمیل قبلاً ثبت شده است.' });
     }
 
-    // Check existing username
-    const existingUser = await pool.query('SELECT id FROM users WHERE LOWER(username) = $1', [cleanUsername]);
-    if (existingUser.rows.length > 0) {
-      return res.status(400).json({ error: 'این نام کاربری قبلاً انتخاب شده است. لطفاً نام دیگری برگزینید.' });
-    }
-
-    const name = displayName?.trim() || cleanUsername;
     const passwordHash = await bcrypt.hash(password, 10);
     const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-    // Generate secure verification token
-    const cryptoMod = await import('crypto');
-    const verificationToken = cryptoMod.randomBytes(32).toString('hex');
-    const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    const insertRes = await pool.query(
-      `
-      INSERT INTO users (id, email, username, display_name, password_hash, is_verified, verification_token, verification_token_expires_at, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, false, $6, $7, NOW(), NOW())
-      RETURNING id, email, username, display_name, avatar_url, bio, created_at, is_verified
-      `,
-      [userId, cleanEmail, cleanUsername, name, passwordHash, verificationToken, tokenExpiresAt]
-    );
-
-    const user = insertRes.rows[0];
-
-    // Dispatch verification email in background without blocking response
-    sendVerificationEmail(cleanEmail, cleanUsername, verificationToken, req).catch((e) => {
-      console.error('[AUTH] Background email send error:', e);
+    const user = await storage.createUser({
+      id: userId,
+      email: cleanEmail,
+      username: cleanUsername,
+      displayName: name,
+      passwordHash,
     });
 
+    const token = signUserToken(user);
     res.status(201).json({
       success: true,
-      requiresVerification: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-      },
-      message: `ایمیل فعال‌سازی برای شما به نشانی ${cleanEmail} ارسال گردید. لطفاً برای فعال‌سازی نهایی حساب کاربری، روی پیوند داخل ایمیل کلیک فرمایید.`,
+      token,
+      user: formatUserResponse(user),
+      message: 'حساب کاربری با موفقیت ساخته شد.',
     });
   } catch (error: any) {
     console.error('Registration error:', error);
@@ -709,257 +378,29 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
   }
 });
 
-// 2. Verify Email Token & Activate User Account (Hugging Face style)
-app.post('/api/auth/verify-email-token', async (req: Request, res: Response) => {
-  try {
-    const { token } = req.body;
-    if (!token || typeof token !== 'string') {
-      return res.status(400).json({ error: 'توکن فعال‌سازی نامعتبر است.' });
-    }
-
-    const result = await pool.query(
-      `
-      SELECT id, email, username, display_name, avatar_url, bio, created_at, is_verified
-      FROM users
-      WHERE verification_token = $1 AND verification_token_expires_at > NOW()
-      `,
-      [token.trim()]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'پیوند فعال‌سازی نامعتبر است یا منقضی شده است. لطفاً وارد شوید و درخواست ارسال مجدد دهید.' });
-    }
-
-    const user = result.rows[0];
-    await pool.query(
-      `
-      UPDATE users
-      SET is_verified = true, verification_token = NULL, verification_token_expires_at = NULL, updated_at = NOW()
-      WHERE id = $1
-      `,
-      [user.id]
-    );
-
-    const jwtToken = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-      },
-      JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      success: true,
-      token: jwtToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-        avatarUrl: user.avatar_url,
-        bio: user.bio,
-        createdAt: user.created_at,
-        isVerified: true,
-      },
-      message: `حساب کاربری شما با موفقیت فعال گردید! خوش آمدید @${user.username}`,
-    });
-  } catch (error: any) {
-    console.error('Email verification error:', error);
-    res.status(500).json({ error: 'خطا در فعال‌سازی حساب کاربری' });
-  }
-});
-
-// 4. Request Password Reset (Forgot Password)
-app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'لطفاً یک آدرس ایمیل معتبر وارد فرمایید.' });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    const userRes = await pool.query('SELECT id, email, username FROM users WHERE LOWER(email) = $1', [cleanEmail]);
-
-    if (userRes.rows.length === 0) {
-      // Don't reveal user existence
-      return res.json({
-        success: true,
-        message: 'اگر این نشانی ایمیل در سیستم ثبت شده باشد، پیوند بازیابی کلمه عبور ارسال گردید.',
-      });
-    }
-
-    const user = userRes.rows[0];
-    const cryptoMod = await import('crypto');
-    const resetToken = cryptoMod.randomBytes(32).toString('hex');
-    const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-    await pool.query(
-      'UPDATE users SET reset_password_token = $1, reset_password_expires_at = $2, updated_at = NOW() WHERE id = $3',
-      [resetToken, resetExpiresAt, user.id]
-    );
-
-    // Dispatch reset email in background
-    sendPasswordResetEmail(user.email, user.username, resetToken, req).catch((e) => {
-      console.error('[AUTH] Background reset email error:', e);
-    });
-
-    res.json({
-      success: true,
-      message: 'پیوند بازیابی رمز عبور به ایمیل شما ارسال شد. لطفاً صندوق ورودی خود را بررسی فرمایید.',
-    });
-  } catch (error: any) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({ error: 'خطا در ثبت درخواست بازیابی رمز عبور' });
-  }
-});
-
-// 5. Complete Password Reset
-app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
-  try {
-    const { token, newPassword } = req.body;
-    if (!token || typeof token !== 'string') {
-      return res.status(400).json({ error: 'توکن بازیابی نامعتبر است.' });
-    }
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد.' });
-    }
-
-    const userRes = await pool.query(
-      'SELECT id, email, username, display_name FROM users WHERE reset_password_token = $1 AND reset_password_expires_at > NOW()',
-      [token.trim()]
-    );
-
-    if (userRes.rows.length === 0) {
-      return res.status(400).json({ error: 'پیوند بازیابی رمز عبور نامعتبر است یا منقضی شده است. لطفاً مجدداً درخواست دهید.' });
-    }
-
-    const user = userRes.rows[0];
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-
-    await pool.query(
-      'UPDATE users SET password_hash = $1, reset_password_token = NULL, reset_password_expires_at = NULL, is_verified = true, updated_at = NOW() WHERE id = $2',
-      [passwordHash, user.id]
-    );
-
-    const jwtToken = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-      },
-      JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      success: true,
-      token: jwtToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-      },
-      message: 'رمز عبور شما با موفقیت تغییر یافت و وارد سیستم شدید.',
-    });
-  } catch (error: any) {
-    console.error('Reset password error:', error);
-    res.status(500).json({ error: 'خطا در تغییر رمز عبور' });
-  }
-});
-
-// 3. Resend Verification Email
-app.post('/api/auth/resend-verification', async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'آدرس ایمیل نامعتبر است.' });
-    }
-    const cleanEmail = email.trim().toLowerCase();
-    const userRes = await pool.query('SELECT id, email, username, is_verified FROM users WHERE LOWER(email) = $1', [cleanEmail]);
-    if (userRes.rows.length === 0) {
-      return res.status(404).json({ error: 'کاربری با این ایمیل یافت نشد.' });
-    }
-    const user = userRes.rows[0];
-    if (user.is_verified) {
-      return res.status(400).json({ error: 'این حساب قبلاً فعال شده است. لطفاً وارد شوید.' });
-    }
-
-    const cryptoMod = await import('crypto');
-    const verificationToken = cryptoMod.randomBytes(32).toString('hex');
-    const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await pool.query(
-      'UPDATE users SET verification_token = $1, verification_token_expires_at = $2, updated_at = NOW() WHERE id = $3',
-      [verificationToken, tokenExpiresAt, user.id]
-    );
-
-    await sendVerificationEmail(user.email, user.username, verificationToken, req);
-
-    res.json({
-      success: true,
-      message: `ایمیل فعال‌سازی مجدد به نشانی ${user.email} ارسال گردید.`,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: 'خطا در ارسال مجدد ایمیل فعال‌سازی' });
-  }
-});
-
 // Login existing user
 app.post('/api/auth/login', async (req: Request, res: Response) => {
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
-    if (!checkRateLimit('login_' + clientIp, 10, 5 * 60 * 1000)) {
-      return res.status(429).json({ error: 'تعداد دفعات تلاش ناموفق زیاد است. لطفاً ۵ دقیقه دیگر تلاش فرمایید.' });
-    }
   try {
     const { emailOrUsername, password } = req.body;
     if (!emailOrUsername || !password) {
       return res.status(400).json({ error: 'لطفاً نام کاربری/ایمیل و رمز عبور را وارد کنید.' });
     }
 
-    const cleanInput = emailOrUsername.trim().toLowerCase();
-    const result = await pool.query(
-      'SELECT * FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $1',
-      [cleanInput]
-    );
-
-    if (result.rows.length === 0) {
+    const user = await storage.findUserByEmailOrUsername(emailOrUsername);
+    if (!user || !user.password_hash) {
       return res.status(401).json({ error: 'کاربری با این مشخصات یافت نشد.' });
     }
 
-    const user = result.rows[0];
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({ error: 'رمز عبور وارد شده نادرست است.' });
     }
 
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-      },
-      JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
+    const token = signUserToken(user);
     res.json({
       success: true,
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-        avatarUrl: user.avatar_url,
-        bio: user.bio,
-        createdAt: user.created_at,
-      },
+      user: formatUserResponse(user),
       message: 'ورود موفقیت‌آمیز بود.',
     });
   } catch (error: any) {
@@ -975,30 +416,12 @@ app.get('/api/auth/me', async (req: Request, res: Response) => {
     if (!authUser) {
       return res.status(401).json({ error: 'نشست کاربری نامعتبر است.' });
     }
-
-    const result = await pool.query(
-      'SELECT id, email, username, display_name, avatar_url, bio, created_at FROM users WHERE id = $1',
-      [authUser.id]
-    );
-
-    if (result.rows.length === 0) {
+    const user = await storage.findUserById(authUser.id);
+    if (!user) {
       return res.status(404).json({ error: 'کاربر یافت نشد.' });
     }
-
-    const user = result.rows[0];
-    res.json({
-      success: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-        avatarUrl: user.avatar_url,
-        bio: user.bio,
-        createdAt: user.created_at,
-      },
-    });
-  } catch (error: any) {
+    res.json({ success: true, user: formatUserResponse(user) });
+  } catch {
     res.status(500).json({ error: 'خطا در دریافت اطلاعات کاربر' });
   }
 });
@@ -1012,888 +435,262 @@ app.put('/api/auth/profile', async (req: Request, res: Response) => {
     }
 
     const { displayName, username, bio, avatarUrl } = req.body;
-
     let cleanUsername: string | null = null;
     if (typeof username === 'string' && username.trim()) {
       const sanitized = username.trim().toLowerCase().replace(/[^\w-]/g, '');
       if (sanitized.length < 3) {
         return res.status(400).json({ error: 'نام کاربری باید حداقل ۳ کاراکتر باشد.' });
       }
-      const existingUser = await pool.query(
-        'SELECT id FROM users WHERE LOWER(username) = $1 AND id != $2',
-        [sanitized, authUser.id]
-      );
-      if (existingUser.rows.length > 0) {
+      if (await storage.isUsernameTaken(sanitized, authUser.id)) {
         return res.status(400).json({ error: 'این نام کاربری قبلاً توسط کاربر دیگری ثبت شده است.' });
       }
       cleanUsername = sanitized;
     }
 
-    const result = await pool.query(
-      `
-      UPDATE users
-      SET
-        display_name = COALESCE($1, display_name),
-        username = COALESCE($2, username),
-        bio = COALESCE($3, bio),
-        avatar_url = COALESCE($4, avatar_url),
-        updated_at = NOW()
-      WHERE id = $5
-      RETURNING id, email, username, display_name, avatar_url, bio, created_at
-      `,
-      [
-        displayName ? displayName.trim() : null,
-        cleanUsername,
-        bio !== undefined ? bio.trim() : null,
-        avatarUrl !== undefined ? avatarUrl.trim() : null,
-        authUser.id,
-      ]
-    );
+    const user = await storage.updateUser(authUser.id, {
+      displayName: displayName ? displayName.trim() : null,
+      username: cleanUsername,
+      bio: bio !== undefined ? bio.trim() : null,
+      avatarUrl: avatarUrl !== undefined ? avatarUrl.trim() : null,
+    });
 
-    // Also update all documents created by this user to reflect their chosen display name
-    if (displayName && displayName.trim()) {
-      await pool.query(
-        'UPDATE shared_markdown_files SET author_name = $1 WHERE user_id = $2',
-        [displayName.trim(), authUser.id]
-      );
-    }
-
-    const user = result.rows[0];
     res.json({
       success: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.display_name,
-        avatarUrl: user.avatar_url,
-        bio: user.bio,
-        createdAt: user.created_at,
-      },
+      user: formatUserResponse(user),
       message: 'مشخصات حساب با موفقیت بروزرسانی شد.',
     });
-  } catch (error: any) {
+  } catch {
     res.status(500).json({ error: 'خطا در بروزرسانی پروفایل' });
   }
 });
 
-// Get user's cloud documents
+// Get user's personal documents (strictly scoped to authUser.id)
 app.get('/api/auth/my-documents', async (req: Request, res: Response) => {
   try {
     const authUser = getAuthUser(req);
     if (!authUser) {
       return res.status(401).json({ error: 'لطفاً وارد حساب شوید.' });
     }
-
-    const result = await pool.query(
-      `
-      SELECT 
-        f.id, f.title, f.content, f.description, 
-        COALESCE(NULLIF(u.display_name, ''), f.author_name) as author_name,
-        u.username as author_username,
-        u.avatar_url as author_avatar,
-        f.tags, f.is_public, f.views_count, f.stars_count, f.created_at, f.updated_at
-      FROM shared_markdown_files f
-      LEFT JOIN users u ON f.user_id = u.id
-      WHERE f.user_id = $1
-      ORDER BY f.updated_at DESC
-      `,
-      [authUser.id]
-    );
-
-    res.json({ success: true, files: result.rows });
-  } catch (error: any) {
+    const files = await storage.getMyDocuments(authUser.id);
+    res.json({ success: true, files });
+  } catch {
     res.status(500).json({ error: 'خطا در دریافت اسناد کاربر' });
   }
 });
 
-// 2. Get list of files (with search, tags, sorting)
+// 2. Public Explore files (strictly visibility = 'public')
 app.get('/api/files', async (req: Request, res: Response) => {
   try {
     const { search, tag, sort = 'recent', limit = 50, offset = 0 } = req.query;
-    const authUser = getAuthUser(req);
-
-    let query = `
-      SELECT
-        f.id, f.title, f.description,
-        COALESCE(NULLIF(u.display_name, ''), f.author_name) as author_name,
-        u.username as author_username,
-        u.avatar_url as author_avatar,
-        f.user_id,
-        f.tags, f.is_public, f.views_count, f.stars_count, f.created_at, f.updated_at,
-        LENGTH(f.content) as content_length,
-        ar.status as my_access_status
-      FROM shared_markdown_files f
-      LEFT JOIN users u ON f.user_id = u.id
-      LEFT JOIN document_access_requests ar ON ar.file_id = f.id AND ar.requester_id = $1
-      WHERE (f.is_public = true OR (f.user_id IS NOT NULL AND f.user_id = $1) OR f.author_name = 'هوش مصنوعی (MCP)' OR f.author_name = 'کاربر محلی')
-    `;
-    const params: any[] = [authUser ? authUser.id : null];
-    let paramIndex = 2;
-
-    if (search && typeof search === 'string' && search.trim()) {
-      query += ` AND (f.title ILIKE ${paramIndex} OR f.description ILIKE ${paramIndex} OR COALESCE(u.display_name, f.author_name) ILIKE ${paramIndex})`;
-      params.push(`%${search.trim()}%`);
-      paramIndex++;
-    }
-
-    if (tag && typeof tag === 'string' && tag.trim()) {
-      query += ` AND ${paramIndex} = ANY(f.tags)`;
-      params.push(tag.trim());
-      paramIndex++;
-    }
-
-    if (sort === 'popular') {
-      query += ' ORDER BY f.stars_count DESC, f.created_at DESC';
-    } else if (sort === 'views') {
-      query += ' ORDER BY f.views_count DESC, f.created_at DESC';
-    } else {
-      query += ' ORDER BY f.created_at DESC';
-    }
-
-    query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-    params.push(Number(limit), Number(offset));
-
-    const result = await pool.query(query, params);
-
-    // Get all distinct tags
-    const tagsRes = await pool.query(`
-      SELECT DISTINCT unnest(tags) as tag, COUNT(*) as count
-      FROM shared_markdown_files
-      GROUP BY tag
-      ORDER BY count DESC
-      LIMIT 20
-    `);
-
-    res.json({
-      files: result.rows,
-      tags: tagsRes.rows,
+    const result = await storage.getPublicFiles({
+      search: typeof search === 'string' ? search : undefined,
+      tag: typeof tag === 'string' ? tag : undefined,
+      sort: typeof sort === 'string' ? sort : 'recent',
+      limit: Number(limit) || 50,
+      offset: Number(offset) || 0,
     });
+    res.json(result);
   } catch (error: any) {
     console.error('Error fetching files:', error);
-    res.status(500).json({ error: 'Failed to fetch files', details: error.message });
+    res.status(500).json({ error: 'خطا در دریافت فهرست اسناد عمومی', details: error.message });
   }
 });
 
-// 3. Get single file by ID (increments views count)
+// 3. Get single file by ID (enforces privacy: private files only accessible to owner)
 app.get('/api/files/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const authUser = getAuthUser(req);
+    const file = await storage.getFileById(id);
 
-    const result = await pool.query(
-      `
-      SELECT
-        f.*,
-        COALESCE(NULLIF(u.display_name, ''), f.author_name) as author_name,
-        u.username as author_username,
-        u.avatar_url as author_avatar
-      FROM shared_markdown_files f
-      LEFT JOIN users u ON f.user_id = u.id
-      WHERE f.id = $1 OR LOWER(f.id) = LOWER($1)
-      LIMIT 1
-      `,
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'فایل یافت نشد.' });
+    if (!file) {
+      return res.status(404).json({ error: 'سند مورد نظر یافت نشد.' });
     }
 
-    const file = result.rows[0];
+    const visibility: DocVisibility =
+      file.visibility === 'public' || file.visibility === 'unlisted' || file.visibility === 'private'
+        ? file.visibility
+        : file.is_public
+        ? 'public'
+        : 'private';
 
-    // Check private access control
-    if (!file.is_public) {
-      const authUser = getAuthUser(req);
-      if (!authUser) {
-        return res.status(403).json({
-          error: 'این سند خصوصی است. برای مشاهده، لطفاً ابتدا وارد حساب خود شوید.',
-          isLocked: true,
-          requiresAuth: true,
-          accessStatus: 'none',
-          file: {
-            id: file.id,
-            title: file.title,
-            description: file.description,
-            author_name: file.author_name,
-            author_username: file.author_username,
-            user_id: file.user_id,
-            is_public: false,
-          },
-        });
-      }
-
-      // If user is author, allowed
-      if (file.user_id === authUser.id) {
-        pool.query('UPDATE shared_markdown_files SET views_count = views_count + 1 WHERE id = $1', [id]).catch(() => {});
-        return res.json(file);
-      }
-
-      // Check if granted access in document_access_requests
-      const reqRes = await pool.query(
-        'SELECT status FROM document_access_requests WHERE file_id = $1 AND requester_id = $2',
-        [id, authUser.id]
-      );
-
-      const status = reqRes.rows.length > 0 ? reqRes.rows[0].status : 'none';
-
-      if (status !== 'approved') {
-        return res.status(403).json({
-          error: status === 'pending'
-            ? 'درخواست دسترسی شما برای نویسنده سند ارسال شده و در انتظار تایید است.'
-            : status === 'rejected'
-            ? 'درخواست دسترسی شما به این سند توسط نویسنده رد شده است.'
-            : 'این سند خصوصی است و برای مشاهده نیاز به تایید نویسنده دارد.',
-          isLocked: true,
-          requiresAuth: false,
-          accessStatus: status,
-          file: {
-            id: file.id,
-            title: file.title,
-            description: file.description,
-            author_name: file.author_name,
-            author_username: file.author_username,
-            user_id: file.user_id,
-            is_public: false,
-          },
-        });
-      }
+    const isOwner = Boolean(authUser && file.user_id && file.user_id === authUser.id);
+    if (visibility === 'private' && !isOwner) {
+      return res.status(403).json({
+        error: 'این سند خصوصی است و دسترسی به آن تنها برای مالک سند امکان‌پذیر است.',
+      });
     }
 
-    // Allowed (public or approved)
-    pool.query('UPDATE shared_markdown_files SET views_count = views_count + 1 WHERE id = $1', [id]).catch(() => {});
-    res.json(file);
+    if (!isOwner) {
+      await storage.incrementFileViews(id);
+      file.views_count = (file.views_count || 0) + 1;
+    }
+
+    res.json({
+      ...file,
+      visibility,
+      is_owner: isOwner,
+    });
   } catch (error: any) {
     console.error('Error fetching file:', error);
-    res.status(500).json({ error: 'Failed to load file', details: error.message });
+    res.status(500).json({ error: 'خطا در بارگذاری سند', details: error.message });
   }
 });
 
-// 4. Create / Publish a new markdown file
+// 4. Create a new markdown file (strictly authenticated, defaults to 'private')
 app.post('/api/files', async (req: Request, res: Response) => {
   try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'برای ایجاد یا ذخیره سند در حساب کاربری، ابتدا وارد شوید.' });
+    }
+
     const {
       title,
       content,
       description = '',
-      author_name = 'کاربر ناشناس',
+      author_name,
       tags = [],
-      is_public = true,
+      visibility,
+      is_public,
+      is_favorite = false,
       customId,
-      folderPath,
-      folder_path,
     } = req.body;
 
     if (!title || !title.trim()) {
-      return res.status(400).json({ error: 'عنوان فایل الزامی است.' });
+      return res.status(400).json({ error: 'عنوان سند الزامی است.' });
     }
-    if (!content || !content.trim()) {
-      return res.status(400).json({ error: 'محتوای فایل مارک‌دان نمی‌تواند خالی باشد.' });
-    }
-
-    const authUser = getAuthUser(req);
-    const resolvedUserId = authUser ? authUser.id : null;
-    let resolvedAuthorName = (author_name && author_name !== 'کاربر ناشناس') ? author_name.trim() : '';
-
-    if (authUser) {
-      // Fetch the user's exact chosen name from registration
-      const uRes = await pool.query('SELECT display_name, username FROM users WHERE id = $1', [authUser.id]);
-      if (uRes.rows.length > 0 && uRes.rows[0].display_name) {
-        resolvedAuthorName = uRes.rows[0].display_name;
-      } else if (authUser.displayName) {
-        resolvedAuthorName = authUser.displayName;
-      }
-    }
-    if (!resolvedAuthorName) {
-      resolvedAuthorName = 'کاربر ناشناس';
+    if (content === undefined || content === null) {
+      return res.status(400).json({ error: 'محتوای سند نامعتبر است.' });
     }
 
-    const id = (customId && customId.trim()) ? customId.trim() : generateFileId(title);
-    const cleanTags = Array.isArray(tags)
-      ? tags.map((t: string) => t.trim()).filter(Boolean)
-      : [];
+    let resolvedVisibility: DocVisibility = 'private';
+    if (visibility === 'private' || visibility === 'unlisted' || visibility === 'public') {
+      resolvedVisibility = visibility;
+    } else if (typeof is_public === 'boolean') {
+      resolvedVisibility = is_public ? 'public' : 'private';
+    }
 
-    const cleanFolder = (folder_path || folderPath || '').trim();
+    const userRecord = await storage.findUserById(authUser.id);
+    const resolvedAuthorName =
+      (userRecord?.display_name && userRecord.display_name.trim()) ||
+      authUser.displayName ||
+      (author_name && author_name.trim()) ||
+      userRecord?.username ||
+      'کاربر';
 
-    const result = await pool.query(
-      `
-      INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, is_public, folder_path, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-      RETURNING *
-      `,
-      [id, title.trim(), content, description.trim(), resolvedAuthorName, resolvedUserId, cleanTags, Boolean(is_public), cleanFolder]
-    );
+    const id = customId && customId.trim() ? customId.trim() : generateFileId(title);
+    if (await storage.getFileById(id)) {
+      return res.status(409).json({ error: 'این شناسه قبلاً ثبت شده است. لطفاً شناسه دیگری انتخاب کنید.' });
+    }
+
+    const cleanTags = Array.isArray(tags) ? tags.map((t: string) => t.trim()).filter(Boolean) : [];
+    const file = await storage.createFile({
+      id,
+      title: title.trim(),
+      content: String(content),
+      description: (description || '').trim(),
+      authorName: resolvedAuthorName,
+      userId: authUser.id,
+      tags: cleanTags,
+      visibility: resolvedVisibility,
+      isPublic: resolvedVisibility === 'public',
+      isFavorite: Boolean(is_favorite),
+    });
 
     res.status(201).json({
       success: true,
-      file: result.rows[0],
+      file: { ...file, is_owner: true },
       shareUrl: `/?share=${id}`,
     });
   } catch (error: any) {
-    console.error('Error publishing file:', error);
-    res.status(500).json({ error: 'Failed to publish file', details: error.message });
+    console.error('Error creating file:', error);
+    res.status(500).json({ error: 'خطا در ذخیره سند', details: error.message });
   }
 });
 
-// 5. Update existing file
+// 5. Update existing file (strictly authenticated + owner only)
 app.put('/api/files/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { title, content, description, author_name, tags, is_public } = req.body;
-
-    const existing = await pool.query('SELECT * FROM shared_markdown_files WHERE id = $1', [id]);
-    if (existing.rows.length === 0) {
-      return res.status(404).json({ error: 'فایل یافت نشد.' });
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'برای ویرایش سند باید وارد حساب کاربری خود شوید.' });
     }
 
-    const cleanTags = Array.isArray(tags)
-      ? tags.map((t: string) => t.trim()).filter(Boolean)
-      : existing.rows[0].tags;
+    const { id } = req.params;
+    const existing = await storage.getFileById(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'سند مورد نظر یافت نشد.' });
+    }
+    if (!existing.user_id || existing.user_id !== authUser.id) {
+      return res.status(403).json({ error: 'شما تنها مجاز به ویرایش اسناد شخصی خود هستید.' });
+    }
 
-    const result = await pool.query(
-      `
-      UPDATE shared_markdown_files 
-      SET 
-        title = COALESCE($1, title),
-        content = COALESCE($2, content),
-        description = COALESCE($3, description),
-        author_name = COALESCE($4, author_name),
-        tags = COALESCE($5, tags),
-        is_public = COALESCE($6, is_public),
-        updated_at = NOW()
-      WHERE id = $7
-      RETURNING *
-      `,
-      [
-        title ? title.trim() : null,
-        content !== undefined ? content : null,
-        description !== undefined ? description.trim() : null,
-        author_name ? author_name.trim() : null,
-        cleanTags,
-        is_public !== undefined ? Boolean(is_public) : null,
-        id,
-      ]
-    );
+    const { title, content, description, tags, visibility, is_public, is_favorite } = req.body;
+    let nextVisibility: DocVisibility | null = null;
+    let nextIsPublic: boolean | null = null;
+    if (visibility === 'private' || visibility === 'unlisted' || visibility === 'public') {
+      nextVisibility = visibility;
+      nextIsPublic = visibility === 'public';
+    } else if (typeof is_public === 'boolean') {
+      nextVisibility = is_public ? 'public' : 'private';
+      nextIsPublic = is_public;
+    }
 
-    res.json({ success: true, file: result.rows[0] });
+    const cleanTags = Array.isArray(tags) ? tags.map((t: string) => t.trim()).filter(Boolean) : null;
+    const updated = await storage.updateFile(id, {
+      title: title ? title.trim() : null,
+      content: content !== undefined ? content : null,
+      description: description !== undefined ? description.trim() : null,
+      tags: cleanTags,
+      visibility: nextVisibility,
+      isPublic: nextIsPublic,
+      isFavorite: typeof is_favorite === 'boolean' ? is_favorite : null,
+    });
+
+    res.json({ success: true, file: { ...updated, is_owner: true } });
   } catch (error: any) {
     console.error('Error updating file:', error);
-    res.status(500).json({ error: 'Failed to update file', details: error.message });
+    res.status(500).json({ error: 'خطا در بروزرسانی سند', details: error.message });
   }
 });
 
-// 6. Delete file
+// 6. Delete file (strictly authenticated + owner only)
 app.delete('/api/files/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const cleanId = String(id || '').trim();
-    const noExt = cleanId.replace(/\.(md|markdown|txt)$/i, '').trim();
-
-    const result = await pool.query(
-      `DELETE FROM shared_markdown_files
-       WHERE id = $1
-          OR LOWER(id) = LOWER($1)
-          OR LOWER(title) = LOWER($1)
-          OR LOWER(title) = LOWER($2)
-          OR LOWER(REGEXP_REPLACE(title, '\\.(md|markdown|txt)$', '', 'i')) = LOWER($2)
-          OR LOWER(REPLACE(REPLACE(title, 'ي', 'ی'), 'ك', 'ک')) = LOWER(REPLACE(REPLACE($2, 'ي', 'ی'), 'ك', 'ک'))
-          OR id = 'brain-' || $2
-          OR id LIKE 'brain-' || $2 || '-%'
-       RETURNING id, title`,
-      [cleanId, noExt]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'فایل مورد نظر یافت نشد.' });
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'برای حذف سند باید وارد حساب کاربری خود شوید.' });
     }
-    res.json({ success: true, message: 'فایل با موفقیت حذف شد.', deleted: result.rows });
+
+    const { id } = req.params;
+    const existing = await storage.getFileById(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'سند مورد نظر یافت نشد.' });
+    }
+    if (!existing.user_id || existing.user_id !== authUser.id) {
+      return res.status(403).json({ error: 'شما مجاز به حذف سند کاربر دیگری نیستید.' });
+    }
+
+    await storage.deleteFile(id);
+    res.json({ success: true, message: 'سند با موفقیت حذف شد.' });
   } catch (error: any) {
     console.error('Error deleting file:', error);
-    res.status(500).json({ error: 'Failed to delete file', details: error.message });
+    res.status(500).json({ error: 'خطا در حذف سند', details: error.message });
   }
 });
 
-// 7. Star a file
+// 7. Star a public file
 app.post('/api/files/:id/star', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const result = await pool.query(
-      'UPDATE shared_markdown_files SET stars_count = stars_count + 1 WHERE id = $1 RETURNING id, stars_count',
-      [id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
+    const stars = await storage.starPublicFile(id);
+    if (stars === null) {
+      return res.status(404).json({ error: 'سند عمومی مورد نظر یافت نشد.' });
     }
-    res.json({ success: true, stars: result.rows[0].stars_count });
+    res.json({ success: true, stars });
   } catch (error: any) {
-    res.status(500).json({ error: 'Failed to star file', details: error.message });
-  }
-});
-
-// =============================================================
-// AI COGNITIVE BRAIN SYNC (/api/brain/sync & /api/brain/documents)
-// =============================================================
-app.post('/api/brain/sync', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    const userId = authUser ? authUser.id : null;
-    const authorName = authUser ? (authUser.displayName || authUser.username || 'کاربر استودیو') : 'کاربر محلی';
-
-    const { documents } = req.body;
-    if (!Array.isArray(documents) || documents.length === 0) {
-      return res.status(400).json({ error: 'لیست اسناد جهت همگام‌سازی الزامی است.' });
-    }
-
-// userId and authorName declared above
-
-    let syncedCount = 0;
-    for (const doc of documents) {
-      if (!doc.title || !doc.title.trim()) continue;
-      const cleanTitle = doc.title.trim();
-      const content = doc.content || '';
-      const folderPath = doc.folderPath || '🧠 مغز هوش مصنوعی';
-      const cleanTags = Array.from(new Set([...(doc.tags || []), 'ai-brain']));
-      const id = doc.id && !doc.id.startsWith('imported-') && !doc.id.startsWith('doc-') && !doc.id.startsWith('local-')
-        ? doc.id
-        : `brain-${userId ? userId.slice(0, 8) : 'local'}-${generateFileId(cleanTitle)}`;
-
-      await pool.query(
-        `INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, is_public, folder_path, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, NOW(), NOW())
-         ON CONFLICT (id) DO UPDATE
-         SET title = EXCLUDED.title,
-             content = EXCLUDED.content,
-             folder_path = EXCLUDED.folder_path,
-             tags = EXCLUDED.tags,
-             is_public = true,
-             version = COALESCE(shared_markdown_files.version, 1) + 1,
-             updated_at = NOW()`,
-        [id, cleanTitle, content, `سند ثبت‌شده در مخزن اسناد`, authorName, userId, cleanTags, folderPath]
-      );
-      syncedCount++;
-    }
-
-    res.json({
-      success: true,
-      count: syncedCount,
-      message: `${syncedCount} سند با موفقیت در مغز اختصاصی شما ذخیره و با سرور همگام شد.`,
-    });
-  } catch (error: any) {
-    console.error('Brain sync error:', error);
-    res.status(500).json({ error: 'خطا در همگام‌سازی مغز هوش مصنوعی', details: error.message });
-  }
-});
-
-app.get('/api/brain/documents', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    const whereUser = authUser
-      ? `(user_id = $1 OR user_id IS NULL OR is_public = true OR author_name = 'هوش مصنوعی (MCP)' OR author_name = 'کاربر محلی')`
-      : `(user_id IS NULL OR is_public = true OR author_name = 'هوش مصنوعی (MCP)' OR author_name = 'کاربر محلی')`;
-    const params = authUser ? [authUser.id] : [];
-
-    const result = await pool.query(
-      `SELECT id, title, content, description, folder_path, tags, version, updated_at, created_at
-       FROM shared_markdown_files
-       WHERE ${whereUser}
-       ORDER BY updated_at DESC
-       LIMIT 300`,
-      params
-    );
-    res.json({ success: true, files: result.rows });
-  } catch (error: any) {
-    res.status(500).json({ error: 'خطا در دریافت اسناد مغز هوش مصنوعی' });
-  }
-});
-
-app.delete('/api/brain/purge', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    // Purge user's brain files AND all MCP/AI generated unassigned brain files
-    const deleteCondition = authUser
-      ? `(user_id = $1 OR user_id IS NULL OR author_name = 'هوش مصنوعی (MCP)')`
-      : `(user_id IS NULL OR author_name = 'هوش مصنوعی (MCP)')`;
-    const params = authUser ? [authUser.id] : [];
-
-    const result = await pool.query(
-      `DELETE FROM shared_markdown_files
-       WHERE ${deleteCondition}
-         AND ('ai-brain' = ANY(tags) OR LOWER(COALESCE(folder_path, '')) LIKE '%مغز%' OR LOWER(COALESCE(folder_path, '')) LIKE '%brain%')
-       RETURNING id, title`,
-      params
-    );
-    res.json({
-      success: true,
-      message: `${result.rowCount || 0} سند از مغز هوش مصنوعی در سرور با موفقیت تخلیه شد.`,
-      deletedCount: result.rowCount,
-    });
-  } catch (err: any) {
-    console.error('Brain purge error:', err);
-    res.status(500).json({ error: 'خطا در تخلیه مغز هوش مصنوعی' });
-  }
-});
-
-// =============================================================
-// DOCUMENT COMMENTS (/api/files/:id/comments & /api/comments/:id)
-// =============================================================
-
-// 1. Get all comments for a document
-app.get('/api/files/:id/comments', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query(
-      `
-      SELECT
-        c.id, c.file_id, c.user_id, c.content, c.created_at,
-        COALESCE(NULLIF(u.display_name, ''), u.username) as author_name,
-        u.username as author_username,
-        u.avatar_url as author_avatar
-      FROM document_comments c
-      JOIN users u ON c.user_id = u.id
-      WHERE c.file_id = $1 OR LOWER(c.file_id) = LOWER($1)
-      ORDER BY c.created_at ASC
-      `,
-      [id]
-    );
-    res.json({ comments: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching comments:', error);
-    res.status(500).json({ error: 'خطا در بارگذاری نظرات' });
-  }
-});
-
-// 2. Add a new comment (requires authentication)
-app.post('/api/files/:id/comments', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'برای ثبت نظر ابتدا باید وارد حساب کاربری خود شوید.' });
-    }
-
-    const { id } = req.params;
-    const { content } = req.body;
-    if (!content || !content.trim()) {
-      return res.status(400).json({ error: 'متن نظر نمی‌تواند خالی باشد.' });
-    }
-
-    // Verify file exists
-    const fileRes = await pool.query(
-      'SELECT id, title FROM shared_markdown_files WHERE id = $1 OR LOWER(id) = LOWER($1)',
-      [id]
-    );
-    if (fileRes.rows.length === 0) {
-      return res.status(404).json({ error: 'سند مورد نظر یافت نشد.' });
-    }
-    const realFileId = fileRes.rows[0].id;
-
-    const commentId = `cmt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const insertRes = await pool.query(
-      `
-      INSERT INTO document_comments (id, file_id, user_id, content, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, NOW(), NOW())
-      RETURNING id, file_id, user_id, content, created_at
-      `,
-      [commentId, realFileId, authUser.id, content.trim()]
-    );
-
-    const newComment = {
-      ...insertRes.rows[0],
-      author_name: authUser.displayName || authUser.username,
-      author_username: authUser.username,
-      author_avatar: '',
-    };
-
-    res.status(201).json({ success: true, comment: newComment });
-  } catch (error: any) {
-    console.error('Error adding comment:', error);
-    res.status(500).json({ error: 'خطا در ثبت نظر', details: error.message });
-  }
-});
-
-// 3. Delete a comment (only author or file owner)
-app.delete('/api/comments/:id', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'نشست کاربری نامعتبر است.' });
-    }
-
-    const { id } = req.params;
-    const commentRes = await pool.query(
-      `
-      SELECT c.*, f.user_id as file_owner_id
-      FROM document_comments c
-      JOIN shared_markdown_files f ON c.file_id = f.id
-      WHERE c.id = $1
-      `,
-      [id]
-    );
-    if (commentRes.rows.length === 0) {
-      return res.status(404).json({ error: 'نظر مورد نظر یافت نشد.' });
-    }
-
-    const comment = commentRes.rows[0];
-    if (comment.user_id !== authUser.id && comment.file_owner_id !== authUser.id) {
-      return res.status(403).json({ error: 'شما دسترسی حذف این نظر را ندارید.' });
-    }
-
-    await pool.query('DELETE FROM document_comments WHERE id = $1', [id]);
-    res.json({ success: true, message: 'نظر با موفقیت حذف گردید.' });
-  } catch (error: any) {
-    console.error('Error deleting comment:', error);
-    res.status(500).json({ error: 'خطا در حذف نظر' });
-  }
-});
-
-// =============================================================
-// DOCUMENT ACCESS REQUESTS (Permissions System)
-// =============================================================
-
-// 1. Request access to a private document
-app.post('/api/files/:id/request-access', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'برای ارسال درخواست دسترسی باید وارد حساب کاربری خود شوید.' });
-    }
-
-    const { id } = req.params;
-    const { message = '' } = req.body;
-
-    const fileRes = await pool.query(
-      'SELECT id, title, user_id FROM shared_markdown_files WHERE id = $1 OR LOWER(id) = LOWER($1)',
-      [id]
-    );
-    if (fileRes.rows.length === 0) {
-      return res.status(404).json({ error: 'فایل مورد نظر یافت نشد.' });
-    }
-
-    const file = fileRes.rows[0];
-    if (!file.user_id) {
-      return res.status(400).json({ error: 'نویسنده این فایل ثبت نشده است.' });
-    }
-
-    if (file.user_id === authUser.id) {
-      return res.status(400).json({ error: 'شما مالک این سند هستید.' });
-    }
-
-    const reqId = `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const result = await pool.query(
-      `
-      INSERT INTO document_access_requests (id, file_id, requester_id, owner_id, status, message, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW())
-      ON CONFLICT (file_id, requester_id) DO UPDATE
-      SET status = 'pending', message = EXCLUDED.message, updated_at = NOW()
-      RETURNING *
-      `,
-      [reqId, file.id, authUser.id, file.user_id, String(message).slice(0, 500)]
-    );
-
-    // Send email notification to owner if configured
-    try {
-      const ownerRes = await pool.query('SELECT email, display_name FROM users WHERE id = $1', [file.user_id]);
-      if (ownerRes.rows.length > 0 && ownerRes.rows[0].email) {
-        const ownerEmail = ownerRes.rows[0].email;
-        const transporter = getMailTransporter();
-        if (transporter && !ownerEmail.endsWith('@local.user')) {
-          await transporter.sendMail({
-            from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
-            to: ownerEmail,
-            subject: `درخواست دسترسی جدید برای سند «${file.title}»`,
-            html: `
-              <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; padding: 24px; color: #1f2937;">
-                <h2 style="color: #d97706;">درخواست دسترسی جدید به سند محرمانه</h2>
-                <p>کاربر <strong>${authUser.displayName || authUser.username}</strong> درخواست مشاهده سند شما با عنوان <strong>«${file.title}»</strong> را ارسال نموده است.</p>
-                ${message ? `<p style="background: #f3f4f6; padding: 12px; border-radius: 8px;">پیام متقاضی: ${message}</p>` : ''}
-                <p>جهت تایید یا رد این درخواست به بخش «مجوزها» در پنل استودیو مارک‌دان مراجعه فرمایید.</p>
-              </div>
-            `,
-          });
-        }
-      }
-    } catch (e) {
-      console.warn('Could not dispatch owner notification email:', e);
-    }
-
-    res.json({
-      success: true,
-      request: result.rows[0],
-      message: 'درخواست دسترسی شما برای نویسنده سند ارسال گردید.',
-    });
-  } catch (error: any) {
-    console.error('Error requesting file access:', error);
-    res.status(500).json({ error: 'خطا در ثبت درخواست دسترسی', details: error.message });
-  }
-});
-
-// 2. Get incoming access requests for documents owned by authUser
-app.get('/api/access-requests/incoming', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'ابتدا وارد حساب کاربری شوید.' });
-    }
-
-    const result = await pool.query(
-      `
-      SELECT
-        ar.*,
-        f.title as file_title,
-        f.description as file_description,
-        COALESCE(NULLIF(u.display_name, ''), u.username) as requester_name,
-        u.username as requester_username,
-        u.avatar_url as requester_avatar,
-        u.email as requester_email
-      FROM document_access_requests ar
-      JOIN shared_markdown_files f ON ar.file_id = f.id
-      JOIN users u ON ar.requester_id = u.id
-      WHERE ar.owner_id = $1
-      ORDER BY ar.created_at DESC
-      `,
-      [authUser.id]
-    );
-
-    res.json({ requests: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching incoming requests:', error);
-    res.status(500).json({ error: 'خطا در دریافت درخواست‌های دسترسی' });
-  }
-});
-
-// 3. Respond to an access request (approve or reject)
-app.post('/api/access-requests/:id/respond', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'ابتدا وارد حساب کاربری شوید.' });
-    }
-
-    const { id } = req.params;
-    const { status } = req.body;
-    if (status !== 'approved' && status !== 'rejected') {
-      return res.status(400).json({ error: 'وضعیت نامعتبر است. فقط approved یا rejected مجاز است.' });
-    }
-
-    const existing = await pool.query('SELECT * FROM document_access_requests WHERE id = $1', [id]);
-    if (existing.rows.length === 0) {
-      return res.status(404).json({ error: 'درخواست یافت نشد.' });
-    }
-
-    if (existing.rows[0].owner_id !== authUser.id) {
-      return res.status(403).json({ error: 'شما مالک این سند نیستید.' });
-    }
-
-    const updated = await pool.query(
-      'UPDATE document_access_requests SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-      [status, id]
-    );
-
-    // Notify requester if approved
-    if (status === 'approved') {
-      try {
-        const reqInfo = await pool.query(`
-          SELECT u.email, u.display_name, f.title
-          FROM users u, shared_markdown_files f
-          WHERE u.id = $1 AND f.id = $2
-        `, [existing.rows[0].requester_id, existing.rows[0].file_id]);
-
-        if (reqInfo.rows.length > 0 && reqInfo.rows[0].email) {
-          const requesterEmail = reqInfo.rows[0].email;
-          const transporter = getMailTransporter();
-          if (transporter && !requesterEmail.endsWith('@local.user')) {
-            await transporter.sendMail({
-              from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || 'no-reply@markdown-studio.app'}>`,
-              to: requesterEmail,
-              subject: `دسترسی شما به سند «${reqInfo.rows[0].title}» تأیید شد`,
-              html: `
-                <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; padding: 24px; color: #1f2937;">
-                  <h2 style="color: #059669;">دسترسی به سند تأیید شد 🎉</h2>
-                  <p>درخواست شما برای دسترسی به سند <strong>«${reqInfo.rows[0].title}»</strong> توسط نویسنده تایید گردید.</p>
-                  <p>اکنون می‌توانید با مراجعه به لینک زیر، محتوای این سند را مطالعه فرمایید:</p>
-                  <p><a href="${process.env.APP_URL || ''}/?share=${existing.rows[0].file_id}" style="color: #0284c7; font-weight: bold;">مشاهده سند</a></p>
-                </div>
-              `,
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('Could not dispatch approval email:', e);
-      }
-    }
-
-    res.json({
-      success: true,
-      request: updated.rows[0],
-      message: status === 'approved' ? 'دسترسی کاربر با موفقیت تایید شد.' : 'درخواست دسترسی رد شد.',
-    });
-  } catch (error: any) {
-    console.error('Error responding to access request:', error);
-    res.status(500).json({ error: 'خطا در ثبت پاسخ درخواست' });
-  }
-});
-
-// 4. Get outgoing access requests sent by authUser
-app.get('/api/access-requests/outgoing', async (req: Request, res: Response) => {
-  try {
-    const authUser = getAuthUser(req);
-    if (!authUser) {
-      return res.status(401).json({ error: 'ابتدا وارد حساب کاربری شوید.' });
-    }
-
-    const result = await pool.query(
-      `
-      SELECT
-        ar.*,
-        f.title as file_title,
-        f.description as file_description,
-        COALESCE(NULLIF(u.display_name, ''), f.author_name) as owner_name
-      FROM document_access_requests ar
-      JOIN shared_markdown_files f ON ar.file_id = f.id
-      LEFT JOIN users u ON ar.owner_id = u.id
-      WHERE ar.requester_id = $1
-      ORDER BY ar.created_at DESC
-      `,
-      [authUser.id]
-    );
-
-    res.json({ requests: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching outgoing requests:', error);
-    res.status(500).json({ error: 'خطا در دریافت وضعیت درخواست‌ها' });
-  }
-});
-
-// =============================================================
-// NATIVE MODEL CONTEXT PROTOCOL (MCP) ENDPOINTS (/mcp, /api/mcp, /sse)
-// =============================================================
-app.options(['/mcp', '/api/mcp', '/api/mcp/*', '/sse'], async (req: Request, res: Response) => {
-  try {
-    const { setCorsHeaders } = await import('./src/server/mcpBridge.js');
-    setCorsHeaders(res);
-  } catch {
-    const { setCorsHeaders } = await import('./src/server/mcpBridge');
-    setCorsHeaders(res);
-  }
-  res.sendStatus(204);
-});
-
-app.post(['/mcp', '/api/mcp', '/api/mcp/messages'], async (req: Request, res: Response) => {
-  try {
-    const { handleMcpJsonRpc } = await import('./src/server/mcpBridge.js');
-    await handleMcpJsonRpc(pool, req, res);
-  } catch (e: any) {
-    // Fallback to TS import in development tsx
-    const { handleMcpJsonRpc } = await import('./src/server/mcpBridge');
-    await handleMcpJsonRpc(pool, req, res);
-  }
-});
-
-app.get(['/mcp', '/api/mcp', '/api/mcp/sse', '/api/mcp/info', '/sse'], async (req: Request, res: Response) => {
-  try {
-    const { handleMcpSse } = await import('./src/server/mcpBridge.js');
-    handleMcpSse(req, res);
-  } catch (e: any) {
-    // Fallback to TS import in development tsx
-    const { handleMcpSse } = await import('./src/server/mcpBridge');
-    handleMcpSse(req, res);
+    res.status(500).json({ error: 'خطا در ثبت امتیاز', details: error.message });
   }
 });
 
@@ -1901,27 +698,32 @@ app.get(['/mcp', '/api/mcp', '/api/mcp/sse', '/api/mcp/info', '/sse'], async (re
 // VITE INTEGRATION
 // -------------------------------------------------------------
 async function startServer() {
-  await initDatabase();
-
   if (process.env.NODE_ENV === 'production') {
+    await initStorage();
     app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (req: Request, res: Response) => {
+    app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   } else {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
+    const [, viteModule] = await Promise.all([initStorage(), import('vite')]);
+    const vite = await viteModule.createServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Markdown File Sharing server running on http://0.0.0.0:${PORT}`);
+  const httpServer = app.listen(PORT, HOST, () => {
+    console.log(`Markdown Studio server running on http://${HOST}:${PORT}`);
+  });
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    console.error(`Server failed to listen on ${HOST}:${PORT}:`, err.message);
+    process.exit(1);
   });
 }
 
 startServer().catch((err) => {
   console.error('Fatal error starting server:', err);
+  process.exit(1);
 });

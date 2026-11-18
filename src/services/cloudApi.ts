@@ -1,4 +1,5 @@
 import { authApi } from './authApi';
+import { DocVisibility } from '../types';
 
 export interface SharedMarkdownFile {
   id: string;
@@ -6,48 +7,17 @@ export interface SharedMarkdownFile {
   content?: string;
   description: string;
   author_name: string;
-  author_username?: string;
   user_id?: string;
   tags: string[];
+  visibility?: DocVisibility;
   is_public: boolean;
+  is_favorite?: boolean;
+  is_owner?: boolean;
   views_count: number;
   stars_count: number;
   created_at: string;
   updated_at: string;
   content_length?: number;
-  my_access_status?: 'pending' | 'approved' | 'rejected' | null;
-  isLocked?: boolean;
-  folder_path?: string;
-  folderPath?: string;
-}
-
-export interface DocumentAccessRequest {
-  id: string;
-  file_id: string;
-  requester_id: string;
-  owner_id: string;
-  status: 'pending' | 'approved' | 'rejected';
-  message?: string;
-  created_at: string;
-  updated_at: string;
-  file_title?: string;
-  file_description?: string;
-  requester_name?: string;
-  requester_username?: string;
-  requester_avatar?: string;
-  requester_email?: string;
-  owner_name?: string;
-}
-
-export interface DocumentComment {
-  id: string;
-  file_id: string;
-  user_id: string;
-  author_name: string;
-  author_username?: string;
-  author_avatar?: string;
-  content: string;
-  created_at: string;
 }
 
 export interface CommunityTag {
@@ -66,44 +36,21 @@ export interface PublishPayload {
   description?: string;
   author_name?: string;
   tags?: string[];
+  visibility?: DocVisibility;
   is_public?: boolean;
+  is_favorite?: boolean;
   customId?: string;
-  folder_path?: string;
-  folderPath?: string;
-}
-
-async function safeJson<T = any>(res: Response, fallbackError = 'خطای ارتباط با سرور'): Promise<T> {
-  const text = await res.text();
-  if (text && text.trim().startsWith('{')) {
-    const data = JSON.parse(text);
-    if (!res.ok) {
-      const err: any = new Error(data.error || fallbackError);
-      Object.assign(err, data);
-      throw err;
-    }
-    return data;
-  }
-  if (!res.ok) {
-    throw new Error(fallbackError);
-  }
-  return {} as T;
 }
 
 export const cloudApi = {
   // Check health and get stats
   async getHealth() {
-    try {
-      const res = await fetch('/api/health');
-      if (!res.ok) return { status: 'offline' };
-      const text = await res.text();
-      if (text && text.trim().startsWith('{')) {
-        return JSON.parse(text);
-      }
-    } catch {}
-    return { status: 'offline' };
+    const res = await fetch('/api/health');
+    if (!res.ok) throw new Error('خطا در برقراری ارتباط با سرور');
+    return res.json();
   },
 
-  // Fetch community files
+  // Fetch public explore files
   async getFiles(params?: {
     search?: string;
     tag?: string;
@@ -111,38 +58,36 @@ export const cloudApi = {
     limit?: number;
     offset?: number;
   }): Promise<FilesResponse> {
-    try {
-      const searchParams = new URLSearchParams();
-      if (params?.search) searchParams.set('search', params.search);
-      if (params?.tag) searchParams.set('tag', params.tag);
-      if (params?.sort) searchParams.set('sort', params.sort);
-      if (params?.limit) searchParams.set('limit', String(params.limit));
-      if (params?.offset) searchParams.set('offset', String(params.offset));
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.tag) searchParams.set('tag', params.tag);
+    if (params?.sort) searchParams.set('sort', params.sort);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.offset) searchParams.set('offset', String(params.offset));
 
-      const res = await fetch(`/api/files?${searchParams.toString()}`, {
-        headers: authApi.getAuthHeaders(),
-      });
-      if (res.ok) {
-        const text = await res.text();
-        if (text && text.trim().startsWith('{')) {
-          return JSON.parse(text);
-        }
-      }
-    } catch (e) {
-      console.warn('Cloud files fetch offline/fallback', e);
+    const res = await fetch(`/api/files?${searchParams.toString()}`);
+    if (!res.ok) {
+      throw new Error('خطا در دریافت لیست اسناد عمومی');
     }
-    return { files: [], tags: [] };
+    return res.json();
   },
 
-  // Fetch single file by ID
+  // Fetch single file by ID (sends auth header if logged in so owner can open private docs)
   async getFileById(id: string): Promise<SharedMarkdownFile> {
+    const token = authApi.getToken();
     const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
-      headers: authApi.getAuthHeaders(),
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
-    return safeJson<SharedMarkdownFile>(res, 'خطا در بارگذاری فایل از دیتابیس');
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      if (res.status === 404) throw new Error(errData?.error || 'سند مورد نظر یافت نشد.');
+      if (res.status === 403) throw new Error(errData?.error || 'این سند خصوصی است و دسترسی به آن مجاز نیست.');
+      throw new Error(errData?.error || 'خطا در بارگذاری سند');
+    }
+    return res.json();
   },
 
-  // Publish / Upload a new markdown file
+  // Create / save a new markdown file
   async publishFile(payload: PublishPayload): Promise<{
     success: boolean;
     file: SharedMarkdownFile;
@@ -153,7 +98,12 @@ export const cloudApi = {
       headers: authApi.getAuthHeaders(),
       body: JSON.stringify(payload),
     });
-    return safeJson(res, 'خطا در انتشار فایل در پایگاه داده');
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در ذخیره‌سازی سند');
+    }
+    return data;
   },
 
   // Update existing file
@@ -163,7 +113,12 @@ export const cloudApi = {
       headers: authApi.getAuthHeaders(),
       body: JSON.stringify(payload),
     });
-    return safeJson(res, 'خطا در به‌روزرسانی فایل');
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در به‌روزرسانی سند');
+    }
+    return data;
   },
 
   // Delete file
@@ -172,111 +127,19 @@ export const cloudApi = {
       method: 'DELETE',
       headers: authApi.getAuthHeaders(),
     });
-    return safeJson(res, 'خطا در حذف فایل');
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'خطا در حذف سند');
+    }
+    return res.json();
   },
 
-  // Star / like a file
+  // Star / like a public file
   async starFile(id: string): Promise<{ stars: number }> {
     const res = await fetch(`/api/files/${encodeURIComponent(id)}/star`, {
       method: 'POST',
     });
-    return safeJson(res, 'خطا در ثبت امتیاز');
-  },
-
-  // Request access to a private file
-  async requestFileAccess(fileId: string, message?: string): Promise<{ success: boolean; message: string; request: DocumentAccessRequest }> {
-    const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/request-access`, {
-      method: 'POST',
-      headers: authApi.getAuthHeaders(),
-      body: JSON.stringify({ message }),
-    });
-    return safeJson(res, 'خطا در ارسال درخواست دسترسی');
-  },
-
-  // Get incoming requests for current user's documents
-  async getIncomingAccessRequests(): Promise<{ requests: DocumentAccessRequest[] }> {
-    try {
-      const res = await fetch('/api/access-requests/incoming', {
-        headers: authApi.getAuthHeaders(),
-      });
-      return safeJson(res, 'خطا در دریافت درخواست‌های ورودی');
-    } catch {
-      return { requests: [] };
-    }
-  },
-
-  // Respond to access request (approve / reject)
-  async respondToAccessRequest(requestId: string, status: 'approved' | 'rejected'): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`/api/access-requests/${encodeURIComponent(requestId)}/respond`, {
-      method: 'POST',
-      headers: authApi.getAuthHeaders(),
-      body: JSON.stringify({ status }),
-    });
-    return safeJson(res, 'خطا در ثبت پاسخ درخواست');
-  },
-
-  // Get outgoing requests sent by current user
-  async getOutgoingAccessRequests(): Promise<{ requests: DocumentAccessRequest[] }> {
-    try {
-      const res = await fetch('/api/access-requests/outgoing', {
-        headers: authApi.getAuthHeaders(),
-      });
-      return safeJson(res, 'خطا در دریافت وضعیت درخواست‌ها');
-    } catch {
-      return { requests: [] };
-    }
-  },
-
-  // Document Comments API
-  async getComments(fileId: string): Promise<DocumentComment[]> {
-    try {
-      const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments`);
-      const data = await safeJson<{ comments: DocumentComment[] }>(res, 'خطا در بارگذاری نظرات');
-      return data.comments || [];
-    } catch {
-      return [];
-    }
-  },
-
-  async addComment(fileId: string, content: string): Promise<{ success: boolean; comment: DocumentComment }> {
-    const res = await fetch(`/api/files/${encodeURIComponent(fileId)}/comments`, {
-      method: 'POST',
-      headers: authApi.getAuthHeaders(),
-      body: JSON.stringify({ content }),
-    });
-    return safeJson(res, 'خطا در ثبت نظر');
-  },
-
-  async deleteComment(commentId: string): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`/api/comments/${encodeURIComponent(commentId)}`, {
-      method: 'DELETE',
-      headers: authApi.getAuthHeaders(),
-    });
-    return safeJson(res, 'خطا در حذف نظر');
-  },
-
-  // AI Brain Cloud Sync API
-  async syncAiBrainDocs(documents: any[]): Promise<{ success: boolean; count: number; message: string }> {
-    const res = await fetch('/api/brain/sync', {
-      method: 'POST',
-      headers: authApi.getAuthHeaders(),
-      body: JSON.stringify({ documents }),
-    });
-    return safeJson(res, 'خطا در همگام‌سازی مغز هوش مصنوعی با سرور');
-  },
-
-  async fetchAiBrainDocs(): Promise<{ success: boolean; files: SharedMarkdownFile[] }> {
-    const res = await fetch('/api/brain/documents', {
-      headers: authApi.getAuthHeaders(),
-    });
-    return safeJson(res, 'خطا در دریافت اسناد مغز هوش مصنوعی');
-  },
-
-  async purgeAiBrain(): Promise<{ success: boolean; message: string }> {
-    const res = await fetch('/api/brain/purge', {
-      method: 'DELETE',
-      headers: authApi.getAuthHeaders(),
-    });
-    return safeJson(res, 'خطا در تخلیه مغز هوش مصنوعی');
+    if (!res.ok) throw new Error('خطا در ثبت امتیاز');
+    return res.json();
   },
 };

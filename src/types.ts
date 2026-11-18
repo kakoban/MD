@@ -1,25 +1,25 @@
+export type DocVisibility = 'private' | 'unlisted' | 'public';
+
 export interface MarkdownDoc {
   id: string;
   title: string;
   content: string;
+  description?: string;
   createdAt: number;
   updatedAt: number;
-  uploadedAt?: number;
   isFavorite?: boolean;
   tags?: string[];
+  visibility?: DocVisibility;
   isCloudShared?: boolean;
-  isPublic?: boolean;
   cloudSyncedAt?: number;
   cloudAuthor?: string;
+  userId?: string;
+  isOwner?: boolean;
   isForked?: boolean;
   wordGoal?: number;
-  folderPath?: string;
-  isAiBrain?: boolean;
 }
 
-export type DocSortOption = 'upload-desc' | 'upload-asc' | 'updated-desc' | 'title-asc';
-
-export type ViewMode = 'workspace' | 'split' | 'editor' | 'preview' | 'presentation';
+export type ViewMode = 'split' | 'editor' | 'preview' | 'presentation';
 
 export type AppTheme = 'dark' | 'light' | 'sepia' | 'cyber' | 'nord' | 'academic' | 'editorial';
 
