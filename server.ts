@@ -216,7 +216,7 @@ app.get('/api/health', async (_req: Request, res: Response) => {
     const stats = await storage.getHealthStats();
     res.json({
       status: 'healthy',
-      database: 'Connected',
+      database: storage.getBackendType() === 'postgres' ? 'PostgreSQL' : 'SQLite',
       stats,
     });
   } catch (error: any) {

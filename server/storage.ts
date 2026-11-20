@@ -158,7 +158,7 @@ export async function initStorage(): Promise<void> {
         : { rejectUnauthorized: false },
       max: 10,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2500,
+      connectionTimeoutMillis: 15000,
     });
     pool.on('error', (err) => {
       console.error('PostgreSQL pool error:', err.message);
