@@ -8,6 +8,7 @@ export interface SharedMarkdownFile {
   description: string;
   author_name: string;
   user_id?: string;
+  folder_id?: string | null;
   tags: string[];
   visibility?: DocVisibility;
   is_public: boolean;
@@ -35,6 +36,7 @@ export interface PublishPayload {
   content: string;
   description?: string;
   author_name?: string;
+  folder_id?: string | null;
   tags?: string[];
   visibility?: DocVisibility;
   is_public?: boolean;

@@ -19,6 +19,25 @@ export interface UserRow {
   updated_at?: string;
 }
 
+export interface FolderRow {
+  id: string;
+  user_id: string;
+  parent_id: string | null;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpTokenRow {
+  id: string;
+  user_id: string;
+  name: string;
+  token_prefix: string;
+  last_used_at: string | null;
+  created_at: string;
+}
+
 export interface FileRow {
   id: string;
   title: string;
@@ -28,6 +47,7 @@ export interface FileRow {
   author_username?: string;
   author_avatar?: string;
   user_id: string | null;
+  folder_id?: string | null;
   tags: string[];
   visibility: DocVisibility;
   is_public: boolean;
@@ -72,6 +92,7 @@ function normalizeSqliteFile(row: any): FileRow {
     author_username: row.author_username || undefined,
     author_avatar: row.author_avatar || '',
     user_id: row.user_id ?? null,
+    folder_id: row.folder_id ?? null,
     tags: parseSqliteTags(row.tags),
     visibility,
     is_public: Boolean(row.is_public),
@@ -82,6 +103,35 @@ function normalizeSqliteFile(row: any): FileRow {
     updated_at: row.updated_at,
     content_length: row.content_length !== undefined ? Number(row.content_length) : undefined,
   };
+}
+
+function normalizeFolderRow(row: any): FolderRow {
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    parent_id: row.parent_id ?? null,
+    name: row.name,
+    description: row.description ?? '',
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function sanitizePathSegments(rawPath: string | null | undefined): string[] {
+  if (!rawPath || typeof rawPath !== 'string') return [];
+  const normalized = rawPath.replace(/\\/g, '/').trim();
+  if (!normalized || normalized === '/') return [];
+  const parts = normalized.split('/').map((p) => p.trim()).filter(Boolean);
+  const safe: string[] = [];
+  for (const part of parts) {
+    if (part === '.' || part === '..' || part.includes('\0') || /^[a-zA-Z]:/.test(part)) {
+      throw new Error('مسیر پوشه نامعتبر است.');
+    }
+    const cleaned = part.replace(/[<>:"|?*\x00-\x1F]/g, '').trim();
+    if (!cleaned) continue;
+    safe.push(cleaned.slice(0, 120));
+  }
+  return safe;
 }
 
 function initSqlite() {
@@ -108,6 +158,32 @@ function initSqlite() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS folders (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      parent_id TEXT,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
+    CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(user_id, parent_id);
+
+    CREATE TABLE IF NOT EXISTS mcp_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      token_prefix TEXT NOT NULL,
+      token_hash TEXT UNIQUE NOT NULL,
+      last_used_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_mcp_tokens_hash ON mcp_tokens(token_hash);
+
     CREATE TABLE IF NOT EXISTS shared_markdown_files (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -115,6 +191,7 @@ function initSqlite() {
       description TEXT DEFAULT '',
       author_name TEXT DEFAULT 'کاربر',
       user_id TEXT,
+      folder_id TEXT,
       tags TEXT DEFAULT '[]',
       visibility TEXT DEFAULT 'private',
       is_public INTEGER DEFAULT 0,
@@ -134,7 +211,7 @@ function initSqlite() {
       AND id IN ('ai-llm-guide-2025', 'react-clean-architecture', 'deep-work-summary-book');
   `);
 
-  // Safe migration for existing SQLite databases missing google_id / is_verified
+  // Safe migrations for existing SQLite databases
   const userCols = sqliteDb.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
   const colNames = new Set(userCols.map((c) => c.name));
   if (!colNames.has('google_id')) {
@@ -143,6 +220,13 @@ function initSqlite() {
   if (!colNames.has('is_verified')) {
     sqliteDb.exec('ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0');
   }
+
+  const fileCols = sqliteDb.prepare('PRAGMA table_info(shared_markdown_files)').all() as Array<{ name: string }>;
+  const fileColNames = new Set(fileCols.map((c) => c.name));
+  if (!fileColNames.has('folder_id')) {
+    sqliteDb.exec('ALTER TABLE shared_markdown_files ADD COLUMN folder_id TEXT');
+  }
+  sqliteDb.exec('CREATE INDEX IF NOT EXISTS idx_files_folder ON shared_markdown_files(folder_id);');
 
   activeBackend = 'sqlite';
   console.log(`Storage initialized with persistent SQLite (${dbPath}).`);
@@ -186,6 +270,32 @@ export async function initStorage(): Promise<void> {
           ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
           ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false;
 
+          CREATE TABLE IF NOT EXISTS folders (
+            id VARCHAR(100) PRIMARY KEY,
+            user_id VARCHAR(100) NOT NULL,
+            parent_id VARCHAR(100),
+            name VARCHAR(150) NOT NULL,
+            description TEXT DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
+          CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(user_id, parent_id);
+
+          CREATE TABLE IF NOT EXISTS mcp_tokens (
+            id VARCHAR(100) PRIMARY KEY,
+            user_id VARCHAR(100) NOT NULL,
+            name VARCHAR(150) NOT NULL,
+            token_prefix VARCHAR(32) NOT NULL,
+            token_hash VARCHAR(128) UNIQUE NOT NULL,
+            last_used_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id);
+          CREATE INDEX IF NOT EXISTS idx_mcp_tokens_hash ON mcp_tokens(token_hash);
+
           CREATE TABLE IF NOT EXISTS shared_markdown_files (
             id VARCHAR(100) PRIMARY KEY,
             title VARCHAR(255) NOT NULL,
@@ -193,6 +303,7 @@ export async function initStorage(): Promise<void> {
             description VARCHAR(500) DEFAULT '',
             author_name VARCHAR(100) DEFAULT 'کاربر',
             user_id VARCHAR(100),
+            folder_id VARCHAR(100),
             tags TEXT[] DEFAULT '{}'::text[],
             is_public BOOLEAN DEFAULT false,
             views_count INTEGER DEFAULT 0,
@@ -202,6 +313,7 @@ export async function initStorage(): Promise<void> {
           );
 
           ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS user_id VARCHAR(100);
+          ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS folder_id VARCHAR(100);
           ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS visibility VARCHAR(20);
           ALTER TABLE shared_markdown_files ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT false;
 
@@ -215,6 +327,7 @@ export async function initStorage(): Promise<void> {
           CREATE INDEX IF NOT EXISTS idx_shared_files_public ON shared_markdown_files(is_public);
           CREATE INDEX IF NOT EXISTS idx_shared_files_visibility ON shared_markdown_files(visibility);
           CREATE INDEX IF NOT EXISTS idx_shared_files_user ON shared_markdown_files(user_id);
+          CREATE INDEX IF NOT EXISTS idx_shared_files_folder ON shared_markdown_files(folder_id);
 
           DELETE FROM shared_markdown_files
           WHERE user_id IS NULL
@@ -545,7 +658,7 @@ export const storage = {
           COALESCE(NULLIF(u.display_name, ''), f.author_name) as author_name,
           u.username as author_username,
           u.avatar_url as author_avatar,
-          f.user_id, f.tags, f.visibility, f.is_public, f.is_favorite,
+          f.user_id, f.folder_id, f.tags, f.visibility, f.is_public, f.is_favorite,
           f.views_count, f.stars_count, f.created_at, f.updated_at
         FROM shared_markdown_files f
         LEFT JOIN users u ON f.user_id = u.id
@@ -565,7 +678,7 @@ export const storage = {
           COALESCE(NULLIF(u.display_name, ''), f.author_name) as author_name,
           u.username as author_username,
           u.avatar_url as author_avatar,
-          f.user_id, f.tags, f.visibility, f.is_public, f.is_favorite,
+          f.user_id, f.folder_id, f.tags, f.visibility, f.is_public, f.is_favorite,
           f.views_count, f.stars_count, f.created_at, f.updated_at
         FROM shared_markdown_files f
         LEFT JOIN users u ON f.user_id = u.id
@@ -750,16 +863,18 @@ export const storage = {
     description: string;
     authorName: string;
     userId: string;
+    folderId?: string | null;
     tags: string[];
     visibility: DocVisibility;
     isPublic: boolean;
     isFavorite: boolean;
   }): Promise<FileRow> {
+    const folderId = params.folderId ?? null;
     if (activeBackend === 'postgres' && pgPool) {
       const res = await pgPool.query(
         `
-        INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, visibility, is_public, is_favorite, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+        INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, folder_id, tags, visibility, is_public, is_favorite, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
         RETURNING *
         `,
         [
@@ -769,6 +884,7 @@ export const storage = {
           params.description,
           params.authorName,
           params.userId,
+          folderId,
           params.tags,
           params.visibility,
           params.isPublic,
@@ -782,8 +898,8 @@ export const storage = {
     sqliteDb!
       .prepare(
         `
-        INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, tags, visibility, is_public, is_favorite, views_count, stars_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+        INSERT INTO shared_markdown_files (id, title, content, description, author_name, user_id, folder_id, tags, visibility, is_public, is_favorite, views_count, stars_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
         `
       )
       .run(
@@ -793,6 +909,7 @@ export const storage = {
         params.description,
         params.authorName,
         params.userId,
+        folderId,
         JSON.stringify(params.tags),
         params.visibility,
         params.isPublic ? 1 : 0,
@@ -810,6 +927,8 @@ export const storage = {
       title?: string | null;
       content?: string | null;
       description?: string | null;
+      folderId?: string | null;
+      updateFolder?: boolean;
       tags?: string[] | null;
       visibility?: DocVisibility | null;
       isPublic?: boolean | null;
@@ -828,8 +947,9 @@ export const storage = {
           visibility = COALESCE($5, visibility),
           is_public = COALESCE($6, is_public),
           is_favorite = COALESCE($7, is_favorite),
+          folder_id = CASE WHEN $8 THEN $9 ELSE folder_id END,
           updated_at = NOW()
-        WHERE id = $8
+        WHERE id = $10
         RETURNING *
         `,
         [
@@ -840,6 +960,8 @@ export const storage = {
           params.visibility ?? null,
           params.isPublic ?? null,
           params.isFavorite ?? null,
+          Boolean(params.updateFolder),
+          params.folderId ?? null,
           id,
         ]
       );
@@ -858,12 +980,13 @@ export const storage = {
       params.isPublic !== undefined && params.isPublic !== null ? params.isPublic : existing.is_public;
     const nextIsFavorite =
       params.isFavorite !== undefined && params.isFavorite !== null ? params.isFavorite : existing.is_favorite;
+    const nextFolderId = params.updateFolder ? (params.folderId ?? null) : (existing.folder_id ?? null);
 
     sqliteDb!
       .prepare(
         `
         UPDATE shared_markdown_files
-        SET title = ?, content = ?, description = ?, tags = ?, visibility = ?, is_public = ?, is_favorite = ?, updated_at = ?
+        SET title = ?, content = ?, description = ?, folder_id = ?, tags = ?, visibility = ?, is_public = ?, is_favorite = ?, updated_at = ?
         WHERE id = ?
         `
       )
@@ -871,6 +994,7 @@ export const storage = {
         nextTitle,
         nextContent,
         nextDescription,
+        nextFolderId,
         JSON.stringify(nextTags),
         nextVisibility,
         nextIsPublic ? 1 : 0,
@@ -905,5 +1029,464 @@ export const storage = {
     if (res.changes === 0) return null;
     const updated = sqliteDb!.prepare('SELECT stars_count FROM shared_markdown_files WHERE id = ?').get(id) as any;
     return Number(updated?.stars_count || 0);
+  },
+
+  // =============================================================
+  // FOLDERS (NESTED AI MEMORY HIERARCHY)
+  // =============================================================
+  async getFoldersByUser(userId: string): Promise<FolderRow[]> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `SELECT id, user_id, parent_id, name, description, created_at, updated_at
+         FROM folders
+         WHERE user_id = $1
+         ORDER BY LOWER(name) ASC, created_at ASC`,
+        [userId]
+      );
+      return res.rows.map(normalizeFolderRow);
+    }
+
+    const rows = sqliteDb!
+      .prepare(
+        `SELECT id, user_id, parent_id, name, description, created_at, updated_at
+         FROM folders
+         WHERE user_id = ?
+         ORDER BY LOWER(name) ASC, created_at ASC`
+      )
+      .all(userId);
+    return rows.map(normalizeFolderRow);
+  },
+
+  async getFolderById(id: string): Promise<FolderRow | null> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        'SELECT id, user_id, parent_id, name, description, created_at, updated_at FROM folders WHERE id = $1',
+        [id]
+      );
+      return res.rows[0] ? normalizeFolderRow(res.rows[0]) : null;
+    }
+
+    const row = sqliteDb!
+      .prepare('SELECT id, user_id, parent_id, name, description, created_at, updated_at FROM folders WHERE id = ?')
+      .get(id);
+    return row ? normalizeFolderRow(row) : null;
+  },
+
+  async findChildFolderByName(userId: string, parentId: string | null, name: string): Promise<FolderRow | null> {
+    const clean = name.trim().toLowerCase();
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = parentId
+        ? await pgPool.query(
+            `SELECT id, user_id, parent_id, name, description, created_at, updated_at
+             FROM folders WHERE user_id = $1 AND parent_id = $2 AND LOWER(name) = $3 LIMIT 1`,
+            [userId, parentId, clean]
+          )
+        : await pgPool.query(
+            `SELECT id, user_id, parent_id, name, description, created_at, updated_at
+             FROM folders WHERE user_id = $1 AND parent_id IS NULL AND LOWER(name) = $2 LIMIT 1`,
+            [userId, clean]
+          );
+      return res.rows[0] ? normalizeFolderRow(res.rows[0]) : null;
+    }
+
+    const row = parentId
+      ? sqliteDb!
+          .prepare(
+            `SELECT id, user_id, parent_id, name, description, created_at, updated_at
+             FROM folders WHERE user_id = ? AND parent_id = ? AND LOWER(name) = ? LIMIT 1`
+          )
+          .get(userId, parentId, clean)
+      : sqliteDb!
+          .prepare(
+            `SELECT id, user_id, parent_id, name, description, created_at, updated_at
+             FROM folders WHERE user_id = ? AND parent_id IS NULL AND LOWER(name) = ? LIMIT 1`
+          )
+          .get(userId, clean);
+    return row ? normalizeFolderRow(row) : null;
+  },
+
+  async createFolder(params: {
+    id: string;
+    userId: string;
+    parentId?: string | null;
+    name: string;
+    description?: string;
+  }): Promise<FolderRow> {
+    const cleanName = params.name.trim().slice(0, 120);
+    const parentId = params.parentId ?? null;
+    const description = (params.description || '').trim().slice(0, 500);
+
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `INSERT INTO folders (id, user_id, parent_id, name, description, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         RETURNING id, user_id, parent_id, name, description, created_at, updated_at`,
+        [params.id, params.userId, parentId, cleanName, description]
+      );
+      return normalizeFolderRow(res.rows[0]);
+    }
+
+    const now = new Date().toISOString();
+    sqliteDb!
+      .prepare(
+        `INSERT INTO folders (id, user_id, parent_id, name, description, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(params.id, params.userId, parentId, cleanName, description, now, now);
+
+    return (await this.getFolderById(params.id))!;
+  },
+
+  async updateFolder(
+    id: string,
+    userId: string,
+    params: {
+      name?: string;
+      parentId?: string | null;
+      updateParent?: boolean;
+      description?: string;
+    }
+  ): Promise<FolderRow> {
+    const existing = await this.getFolderById(id);
+    if (!existing || existing.user_id !== userId) {
+      throw new Error('پوشه مورد نظر یافت نشد.');
+    }
+
+    let nextParentId = existing.parent_id;
+    if (params.updateParent) {
+      const targetParent = params.parentId ?? null;
+      if (targetParent === id) {
+        throw new Error('پوشه نمی‌تواند زیرمجموعه خودش باشد.');
+      }
+      if (targetParent) {
+        const allFolders = await this.getFoldersByUser(userId);
+        const byId = new Map(allFolders.map((f) => [f.id, f]));
+        let cursor: string | null = targetParent;
+        while (cursor) {
+          if (cursor === id) {
+            throw new Error('انتقال پوشه به داخل زیرپوشه خودش مجاز نیست.');
+          }
+          const node = byId.get(cursor);
+          if (!node) {
+            throw new Error('پوشه مقصد معتبر نیست.');
+          }
+          cursor = node.parent_id;
+        }
+      }
+      nextParentId = targetParent;
+    }
+
+    const nextName = params.name !== undefined ? params.name.trim().slice(0, 120) : existing.name;
+    const nextDesc =
+      params.description !== undefined ? params.description.trim().slice(0, 500) : existing.description;
+
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `UPDATE folders
+         SET name = $1, parent_id = $2, description = $3, updated_at = NOW()
+         WHERE id = $4 AND user_id = $5
+         RETURNING id, user_id, parent_id, name, description, created_at, updated_at`,
+        [nextName, nextParentId, nextDesc, id, userId]
+      );
+      return normalizeFolderRow(res.rows[0]);
+    }
+
+    const now = new Date().toISOString();
+    sqliteDb!
+      .prepare(
+        `UPDATE folders
+         SET name = ?, parent_id = ?, description = ?, updated_at = ?
+         WHERE id = ? AND user_id = ?`
+      )
+      .run(nextName, nextParentId, nextDesc, now, id, userId);
+
+    return (await this.getFolderById(id))!;
+  },
+
+  async deleteFolder(
+    id: string,
+    userId: string,
+    mode: 'move-to-parent' | 'cascade' = 'move-to-parent'
+  ): Promise<{ deletedFolders: number; affectedFiles: number }> {
+    const target = await this.getFolderById(id);
+    if (!target || target.user_id !== userId) {
+      throw new Error('پوشه مورد نظر یافت نشد.');
+    }
+
+    const allFolders = await this.getFoldersByUser(userId);
+
+    if (mode === 'move-to-parent') {
+      const fallbackParent = target.parent_id ?? null;
+      if (activeBackend === 'postgres' && pgPool) {
+        await pgPool.query('UPDATE folders SET parent_id = $1, updated_at = NOW() WHERE parent_id = $2 AND user_id = $3', [
+          fallbackParent,
+          id,
+          userId,
+        ]);
+        const moved = await pgPool.query(
+          'UPDATE shared_markdown_files SET folder_id = $1, updated_at = NOW() WHERE folder_id = $2 AND user_id = $3',
+          [fallbackParent, id, userId]
+        );
+        await pgPool.query('DELETE FROM folders WHERE id = $1 AND user_id = $2', [id, userId]);
+        return { deletedFolders: 1, affectedFiles: moved.rowCount || 0 };
+      }
+
+      const now = new Date().toISOString();
+      sqliteDb!
+        .prepare('UPDATE folders SET parent_id = ?, updated_at = ? WHERE parent_id = ? AND user_id = ?')
+        .run(fallbackParent, now, id, userId);
+      const moved = sqliteDb!
+        .prepare('UPDATE shared_markdown_files SET folder_id = ?, updated_at = ? WHERE folder_id = ? AND user_id = ?')
+        .run(fallbackParent, now, id, userId);
+      sqliteDb!.prepare('DELETE FROM folders WHERE id = ? AND user_id = ?').run(id, userId);
+      return { deletedFolders: 1, affectedFiles: Number(moved.changes || 0) };
+    }
+
+    // Cascade mode: collect all descendant folder IDs
+    const childrenByParent = new Map<string, string[]>();
+    for (const f of allFolders) {
+      if (f.parent_id) {
+        const list = childrenByParent.get(f.parent_id) || [];
+        list.push(f.id);
+        childrenByParent.set(f.parent_id, list);
+      }
+    }
+    const toDelete: string[] = [];
+    const queue = [id];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      toDelete.push(current);
+      const kids = childrenByParent.get(current) || [];
+      queue.push(...kids);
+    }
+
+    if (activeBackend === 'postgres' && pgPool) {
+      const delFiles = await pgPool.query(
+        'DELETE FROM shared_markdown_files WHERE user_id = $1 AND folder_id = ANY($2::text[])',
+        [userId, toDelete]
+      );
+      await pgPool.query('DELETE FROM folders WHERE user_id = $1 AND id = ANY($2::text[])', [userId, toDelete]);
+      return { deletedFolders: toDelete.length, affectedFiles: delFiles.rowCount || 0 };
+    }
+
+    let affectedFiles = 0;
+    for (const fid of toDelete) {
+      const res = sqliteDb!
+        .prepare('DELETE FROM shared_markdown_files WHERE user_id = ? AND folder_id = ?')
+        .run(userId, fid);
+      affectedFiles += Number(res.changes || 0);
+      sqliteDb!.prepare('DELETE FROM folders WHERE user_id = ? AND id = ?').run(userId, fid);
+    }
+    return { deletedFolders: toDelete.length, affectedFiles };
+  },
+
+  async ensureFolderPath(
+    userId: string,
+    rawPath: string,
+    description?: string
+  ): Promise<{ folder: FolderRow | null; path: string; createdCount: number }> {
+    const segments = sanitizePathSegments(rawPath);
+    if (segments.length === 0) {
+      return { folder: null, path: '', createdCount: 0 };
+    }
+
+    let parentId: string | null = null;
+    let currentFolder: FolderRow | null = null;
+    let createdCount = 0;
+
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      let existing = await this.findChildFolderByName(userId, parentId, seg);
+      if (!existing) {
+        const newId = `fld-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        existing = await this.createFolder({
+          id: newId,
+          userId,
+          parentId,
+          name: seg,
+          description: i === segments.length - 1 ? description || '' : '',
+        });
+        createdCount++;
+      }
+      currentFolder = existing;
+      parentId = existing.id;
+    }
+
+    return {
+      folder: currentFolder,
+      path: segments.join('/'),
+      createdCount,
+    };
+  },
+
+  async resolveFolderPath(userId: string, rawPath: string | null | undefined): Promise<FolderRow | null> {
+    const segments = sanitizePathSegments(rawPath);
+    if (segments.length === 0) return null;
+
+    let parentId: string | null = null;
+    let current: FolderRow | null = null;
+    for (const seg of segments) {
+      const match = await this.findChildFolderByName(userId, parentId, seg);
+      if (!match) return null;
+      current = match;
+      parentId = match.id;
+    }
+    return current;
+  },
+
+  buildFolderPathMap(folders: FolderRow[]): Map<string, string> {
+    const byId = new Map(folders.map((f) => [f.id, f]));
+    const cache = new Map<string, string>();
+
+    const resolve = (id: string, visited = new Set<string>()): string => {
+      if (cache.has(id)) return cache.get(id)!;
+      if (visited.has(id)) return '';
+      visited.add(id);
+      const f = byId.get(id);
+      if (!f) return '';
+      const fullPath = f.parent_id ? `${resolve(f.parent_id, visited)}/${f.name}` : f.name;
+      cache.set(id, fullPath);
+      return fullPath;
+    };
+
+    for (const f of folders) {
+      resolve(f.id);
+    }
+    return cache;
+  },
+
+  async findUserFileByFolderAndTitle(
+    userId: string,
+    folderId: string | null,
+    titleOrFilename: string
+  ): Promise<FileRow | null> {
+    const normalizedTarget = titleOrFilename.trim().replace(/\.md$/i, '').toLowerCase();
+    const docs = await this.getMyDocuments(userId);
+    return (
+      docs.find(
+        (d) =>
+          (d.folder_id ?? null) === (folderId ?? null) &&
+          d.title.trim().replace(/\.md$/i, '').toLowerCase() === normalizedTarget
+      ) || null
+    );
+  },
+
+  // =============================================================
+  // MCP PERSONAL ACCESS TOKENS (SHA-256 HASHED)
+  // =============================================================
+  async createMcpToken(params: {
+    id: string;
+    userId: string;
+    name: string;
+    tokenPrefix: string;
+    tokenHash: string;
+  }): Promise<McpTokenRow> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `INSERT INTO mcp_tokens (id, user_id, name, token_prefix, token_hash, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         RETURNING id, user_id, name, token_prefix, last_used_at, created_at`,
+        [params.id, params.userId, params.name.trim().slice(0, 120), params.tokenPrefix, params.tokenHash]
+      );
+      return res.rows[0];
+    }
+
+    const now = new Date().toISOString();
+    sqliteDb!
+      .prepare(
+        `INSERT INTO mcp_tokens (id, user_id, name, token_prefix, token_hash, last_used_at, created_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?)`
+      )
+      .run(params.id, params.userId, params.name.trim().slice(0, 120), params.tokenPrefix, params.tokenHash, now);
+
+    return {
+      id: params.id,
+      user_id: params.userId,
+      name: params.name.trim().slice(0, 120),
+      token_prefix: params.tokenPrefix,
+      last_used_at: null,
+      created_at: now,
+    };
+  },
+
+  async listMcpTokens(userId: string): Promise<McpTokenRow[]> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `SELECT id, user_id, name, token_prefix, last_used_at, created_at
+         FROM mcp_tokens
+         WHERE user_id = $1
+         ORDER BY created_at DESC`,
+        [userId]
+      );
+      return res.rows;
+    }
+
+    return sqliteDb!
+      .prepare(
+        `SELECT id, user_id, name, token_prefix, last_used_at, created_at
+         FROM mcp_tokens
+         WHERE user_id = ?
+         ORDER BY created_at DESC`
+      )
+      .all(userId) as unknown as McpTokenRow[];
+  },
+
+  async findUserByMcpTokenHash(tokenHash: string): Promise<UserRow | null> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.bio, u.created_at, t.id as token_id
+         FROM mcp_tokens t
+         JOIN users u ON u.id = t.user_id
+         WHERE t.token_hash = $1
+         LIMIT 1`,
+        [tokenHash]
+      );
+      if (!res.rows[0]) return null;
+      const row = res.rows[0];
+      pgPool.query('UPDATE mcp_tokens SET last_used_at = NOW() WHERE id = $1', [row.token_id]).catch(() => {});
+      return {
+        id: row.id,
+        email: row.email,
+        username: row.username,
+        display_name: row.display_name,
+        avatar_url: row.avatar_url,
+        bio: row.bio,
+        created_at: row.created_at,
+      };
+    }
+
+    const row = sqliteDb!
+      .prepare(
+        `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.bio, u.created_at, t.id as token_id
+         FROM mcp_tokens t
+         JOIN users u ON u.id = t.user_id
+         WHERE t.token_hash = ?
+         LIMIT 1`
+      )
+      .get(tokenHash) as any;
+    if (!row) return null;
+    try {
+      sqliteDb!
+        .prepare('UPDATE mcp_tokens SET last_used_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), row.token_id);
+    } catch {}
+    return {
+      id: row.id,
+      email: row.email,
+      username: row.username,
+      display_name: row.display_name,
+      avatar_url: row.avatar_url,
+      bio: row.bio,
+      created_at: row.created_at,
+    };
+  },
+
+  async deleteMcpToken(id: string, userId: string): Promise<boolean> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query('DELETE FROM mcp_tokens WHERE id = $1 AND user_id = $2', [id, userId]);
+      return (res.rowCount || 0) > 0;
+    }
+    const res = sqliteDb!.prepare('DELETE FROM mcp_tokens WHERE id = ? AND user_id = ?').run(id, userId);
+    return Number(res.changes || 0) > 0;
   },
 };

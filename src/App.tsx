@@ -12,6 +12,7 @@ import {
   CloudSyncStatus,
   UserProfile,
   DocVisibility,
+  FolderItem,
 } from './types';
 import {
   parseMarkdownToHtml,
@@ -39,7 +40,10 @@ import { SearchReplaceModal } from './components/SearchReplaceModal';
 import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
+import { McpBridgeModal } from './components/McpBridgeModal';
+import { FolderSelection } from './components/FolderTree';
 import { authApi } from './services/authApi';
+import { memoryApi, buildFolderPathMap } from './services/memoryApi';
 import {
   GitFork,
   Upload,
@@ -52,7 +56,7 @@ import {
   Eye,
 } from 'lucide-react';
 
-const STORAGE_KEY_THEME = 'markdown_studio_theme_v3';
+const STORAGE_KEY_THEME = 'markdown_studio_theme_v4';
 const STORAGE_KEY_FONT = 'markdown_studio_font_v2';
 
 function mapServerFileToDoc(file: SharedMarkdownFile, currentUserId?: string): MarkdownDoc {
@@ -76,6 +80,7 @@ function mapServerFileToDoc(file: SharedMarkdownFile, currentUserId?: string): M
     isCloudShared: true,
     cloudAuthor: file.author_name,
     userId: file.user_id,
+    folderId: file.folder_id ?? null,
     isOwner: file.is_owner ?? Boolean(currentUserId && file.user_id === currentUserId),
     cloudSyncedAt: Date.now(),
   };
@@ -87,8 +92,10 @@ export default function App() {
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [workspaceView, setWorkspaceView] = useState<'dashboard' | 'editor'>('dashboard');
 
-  // Authenticated user's personal documents (strictly isolated per user)
+  // Authenticated user's personal documents & folders (strictly isolated per user)
   const [documents, setDocuments] = useState<MarkdownDoc[]>([]);
+  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<FolderSelection>('all');
   const [isLoadingDocs, setIsLoadingDocs] = useState<boolean>(false);
   const [activeDocId, setActiveDocId] = useState<string>('');
 
@@ -110,7 +117,7 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_THEME);
       if (saved) return saved as AppTheme;
     } catch {}
-    return 'light';
+    return 'academic';
   });
   const [fontFamily, setFontFamily] = useState<FontFamily>(() => {
     try {
@@ -133,6 +140,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isMyDocumentsModalOpen, setIsMyDocumentsModalOpen] = useState(false);
+  const [isMcpBridgeOpen, setIsMcpBridgeOpen] = useState(false);
   const [exploreFilesCount, setExploreFilesCount] = useState<number>(0);
   const [toastNotice, setToastNotice] = useState<string | null>(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('synced');
@@ -184,13 +192,17 @@ export default function App() {
     } catch {}
   }, [theme, fontFamily]);
 
-  // Load authenticated user's personal documents
+  // Load authenticated user's personal documents & folders
   const loadUserDocuments = useCallback(async (user: UserProfile) => {
     setIsLoadingDocs(true);
     try {
-      const files = await authApi.getMyDocuments();
+      const [files, userFolders] = await Promise.all([
+        authApi.getMyDocuments(),
+        memoryApi.getFolders().catch(() => [] as FolderItem[]),
+      ]);
       const mapped = files.map((f) => mapServerFileToDoc(f, user.id));
       setDocuments(mapped);
+      setFolders(userFolders);
       mapped.forEach((d) => {
         cloudSyncedStateRef.current[d.id] = { title: d.title, content: d.content };
       });
@@ -332,12 +344,15 @@ export default function App() {
     authApi.logout();
     setCurrentUser(null);
     setDocuments([]);
+    setFolders([]);
+    setSelectedFolder('all');
     setActiveDocId('');
     cloudSyncedStateRef.current = {};
     setGuestDoc(null);
     setWorkspaceView('dashboard');
     setIsProfileModalOpen(false);
     setIsMyDocumentsModalOpen(false);
+    setIsMcpBridgeOpen(false);
     setIsCommunityOpen(false);
     setIsShareModalOpen(false);
     setIsBookletModalOpen(false);
@@ -521,6 +536,88 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  // Folder Management Handlers
+  const handleCreateFolder = useCallback(
+    async (name: string, parentId: string | null) => {
+      if (!currentUser) return;
+      try {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+
+        // If user entered slash-separated nested path (e.g. "memory/projects"), ensure full path
+        if (trimmed.includes('/') || trimmed.includes('\\')) {
+          const pathMap = buildFolderPathMap(folders);
+          const basePath = parentId ? pathMap.get(parentId) || '' : '';
+          const combined = basePath ? `${basePath}/${trimmed}` : trimmed;
+          const res = await memoryApi.ensureFolderPath(combined);
+          setFolders(res.folders);
+          if (res.folder) setSelectedFolder(res.folder.id);
+          showNotice(`مسیر پوشه «${res.path}» ایجاد شد.`);
+        } else {
+          const res = await memoryApi.createFolder({ name: trimmed, parentId });
+          setFolders(res.folders);
+          setSelectedFolder(res.folder.id);
+          showNotice(`پوشه «${res.folder.name}» ایجاد شد.`);
+        }
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در ایجاد پوشه');
+      }
+    },
+    [currentUser, folders, showNotice]
+  );
+
+  const handleRenameFolder = useCallback(
+    async (folderId: string, newName: string) => {
+      if (!currentUser) return;
+      try {
+        const res = await memoryApi.updateFolder(folderId, { name: newName.trim() });
+        setFolders(res.folders);
+        showNotice(`نام پوشه به «${res.folder.name}» تغییر یافت.`);
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در تغییر نام پوشه');
+      }
+    },
+    [currentUser, showNotice]
+  );
+
+  const handleDeleteFolder = useCallback(
+    async (folderId: string) => {
+      if (!currentUser) return;
+      try {
+        const res = await memoryApi.deleteFolder(folderId, 'move-to-parent');
+        setFolders(res.folders);
+        if (selectedFolder === folderId) {
+          setSelectedFolder('all');
+        }
+        // Reload documents so moved files reflect their new parent folderId
+        const files = await authApi.getMyDocuments();
+        setDocuments(files.map((f) => mapServerFileToDoc(f, currentUser.id)));
+        showNotice('پوشه حذف شد و اسناد آن به سطح بالاتر منتقل شدند.');
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در حذف پوشه');
+      }
+    },
+    [currentUser, selectedFolder, showNotice]
+  );
+
+  const handleMoveDocToFolder = useCallback(
+    async (docId: string, folderId: string | null) => {
+      if (!currentUser) return;
+      try {
+        await cloudApi.updateFile(docId, { folder_id: folderId });
+        setDocuments((prev) =>
+          prev.map((d) => (d.id === docId ? { ...d, folderId, updatedAt: Date.now() } : d))
+        );
+        const pathMap = buildFolderPathMap(folders);
+        const targetLabel = folderId ? pathMap.get(folderId) || 'پوشه' : 'ریشه (بدون پوشه)';
+        showNotice(`سند به «${targetLabel}» منتقل شد.`);
+      } catch (err: any) {
+        showNotice(err.message || 'خطا در انتقال سند به پوشه');
+      }
+    },
+    [currentUser, folders, showNotice]
+  );
+
   // Authenticated Document Management (Persisted to Server under user's ID, default 'private')
   const handleCreateDoc = useCallback(async () => {
     if (!currentUser) {
@@ -529,12 +626,15 @@ export default function App() {
     }
     const defaultTitle = 'سند جدید';
     const defaultContent = `# سند جدید\n\nنوشتن را از اینجا شروع کنید...\n`;
+    const targetFolderId =
+      selectedFolder !== 'all' && selectedFolder !== 'root' ? selectedFolder : null;
     try {
       const res = await cloudApi.publishFile({
         title: defaultTitle,
         content: defaultContent,
         visibility: 'private',
         is_public: false,
+        folder_id: targetFolderId,
       });
       const newDoc = mapServerFileToDoc(res.file, currentUser.id);
       cloudSyncedStateRef.current[newDoc.id] = { title: newDoc.title, content: newDoc.content };
@@ -546,7 +646,7 @@ export default function App() {
     } catch (err: any) {
       showNotice(err.message || 'خطا در ایجاد سند جدید');
     }
-  }, [currentUser, showNotice]);
+  }, [currentUser, selectedFolder, showNotice]);
 
   const handleDuplicateDoc = useCallback(
     async (id: string) => {
@@ -561,6 +661,7 @@ export default function App() {
           tags: target.tags || [],
           visibility: 'private',
           is_public: false,
+          folder_id: target.folderId ?? null,
         });
         const duplicated = mapServerFileToDoc(res.file, currentUser.id);
         cloudSyncedStateRef.current[duplicated.id] = {
@@ -618,7 +719,7 @@ export default function App() {
   );
 
   const handleImportFiles = useCallback(
-    (files: FileList) => {
+    async (files: FileList) => {
       if (!currentUser) return;
       const validFiles = Array.from(files).filter((f) =>
         /\.(md|markdown|txt)$/i.test(f.name)
@@ -628,41 +729,70 @@ export default function App() {
         return;
       }
 
-      let importedCount = 0;
-      validFiles.forEach((file) => {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const text = e.target?.result as string;
-          if (text !== undefined) {
-            const title = file.name.replace(/\.(md|markdown|txt)$/i, '') || 'سند وارد شده';
-            try {
-              const res = await cloudApi.publishFile({
-                title,
-                content: text,
-                visibility: 'private',
-                is_public: false,
-              });
-              const newDoc = mapServerFileToDoc(res.file, currentUser.id);
-              cloudSyncedStateRef.current[newDoc.id] = { title: newDoc.title, content: newDoc.content };
-              setDocuments((prev) => [newDoc, ...prev]);
-              importedCount += 1;
-              if (validFiles.length === 1) {
-                setActiveDocId(newDoc.id);
-                setWorkspaceView('editor');
-                setViewMode('split');
+      const baseFolderId =
+        selectedFolder !== 'all' && selectedFolder !== 'root' ? selectedFolder : null;
+      const pathMap = buildFolderPathMap(folders);
+      const basePath = baseFolderId ? pathMap.get(baseFolderId) || '' : '';
+      const ensuredPathCache = new Map<string, string | null>();
+      let latestFolders: FolderItem[] | null = null;
+      const createdDocs: MarkdownDoc[] = [];
+
+      for (const file of validFiles) {
+        try {
+          const text = await file.text();
+          const title = file.name.replace(/\.(md|markdown|txt)$/i, '') || 'سند وارد شده';
+
+          // Preserve nested folder structure when uploading a directory (webkitRelativePath)
+          let targetFolderId: string | null = baseFolderId;
+          const relPath = ((file as any).webkitRelativePath as string | undefined) || '';
+          if (relPath && relPath.includes('/')) {
+            const parts = relPath.split('/').filter(Boolean);
+            parts.pop(); // remove filename
+            if (parts.length > 0) {
+              const relFolderPath = parts.join('/');
+              const combinedPath = basePath ? `${basePath}/${relFolderPath}` : relFolderPath;
+              if (ensuredPathCache.has(combinedPath)) {
+                targetFolderId = ensuredPathCache.get(combinedPath) ?? null;
+              } else {
+                const ensured = await memoryApi.ensureFolderPath(combinedPath);
+                targetFolderId = ensured.folder?.id ?? null;
+                ensuredPathCache.set(combinedPath, targetFolderId);
+                latestFolders = ensured.folders;
               }
-              if (importedCount === validFiles.length && validFiles.length > 1) {
-                showNotice(`${validFiles.length} فایل با موفقیت به اسناد من اضافه شد.`);
-              }
-            } catch (err: any) {
-              showNotice(err.message || 'خطا در ذخیره فایل وارد شده');
             }
           }
-        };
-        reader.readAsText(file);
-      });
+
+          const res = await cloudApi.publishFile({
+            title,
+            content: text,
+            visibility: 'private',
+            is_public: false,
+            folder_id: targetFolderId,
+          });
+          const newDoc = mapServerFileToDoc(res.file, currentUser.id);
+          cloudSyncedStateRef.current[newDoc.id] = { title: newDoc.title, content: newDoc.content };
+          createdDocs.push(newDoc);
+        } catch (err: any) {
+          showNotice(err.message || 'خطا در ذخیره فایل وارد شده');
+        }
+      }
+
+      if (latestFolders) {
+        setFolders(latestFolders);
+      }
+
+      if (createdDocs.length > 0) {
+        setDocuments((prev) => [...createdDocs.reverse(), ...prev]);
+        if (createdDocs.length === 1) {
+          setActiveDocId(createdDocs[0].id);
+          setWorkspaceView('editor');
+          setViewMode('split');
+        } else {
+          showNotice(`${createdDocs.length} فایل با حفظ ساختار پوشه‌ها به اسناد من اضافه شد.`);
+        }
+      }
     },
-    [currentUser, showNotice]
+    [currentUser, selectedFolder, folders, showNotice]
   );
 
   const handleForkDocument = useCallback(
@@ -1192,6 +1322,7 @@ export default function App() {
           setWorkspaceView('dashboard');
         }}
         onGuestOpenLocalFile={() => guestFileInputRef.current?.click()}
+        onOpenMcpBridge={currentUser ? () => setIsMcpBridgeOpen(true) : undefined}
       />
 
       {/* CASE 1: SHARED LINK ACCESS ERROR */}
@@ -1412,6 +1543,14 @@ export default function App() {
           onOpenExploreDoc={handleOpenExploreFile}
           onForkExploreDoc={handleForkExploreFile}
           exploreCountHint={exploreFilesCount}
+          folders={folders}
+          selectedFolder={selectedFolder}
+          onSelectFolder={setSelectedFolder}
+          onCreateFolder={handleCreateFolder}
+          onRenameFolder={handleRenameFolder}
+          onDeleteFolder={handleDeleteFolder}
+          onMoveDocToFolder={handleMoveDocToFolder}
+          onOpenMcpBridge={() => setIsMcpBridgeOpen(true)}
         />
       ) : (
         /* CASE 5: AUTHENTICATED FULL EDITOR WORKSPACE */
@@ -1450,6 +1589,13 @@ export default function App() {
                 setShareTargetDocId(activeDoc?.id || null);
                 setIsShareModalOpen(true);
               }}
+              folders={folders}
+              selectedFolder={selectedFolder}
+              onSelectFolder={setSelectedFolder}
+              onCreateFolder={handleCreateFolder}
+              onRenameFolder={handleRenameFolder}
+              onDeleteFolder={handleDeleteFolder}
+              onMoveDocToFolder={handleMoveDocToFolder}
             />
 
             <main className="flex-1 flex overflow-hidden relative">
@@ -1652,6 +1798,16 @@ export default function App() {
             onClose={() => setIsMyDocumentsModalOpen(false)}
             onOpenDocument={handleOpenMyDocument}
             userName={currentUser.displayName}
+          />
+
+          <McpBridgeModal
+            isOpen={isMcpBridgeOpen}
+            onClose={() => setIsMcpBridgeOpen(false)}
+            onVaultSynced={async () => {
+              if (currentUser) {
+                await loadUserDocuments(currentUser);
+              }
+            }}
           />
 
           {viewMode === 'presentation' && activeDoc && workspaceView === 'editor' && (

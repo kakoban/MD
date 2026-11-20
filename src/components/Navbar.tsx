@@ -31,6 +31,7 @@ import {
   Upload,
   CheckCircle2,
   FileCode,
+  PlugZap,
 } from 'lucide-react';
 import { ViewMode, AppTheme, FontFamily, TextDirection, CloudSyncStatus, UserProfile } from '../types';
 
@@ -72,6 +73,7 @@ interface NavbarProps {
   isReadOnlyShared?: boolean;
   onBackToDashboard?: () => void;
   onGuestOpenLocalFile?: () => void;
+  onOpenMcpBridge?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -111,6 +113,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isReadOnlyShared = false,
   onBackToDashboard,
   onGuestOpenLocalFile,
+  onOpenMcpBridge,
 }) => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
@@ -143,10 +146,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   const themes: { id: AppTheme; name: string; color: string }[] = [
+    { id: 'academic', name: 'کتاب و آزمون', color: 'bg-[#e0f2fe] border-[#0284c7]' },
     { id: 'light', name: 'روشن', color: 'bg-white border-neutral-300' },
     { id: 'dark', name: 'تاریک', color: 'bg-neutral-900 border-neutral-700' },
     { id: 'editorial', name: 'نشر و رمان', color: 'bg-[#fdf2f8] border-[#db2777]' },
-    { id: 'academic', name: 'کتاب و آزمون', color: 'bg-[#e0f2fe] border-[#0284c7]' },
     { id: 'sepia', name: 'سپیا کاغذی', color: 'bg-[#f4ecdc] border-[#ded0b7]' },
     { id: 'nord', name: 'شمالی', color: 'bg-[#2e3440] border-[#434c5e]' },
     { id: 'cyber', name: 'تاریک کنتراست بالا', color: 'bg-[#0a0e14] border-[#00ffcc]' },
@@ -215,6 +218,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
                   <span>اسناد من</span>
+                </button>
+              )}
+
+              {onOpenMcpBridge && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenMcpBridge();
+                    setShowUserMenu(false);
+                  }}
+                  className="w-full text-start flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] transition-colors cursor-pointer"
+                >
+                  <PlugZap className="w-4 h-4 text-sky-500 shrink-0" />
+                  <span>حافظه MCP و کامپیوتر</span>
                 </button>
               )}
 
@@ -349,9 +366,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             type="button"
-            onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
+            onClick={() => onThemeChange(theme === 'dark' ? 'academic' : 'dark')}
             className="p-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title={theme === 'dark' ? 'حالت روشن' : 'حالت تاریک'}
+            title={theme === 'dark' ? 'حالت کتاب و آزمون' : 'حالت تاریک'}
           >
             {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
           </button>
@@ -374,14 +391,51 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
-            className="p-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title={theme === 'dark' ? 'حالت روشن' : 'حالت تاریک'}
-          >
-            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-          </button>
+          {onOpenMcpBridge && (
+            <button
+              type="button"
+              onClick={onOpenMcpBridge}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs font-semibold text-[var(--text-primary)] whitespace-nowrap shrink-0 transition-colors cursor-pointer"
+              title="اتصال هوش مصنوعی (MCP) و همگام‌سازی پوشه با کامپیوتر"
+            >
+              <PlugZap className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+              <span className="hidden sm:inline">حافظه MCP و کامپیوتر</span>
+              <span className="sm:hidden">MCP</span>
+            </button>
+          )}
+
+          <div className="relative" ref={themeMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowThemeMenu(!showThemeMenu)}
+              className="p-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              title="تغییر پوسته"
+            >
+              <Palette className="w-4 h-4" />
+            </button>
+            {showThemeMenu && (
+              <div className="absolute top-full end-0 mt-1.5 w-44 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] shadow-xl p-1 z-50 space-y-1">
+                <div className="px-2 py-1 text-[10px] text-[var(--text-muted)] font-medium">پوسته برنامه</div>
+                {themes.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      onThemeChange(t.id);
+                      setShowThemeMenu(false);
+                    }}
+                    className={`w-full text-start px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-2 cursor-pointer ${
+                      theme === t.id ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300 font-semibold' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border ${t.color}`} />
+                    <span>{t.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {renderUserSection()}
         </div>
       </header>
@@ -409,9 +463,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
+            onClick={() => onThemeChange(theme === 'dark' ? 'academic' : 'dark')}
             className="p-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            title={theme === 'dark' ? 'حالت روشن' : 'حالت تاریک'}
+            title={theme === 'dark' ? 'حالت کتاب و آزمون' : 'حالت تاریک'}
           >
             {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
           </button>
@@ -648,6 +702,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
         </div>
+
+        {/* MCP Bridge Button */}
+        {onOpenMcpBridge && (
+          <button
+            type="button"
+            onClick={onOpenMcpBridge}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-primary)] border border-[var(--border-color)] text-xs font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer"
+            title="اتصال سرور MCP و همگام‌سازی با کامپیوتر"
+          >
+            <PlugZap className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+            <span className="hidden lg:inline">MCP</span>
+          </button>
+        )}
 
         {/* Public Explore Button */}
         {onOpenCommunity && (

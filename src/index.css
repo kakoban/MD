@@ -11,7 +11,7 @@
     font-family: var(--font-sans);
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
-    background-color: var(--bg-primary, #f8fafc);
+    background-color: var(--bg-primary, #f8fbff);
     color: var(--text-primary, #0f172a);
   }
 }

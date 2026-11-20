@@ -19,9 +19,19 @@ import {
   Loader2,
   Tag,
   ArrowUpDown,
+  PlugZap,
+  Folder,
+  FolderInput,
+  ChevronLeft,
 } from 'lucide-react';
-import { MarkdownDoc, UserProfile, ViewMode } from '../types';
+import { MarkdownDoc, UserProfile, ViewMode, FolderItem } from '../types';
 import { cloudApi, SharedMarkdownFile, CommunityTag } from '../services/cloudApi';
+import { FolderTree, FolderSelection } from './FolderTree';
+import {
+  buildFolderPathMap,
+  getFolderBreadcrumbs,
+  getDescendantFolderIds,
+} from '../services/memoryApi';
 
 interface WorkspaceDashboardProps {
   currentUser: UserProfile;
@@ -36,6 +46,14 @@ interface WorkspaceDashboardProps {
   onOpenExploreDoc: (file: SharedMarkdownFile) => void;
   onForkExploreDoc: (file: SharedMarkdownFile) => void;
   exploreCountHint?: number;
+  folders: FolderItem[];
+  selectedFolder: FolderSelection;
+  onSelectFolder: (selection: FolderSelection) => void;
+  onCreateFolder: (name: string, parentId: string | null) => Promise<void>;
+  onRenameFolder: (folderId: string, newName: string) => Promise<void>;
+  onDeleteFolder: (folderId: string) => Promise<void>;
+  onMoveDocToFolder: (docId: string, folderId: string | null) => Promise<void>;
+  onOpenMcpBridge: () => void;
 }
 
 type DashboardTab = 'my-docs' | 'favorites' | 'explore';
@@ -76,6 +94,14 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
   onOpenExploreDoc,
   onForkExploreDoc,
   exploreCountHint = 0,
+  folders,
+  selectedFolder,
+  onSelectFolder,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onMoveDocToFolder,
+  onOpenMcpBridge,
 }) => {
   const [activeTab, setActiveTab] = useState<DashboardTab>('my-docs');
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,6 +109,7 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
   const [exploreSort, setExploreSort] = useState<ExploreSort>('recent');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [movingDocId, setMovingDocId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -139,10 +166,30 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
       .slice(0, 12);
   }, [documents]);
 
+  const folderPathMap = useMemo(() => buildFolderPathMap(folders), [folders]);
+
+  const sortedFolderOptions = useMemo(() => {
+    return folders
+      .map((f) => ({ id: f.id, path: folderPathMap.get(f.id) || f.name }))
+      .sort((a, b) => a.path.localeCompare(b.path, 'fa'));
+  }, [folders, folderPathMap]);
+
+  const breadcrumbs = useMemo(() => {
+    if (selectedFolder === 'all' || selectedFolder === 'root') return [];
+    return getFolderBreadcrumbs(folders, selectedFolder);
+  }, [folders, selectedFolder]);
+
+  const allowedFolderIds = useMemo(() => {
+    if (selectedFolder === 'all' || selectedFolder === 'root') return null;
+    return getDescendantFolderIds(folders, selectedFolder);
+  }, [folders, selectedFolder]);
+
   const filteredPersonalDocs = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = documents.filter((doc) => {
       if (activeTab === 'favorites' && !doc.isFavorite) return false;
+      if (selectedFolder === 'root' && doc.folderId) return false;
+      if (allowedFolderIds && (!doc.folderId || !allowedFolderIds.has(doc.folderId))) return false;
       if (selectedTag && !(doc.tags || []).includes(selectedTag)) return false;
       if (!q) return true;
       return (
@@ -161,7 +208,7 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
       }
       return b.updatedAt - a.updatedAt;
     });
-  }, [documents, activeTab, searchQuery, selectedTag, personalSort]);
+  }, [documents, activeTab, selectedFolder, allowedFolderIds, searchQuery, selectedTag, personalSort]);
 
   const handleCopyLink = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -247,7 +294,7 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
           </div>
 
           {/* Quick-Start Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <button
               type="button"
               onClick={onCreateDoc}
@@ -261,7 +308,9 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
                   سند خالی جدید
                 </div>
                 <div className="text-[11px] text-[var(--text-muted)] truncate mt-0.5">
-                  شروع نوشتن با ویرایشگر زنده
+                  {selectedFolder !== 'all' && selectedFolder !== 'root'
+                    ? `ایجاد در ${folderPathMap.get(selectedFolder) || 'پوشه فعلی'}`
+                    : 'شروع نوشتن با ویرایشگر زنده'}
                 </div>
               </div>
             </button>
@@ -294,10 +343,28 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-[var(--text-primary)] whitespace-nowrap">
-                  آپلود پوشه اسناد
+                  آپلود پوشه با زیرپوشه‌ها
                 </div>
                 <div className="text-[11px] text-[var(--text-muted)] truncate mt-0.5">
-                  ورود دسته‌ای فایل‌های مارک‌دان
+                  حفظ خودکار ساختار درختی پوشه‌ها
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenMcpBridge}
+              className="group flex items-center gap-3 p-3.5 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-sky-500/60 transition-colors text-start cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-500 flex items-center justify-center shrink-0">
+                <PlugZap className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-[var(--text-primary)] whitespace-nowrap">
+                  حافظه MCP و کامپیوتر
+                </div>
+                <div className="text-[11px] text-[var(--text-muted)] truncate mt-0.5">
+                  اتصال مدل‌های AI و همگام‌سازی لوکال
                 </div>
               </div>
             </button>
@@ -472,205 +539,349 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
 
         {/* Main Content Grid */}
         {activeTab !== 'explore' ? (
-          isLoadingDocs ? (
-            <div className="flex flex-col items-center justify-center py-24 text-[var(--text-muted)] gap-3">
-              <Loader2 className="w-7 h-7 animate-spin text-amber-500" />
-              <p className="text-xs">در حال بارگذاری اسناد شما...</p>
-            </div>
-          ) : filteredPersonalDocs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--bg-secondary)]/50 py-16 px-6 text-center space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-center mx-auto text-[var(--text-muted)]">
-                {activeTab === 'favorites' ? (
-                  <Star className="w-6 h-6" />
-                ) : (
-                  <FileText className="w-6 h-6" />
-                )}
+          <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5 items-start">
+            {/* Nested Folder Tree Sidebar */}
+            <aside className="rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] p-3 space-y-3 lg:sticky lg:top-4">
+              <FolderTree
+                folders={folders}
+                documents={documents}
+                selectedFolder={selectedFolder}
+                onSelectFolder={onSelectFolder}
+                onCreateFolder={onCreateFolder}
+                onRenameFolder={onRenameFolder}
+                onDeleteFolder={onDeleteFolder}
+              />
+
+              <div className="pt-2.5 border-t border-[var(--border-color)]">
+                <button
+                  type="button"
+                  onClick={onOpenMcpBridge}
+                  className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] border border-[var(--border-color)] text-[11px] font-semibold text-[var(--text-primary)] transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5 truncate">
+                    <PlugZap className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                    <span className="truncate">اتصال حافظه به AI و کامپیوتر</span>
+                  </span>
+                  <ChevronLeft className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+                </button>
               </div>
-              <div className="space-y-1 max-w-md mx-auto">
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                  {searchQuery || selectedTag
-                    ? 'سندی با این فیلتر یافت نشد'
-                    : activeTab === 'favorites'
-                    ? 'هنوز سندی را ستاره‌دار نکرده‌اید'
-                    : 'هنوز سندی در فضای کار خود نساخته‌اید'}
-                </h3>
-                <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                  {searchQuery || selectedTag
-                    ? 'عبارت جستجو یا برچسب انتخاب‌شده را تغییر دهید.'
-                    : activeTab === 'favorites'
-                    ? 'با کلیک روی آیکون ستاره روی کارت هر سند، آن را برای دسترسی سریع به این بخش اضافه کنید.'
-                    : 'می‌توانید همین حالا یک سند خالی بسازید یا فایل‌های مارک‌دان خود را با کشیدن و رها کردن وارد کنید.'}
-                </p>
-              </div>
-              {!searchQuery && !selectedTag && activeTab === 'my-docs' && (
-                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            </aside>
+
+            {/* Right / Main Document Area */}
+            <div className="space-y-4 min-w-0">
+              {/* Breadcrumb Navigation */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] text-xs">
+                <nav className="flex flex-wrap items-center gap-1 text-[var(--text-muted)] min-w-0" aria-label="مسیر پوشه">
                   <button
                     type="button"
-                    onClick={onCreateDoc}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs transition-colors cursor-pointer"
+                    onClick={() => onSelectFolder('all')}
+                    className={`hover:text-[var(--text-primary)] transition-colors cursor-pointer ${
+                      selectedFolder === 'all' ? 'font-bold text-[var(--text-primary)]' : ''
+                    }`}
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>ایجاد اولین سند</span>
+                    همه اسناد
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-amber-500/50 text-[var(--text-primary)] font-semibold text-xs transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-4 h-4 text-amber-500" />
-                    <span>آپلود فایل .md</span>
-                  </button>
+
+                  {selectedFolder === 'root' && (
+                    <>
+                      <ChevronLeft className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                      <span className="font-bold text-[var(--text-primary)]">بدون پوشه (ریشه)</span>
+                    </>
+                  )}
+
+                  {breadcrumbs.map((crumb, idx) => {
+                    const isLast = idx === breadcrumbs.length - 1;
+                    return (
+                      <React.Fragment key={crumb.id}>
+                        <ChevronLeft className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                        <button
+                          type="button"
+                          onClick={() => onSelectFolder(crumb.id)}
+                          className={`truncate max-w-[160px] transition-colors cursor-pointer ${
+                            isLast
+                              ? 'font-bold text-[var(--text-primary)]'
+                              : 'hover:text-[var(--text-primary)]'
+                          }`}
+                        >
+                          {crumb.name}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+                </nav>
+
+                <span className="text-[11px] text-[var(--text-muted)] tabular-nums shrink-0">
+                  {filteredPersonalDocs.length} سند
+                </span>
+              </div>
+
+              {isLoadingDocs ? (
+                <div className="flex flex-col items-center justify-center py-24 text-[var(--text-muted)] gap-3">
+                  <Loader2 className="w-7 h-7 animate-spin text-amber-500" />
+                  <p className="text-xs">در حال بارگذاری اسناد شما...</p>
+                </div>
+              ) : filteredPersonalDocs.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-[var(--bg-secondary)]/50 py-16 px-6 text-center space-y-4">
+                  <div className="w-12 h-12 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex items-center justify-center mx-auto text-[var(--text-muted)]">
+                    {activeTab === 'favorites' ? (
+                      <Star className="w-6 h-6" />
+                    ) : selectedFolder !== 'all' ? (
+                      <Folder className="w-6 h-6 text-sky-500" />
+                    ) : (
+                      <FileText className="w-6 h-6" />
+                    )}
+                  </div>
+                  <div className="space-y-1 max-w-md mx-auto">
+                    <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                      {searchQuery || selectedTag
+                        ? 'سندی با این فیلتر یافت نشد'
+                        : activeTab === 'favorites'
+                        ? 'هنوز سندی را ستاره‌دار نکرده‌اید'
+                        : selectedFolder !== 'all'
+                        ? 'این پوشه هنوز خالی است'
+                        : 'هنوز سندی در فضای کار خود نساخته‌اید'}
+                    </h3>
+                    <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                      {searchQuery || selectedTag
+                        ? 'عبارت جستجو یا برچسب انتخاب‌شده را تغییر دهید.'
+                        : activeTab === 'favorites'
+                        ? 'با کلیک روی آیکون ستاره روی کارت هر سند، آن را برای دسترسی سریع به این بخش اضافه کنید.'
+                        : selectedFolder !== 'all'
+                        ? 'می‌توانید همین حالا یک سند جدید در این پوشه بسازید یا از طریق اتصال MCP توسط مدل‌های هوش مصنوعی در آن فایل تولید کنید.'
+                        : 'می‌توانید همین حالا یک سند خالی بسازید یا فایل‌های مارک‌دان خود را با کشیدن و رها کردن وارد کنید.'}
+                    </p>
+                  </div>
+                  {!searchQuery && !selectedTag && activeTab === 'my-docs' && (
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={onCreateDoc}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>{selectedFolder !== 'all' ? 'ایجاد سند در این پوشه' : 'ایجاد اولین سند'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-amber-500/50 text-[var(--text-primary)] font-semibold text-xs transition-colors cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4 text-amber-500" />
+                        <span>آپلود فایل .md</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filteredPersonalDocs.map((doc) => {
+                    const updatedDate = new Date(doc.updatedAt).toLocaleDateString('fa-IR');
+                    const visibilityText = getVisibilityLabel(doc.visibility);
+                    const isConfirmingDelete = confirmDeleteId === doc.id;
+                    const isMoving = movingDocId === doc.id;
+                    const isCopied = copiedId === doc.id;
+                    const docFolderPath = doc.folderId ? folderPathMap.get(doc.folderId) : null;
+
+                    return (
+                      <div
+                        key={doc.id}
+                        onClick={() => onOpenDoc(doc.id, 'split')}
+                        className="group rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-amber-500/50 p-4 flex flex-col justify-between gap-3 transition-colors cursor-pointer"
+                      >
+                        <div className="space-y-2">
+                          {/* Title & Favorite Toggle */}
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="font-bold text-sm text-[var(--text-primary)] group-hover:text-amber-500 transition-colors line-clamp-1">
+                              {doc.title || 'سند بدون عنوان'}
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleFavorite(doc.id);
+                              }}
+                              className="p-1 rounded-lg text-[var(--text-muted)] hover:text-amber-500 transition-colors shrink-0 cursor-pointer"
+                              title={doc.isFavorite ? 'حذف از ستاره‌دارها' : 'افزودن به ستاره‌دارها'}
+                            >
+                              <Star
+                                className={`w-4 h-4 ${
+                                  doc.isFavorite ? 'fill-amber-400 text-amber-400' : ''
+                                }`}
+                              />
+                            </button>
+                          </div>
+
+                          {/* Excerpt */}
+                          <p className="text-xs text-[var(--text-muted)] line-clamp-2 leading-relaxed">
+                            {doc.description?.trim() || extractExcerpt(doc.content)}
+                          </p>
+
+                          {/* Clean Unboxed Metadata (Zero-Pill) */}
+                          <div className="text-[11px] text-[var(--text-muted)] flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pt-1 tabular-nums">
+                            <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
+                              {doc.visibility === 'public' ? (
+                                <Globe className="w-3 h-3 text-emerald-500 shrink-0" />
+                              ) : doc.visibility === 'unlisted' ? (
+                                <Link2 className="w-3 h-3 text-sky-500 shrink-0" />
+                              ) : (
+                                <Lock className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                              )}
+                              <span>{visibilityText}</span>
+                            </span>
+                            <span>·</span>
+                            <span>{updatedDate}</span>
+                            {docFolderPath && (
+                              <>
+                                <span>·</span>
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (doc.folderId) onSelectFolder(doc.folderId);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400 hover:underline truncate max-w-[160px]"
+                                  title={docFolderPath}
+                                >
+                                  <Folder className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{docFolderPath}</span>
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Card Action Row */}
+                        <div
+                          className="pt-2.5 border-t border-[var(--border-color)] flex items-center justify-between gap-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {isMoving ? (
+                            <div className="flex items-center gap-1.5 w-full">
+                              <select
+                                value={doc.folderId || ''}
+                                onChange={async (e) => {
+                                  const nextId = e.target.value || null;
+                                  await onMoveDocToFolder(doc.id, nextId);
+                                  setMovingDocId(null);
+                                }}
+                                className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-[11px] text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
+                              >
+                                <option value="">ریشه (بدون پوشه)</option>
+                                {sortedFolderOptions.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.path}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => setMovingDocId(null)}
+                                className="px-2 py-1 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] text-[11px] whitespace-nowrap cursor-pointer shrink-0"
+                              >
+                                بستن
+                              </button>
+                            </div>
+                          ) : isConfirmingDelete ? (
+                            <div className="flex items-center justify-between w-full gap-2">
+                              <span className="text-[11px] text-rose-500 font-semibold">حذف شود؟</span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onDeleteDoc(doc.id);
+                                    setConfirmDeleteId(null);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-[11px] font-bold whitespace-nowrap cursor-pointer"
+                                >
+                                  تأیید حذف
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="px-2 py-1 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] text-[11px] whitespace-nowrap cursor-pointer"
+                                >
+                                  لغو
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenDoc(doc.id, 'preview')}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-primary)] text-[11px] font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer"
+                                >
+                                  <Eye className="w-3 h-3 text-amber-500" />
+                                  <span>مطالعه</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenDoc(doc.id, 'split')}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-primary)] text-[11px] font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer"
+                                >
+                                  <Edit3 className="w-3 h-3 text-sky-500" />
+                                  <span>ویرایش</span>
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                {folders.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setConfirmDeleteId(null);
+                                      setMovingDocId(doc.id);
+                                    }}
+                                    className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-sky-500 hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
+                                    title="انتقال سند به پوشه دیگر"
+                                  >
+                                    <FolderInput className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {(doc.visibility === 'unlisted' || doc.visibility === 'public') && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleCopyLink(e, doc.id)}
+                                    className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-emerald-500 hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
+                                    title="کپی لینک اشتراک"
+                                  >
+                                    {isCopied ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                    ) : (
+                                      <Link2 className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => onShareDoc(doc.id)}
+                                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-amber-500 hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
+                                  title="تنظیمات دسترسی و اشتراک‌گذاری"
+                                >
+                                  <Share2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMovingDocId(null);
+                                    setConfirmDeleteId(doc.id);
+                                  }}
+                                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                  title="حذف سند"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredPersonalDocs.map((doc) => {
-                const updatedDate = new Date(doc.updatedAt).toLocaleDateString('fa-IR');
-                const visibilityText = getVisibilityLabel(doc.visibility);
-                const isConfirmingDelete = confirmDeleteId === doc.id;
-                const isCopied = copiedId === doc.id;
-
-                return (
-                  <div
-                    key={doc.id}
-                    onClick={() => onOpenDoc(doc.id, 'split')}
-                    className="group rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] hover:border-amber-500/50 p-4 flex flex-col justify-between gap-3 transition-colors cursor-pointer"
-                  >
-                    <div className="space-y-2">
-                      {/* Title & Favorite Toggle */}
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-bold text-sm text-[var(--text-primary)] group-hover:text-amber-500 transition-colors line-clamp-1">
-                          {doc.title || 'سند بدون عنوان'}
-                        </h3>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleFavorite(doc.id);
-                          }}
-                          className="p-1 rounded-lg text-[var(--text-muted)] hover:text-amber-500 transition-colors shrink-0 cursor-pointer"
-                          title={doc.isFavorite ? 'حذف از ستاره‌دارها' : 'افزودن به ستاره‌دارها'}
-                        >
-                          <Star
-                            className={`w-4 h-4 ${
-                              doc.isFavorite ? 'fill-amber-400 text-amber-400' : ''
-                            }`}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Excerpt */}
-                      <p className="text-xs text-[var(--text-muted)] line-clamp-2 leading-relaxed">
-                        {doc.description?.trim() || extractExcerpt(doc.content)}
-                      </p>
-
-                      {/* Clean Unboxed Metadata (Zero-Pill) */}
-                      <div className="text-[11px] text-[var(--text-muted)] flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pt-1 tabular-nums">
-                        <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
-                          {doc.visibility === 'public' ? (
-                            <Globe className="w-3 h-3 text-emerald-500 shrink-0" />
-                          ) : doc.visibility === 'unlisted' ? (
-                            <Link2 className="w-3 h-3 text-sky-500 shrink-0" />
-                          ) : (
-                            <Lock className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                          )}
-                          <span>{visibilityText}</span>
-                        </span>
-                        <span>·</span>
-                        <span>{updatedDate}</span>
-                      </div>
-                    </div>
-
-                    {/* Card Action Row */}
-                    <div
-                      className="pt-2.5 border-t border-[var(--border-color)] flex items-center justify-between gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {isConfirmingDelete ? (
-                        <div className="flex items-center justify-between w-full gap-2">
-                          <span className="text-[11px] text-rose-500 font-semibold">حذف شود؟</span>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onDeleteDoc(doc.id);
-                                setConfirmDeleteId(null);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-[11px] font-bold whitespace-nowrap cursor-pointer"
-                            >
-                              تأیید حذف
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="px-2 py-1 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] text-[11px] whitespace-nowrap cursor-pointer"
-                            >
-                              لغو
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => onOpenDoc(doc.id, 'preview')}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-primary)] text-[11px] font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer"
-                            >
-                              <Eye className="w-3 h-3 text-amber-500" />
-                              <span>مطالعه</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onOpenDoc(doc.id, 'split')}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-primary)] text-[var(--text-primary)] text-[11px] font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer"
-                            >
-                              <Edit3 className="w-3 h-3 text-sky-500" />
-                              <span>ویرایش</span>
-                            </button>
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            {(doc.visibility === 'unlisted' || doc.visibility === 'public') && (
-                              <button
-                                type="button"
-                                onClick={(e) => handleCopyLink(e, doc.id)}
-                                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-emerald-500 hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
-                                title="کپی لینک اشتراک"
-                              >
-                                {isCopied ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                ) : (
-                                  <Link2 className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => onShareDoc(doc.id)}
-                              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-amber-500 hover:bg-[var(--bg-tertiary)] transition-colors cursor-pointer"
-                              title="تنظیمات دسترسی و اشتراک‌گذاری"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(doc.id)}
-                              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                              title="حذف سند"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )
+          </div>
         ) : (
           /* PUBLIC EXPLORE TAB */
           isExploreLoading ? (

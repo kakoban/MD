@@ -5,7 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { initStorage, storage, type DocVisibility } from './server/storage.ts';
+import { initStorage, storage, sanitizePathSegments, type DocVisibility } from './server/storage.ts';
+import { handleMcpPost, generateLocalBridgeScript, MCP_TOOLS } from './server/mcp.ts';
 
 dotenv.config();
 
@@ -152,6 +153,37 @@ function getAuthUser(req: Request): JwtPayload | null {
   } catch {
     return null;
   }
+}
+
+function hashMcpToken(rawToken: string): string {
+  return crypto.createHash('sha256').update(rawToken, 'utf8').digest('hex');
+}
+
+function extractRawBearerOrApiKey(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  const apiKey = req.headers['x-api-key'];
+  if (typeof apiKey === 'string' && apiKey.trim()) {
+    return apiKey.trim();
+  }
+  return null;
+}
+
+async function resolveSessionOrMcpUser(req: Request): Promise<JwtPayload | null> {
+  const rawKey = extractRawBearerOrApiKey(req);
+  if (rawKey && rawKey.startsWith('msp_')) {
+    const user = await storage.findUserByMcpTokenHash(hashMcpToken(rawKey));
+    if (!user) return null;
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      displayName: user.display_name,
+    };
+  }
+  return getAuthUser(req);
 }
 
 app.use(express.json({ limit: '10mb' }));
@@ -590,7 +622,7 @@ app.get('/api/files/:id', async (req: Request, res: Response) => {
 // 4. Create a new markdown file (strictly authenticated, defaults to 'private')
 app.post('/api/files', async (req: Request, res: Response) => {
   try {
-    const authUser = getAuthUser(req);
+    const authUser = await resolveSessionOrMcpUser(req);
     if (!authUser) {
       return res.status(401).json({ error: 'برای ایجاد یا ذخیره سند در حساب کاربری، ابتدا وارد شوید.' });
     }
@@ -600,6 +632,7 @@ app.post('/api/files', async (req: Request, res: Response) => {
       content,
       description = '',
       author_name,
+      folder_id = null,
       tags = [],
       visibility,
       is_public,
@@ -612,6 +645,15 @@ app.post('/api/files', async (req: Request, res: Response) => {
     }
     if (content === undefined || content === null) {
       return res.status(400).json({ error: 'محتوای سند نامعتبر است.' });
+    }
+
+    let resolvedFolderId: string | null = null;
+    if (typeof folder_id === 'string' && folder_id.trim()) {
+      const folder = await storage.getFolderById(folder_id.trim());
+      if (!folder || folder.user_id !== authUser.id) {
+        return res.status(400).json({ error: 'پوشه انتخاب‌شده معتبر نیست.' });
+      }
+      resolvedFolderId = folder.id;
     }
 
     let resolvedVisibility: DocVisibility = 'private';
@@ -642,6 +684,7 @@ app.post('/api/files', async (req: Request, res: Response) => {
       description: (description || '').trim(),
       authorName: resolvedAuthorName,
       userId: authUser.id,
+      folderId: resolvedFolderId,
       tags: cleanTags,
       visibility: resolvedVisibility,
       isPublic: resolvedVisibility === 'public',
@@ -662,7 +705,7 @@ app.post('/api/files', async (req: Request, res: Response) => {
 // 5. Update existing file (strictly authenticated + owner only)
 app.put('/api/files/:id', async (req: Request, res: Response) => {
   try {
-    const authUser = getAuthUser(req);
+    const authUser = await resolveSessionOrMcpUser(req);
     if (!authUser) {
       return res.status(401).json({ error: 'برای ویرایش سند باید وارد حساب کاربری خود شوید.' });
     }
@@ -676,7 +719,7 @@ app.put('/api/files/:id', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'شما تنها مجاز به ویرایش اسناد شخصی خود هستید.' });
     }
 
-    const { title, content, description, tags, visibility, is_public, is_favorite } = req.body;
+    const { title, content, description, folder_id, tags, visibility, is_public, is_favorite } = req.body;
     let nextVisibility: DocVisibility | null = null;
     let nextIsPublic: boolean | null = null;
     if (visibility === 'private' || visibility === 'unlisted' || visibility === 'public') {
@@ -687,11 +730,28 @@ app.put('/api/files/:id', async (req: Request, res: Response) => {
       nextIsPublic = is_public;
     }
 
+    let updateFolder = false;
+    let nextFolderId: string | null = null;
+    if (folder_id !== undefined) {
+      updateFolder = true;
+      if (folder_id === null || folder_id === '') {
+        nextFolderId = null;
+      } else if (typeof folder_id === 'string') {
+        const targetFolder = await storage.getFolderById(folder_id.trim());
+        if (!targetFolder || targetFolder.user_id !== authUser.id) {
+          return res.status(400).json({ error: 'پوشه مقصد معتبر نیست.' });
+        }
+        nextFolderId = targetFolder.id;
+      }
+    }
+
     const cleanTags = Array.isArray(tags) ? tags.map((t: string) => t.trim()).filter(Boolean) : null;
     const updated = await storage.updateFile(id, {
       title: title ? title.trim() : null,
       content: content !== undefined ? content : null,
       description: description !== undefined ? description.trim() : null,
+      folderId: nextFolderId,
+      updateFolder,
       tags: cleanTags,
       visibility: nextVisibility,
       isPublic: nextIsPublic,
@@ -708,7 +768,7 @@ app.put('/api/files/:id', async (req: Request, res: Response) => {
 // 6. Delete file (strictly authenticated + owner only)
 app.delete('/api/files/:id', async (req: Request, res: Response) => {
   try {
-    const authUser = getAuthUser(req);
+    const authUser = await resolveSessionOrMcpUser(req);
     if (!authUser) {
       return res.status(401).json({ error: 'برای حذف سند باید وارد حساب کاربری خود شوید.' });
     }
@@ -742,6 +802,380 @@ app.post('/api/files/:id/star', async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(500).json({ error: 'خطا در ثبت امتیاز', details: error.message });
   }
+});
+
+// =============================================================
+// FOLDERS (NESTED AI MEMORY TREE)
+// =============================================================
+
+app.get('/api/folders', async (req: Request, res: Response) => {
+  try {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'لطفاً وارد حساب کاربری شوید.' });
+    }
+    const folders = await storage.getFoldersByUser(authUser.id);
+    res.json({ success: true, folders });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در دریافت پوشه‌ها', details: error.message });
+  }
+});
+
+app.post('/api/folders', async (req: Request, res: Response) => {
+  try {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'لطفاً وارد حساب کاربری شوید.' });
+    }
+    const { name, parentId = null, description = '' } = req.body as {
+      name?: string;
+      parentId?: string | null;
+      description?: string;
+    };
+
+    const segments = sanitizePathSegments(name);
+    if (segments.length === 0) {
+      return res.status(400).json({ error: 'نام پوشه معتبر نیست.' });
+    }
+
+    let resolvedParentId: string | null = null;
+    if (parentId && typeof parentId === 'string') {
+      const parent = await storage.getFolderById(parentId);
+      if (!parent || parent.user_id !== authUser.id) {
+        return res.status(400).json({ error: 'پوشه والد معتبر نیست.' });
+      }
+      resolvedParentId = parent.id;
+    }
+
+    // If user typed nested path like "projects/backend", create full nested chain under parentId
+    let currentParent = resolvedParentId;
+    let lastFolder = null;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      let existing = await storage.findChildFolderByName(authUser.id, currentParent, seg);
+      if (!existing) {
+        const id = `fld-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+        existing = await storage.createFolder({
+          id,
+          userId: authUser.id,
+          parentId: currentParent,
+          name: seg,
+          description: i === segments.length - 1 ? description || '' : '',
+        });
+      }
+      lastFolder = existing;
+      currentParent = existing.id;
+    }
+
+    const folders = await storage.getFoldersByUser(authUser.id);
+    res.status(201).json({ success: true, folder: lastFolder, folders });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'خطا در ایجاد پوشه' });
+  }
+});
+
+app.post('/api/folders/ensure-path', async (req: Request, res: Response) => {
+  try {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'لطفاً وارد حساب کاربری شوید.' });
+    }
+    const { path: rawPath, description } = req.body as { path?: string; description?: string };
+    const result = await storage.ensureFolderPath(authUser.id, String(rawPath || ''), description);
+    const folders = await storage.getFoldersByUser(authUser.id);
+    res.json({ success: true, ...result, folders });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'مسیر پوشه نامعتبر است.' });
+  }
+});
+
+app.put('/api/folders/:id', async (req: Request, res: Response) => {
+  try {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'لطفاً وارد حساب کاربری شوید.' });
+    }
+    const { id } = req.params;
+    const { name, parentId, description } = req.body as {
+      name?: string;
+      parentId?: string | null;
+      description?: string;
+    };
+
+    let cleanName: string | undefined;
+    if (name !== undefined) {
+      const segs = sanitizePathSegments(name);
+      if (segs.length !== 1) {
+        return res.status(400).json({ error: 'نام پوشه نباید شامل کاراکتر غیرمجاز یا اسلش باشد.' });
+      }
+      cleanName = segs[0];
+    }
+
+    const updated = await storage.updateFolder(id, authUser.id, {
+      name: cleanName,
+      parentId: parentId ?? null,
+      updateParent: parentId !== undefined,
+      description,
+    });
+    const folders = await storage.getFoldersByUser(authUser.id);
+    res.json({ success: true, folder: updated, folders });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'خطا در ویرایش پوشه' });
+  }
+});
+
+app.delete('/api/folders/:id', async (req: Request, res: Response) => {
+  try {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'لطفاً وارد حساب کاربری شوید.' });
+    }
+    const { id } = req.params;
+    const mode = req.query.mode === 'cascade' ? 'cascade' : 'move-to-parent';
+    const summary = await storage.deleteFolder(id, authUser.id, mode);
+    const folders = await storage.getFoldersByUser(authUser.id);
+    res.json({ success: true, ...summary, folders });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'خطا در حذف پوشه' });
+  }
+});
+
+// =============================================================
+// TWO-WAY SYNC ENDPOINTS (LOCAL BRIDGE & BROWSER FOLDER SYNC)
+// =============================================================
+
+app.get('/api/sync/snapshot', async (req: Request, res: Response) => {
+  try {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'احراز هویت برای همگام‌سازی الزامی است.' });
+    }
+    const [folders, files] = await Promise.all([
+      storage.getFoldersByUser(authUser.id),
+      storage.getMyDocuments(authUser.id),
+    ]);
+    res.json({
+      success: true,
+      serverTime: new Date().toISOString(),
+      folders,
+      files,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در دریافت وضعیت همگام‌سازی', details: error.message });
+  }
+});
+
+app.post('/api/sync/upsert', async (req: Request, res: Response) => {
+  try {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'احراز هویت برای همگام‌سازی الزامی است.' });
+    }
+    const {
+      folderPath = '',
+      title,
+      content,
+      description,
+      tags,
+    } = req.body as {
+      folderPath?: string;
+      title?: string;
+      content?: string;
+      description?: string;
+      tags?: string[];
+    };
+
+    const cleanTitle = String(title || '').trim().replace(/\.md$/i, '');
+    if (!cleanTitle) {
+      return res.status(400).json({ error: 'عنوان فایل الزامی است.' });
+    }
+
+    const ensured = folderPath
+      ? await storage.ensureFolderPath(authUser.id, String(folderPath))
+      : { folder: null, path: '', createdCount: 0 };
+    const folderId = ensured.folder?.id ?? null;
+
+    const existing = await storage.findUserFileByFolderAndTitle(authUser.id, folderId, cleanTitle);
+    const cleanTags = Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : undefined;
+
+    if (existing) {
+      const updated = await storage.updateFile(existing.id, {
+        content: String(content ?? ''),
+        description: description !== undefined ? String(description) : null,
+        tags: cleanTags ?? null,
+      });
+      return res.json({ success: true, action: 'updated', file: { ...updated, is_owner: true } });
+    }
+
+    const id = generateFileId(cleanTitle);
+    const created = await storage.createFile({
+      id,
+      title: cleanTitle,
+      content: String(content ?? ''),
+      description: String(description || ''),
+      authorName: authUser.displayName || authUser.username || 'کاربر',
+      userId: authUser.id,
+      folderId,
+      tags: cleanTags || [],
+      visibility: 'private',
+      isPublic: false,
+      isFavorite: false,
+    });
+    res.status(201).json({ success: true, action: 'created', file: { ...created, is_owner: true } });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'خطا در همگام‌سازی سند' });
+  }
+});
+
+// =============================================================
+// MCP TOKENS MANAGEMENT (SESSION-ONLY) & BRIDGE SCRIPT DOWNLOAD
+// =============================================================
+
+app.get('/api/mcp/tokens', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'لطفاً وارد حساب کاربری شوید.' });
+    }
+    const tokens = await storage.listMcpTokens(authUser.id);
+    res.json({ success: true, tokens, tools: MCP_TOOLS.map((t) => ({ name: t.name, description: t.description })) });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در دریافت توکن‌ها', details: error.message });
+  }
+});
+
+app.post('/api/mcp/tokens', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'لطفاً وارد حساب کاربری شوید.' });
+    }
+    const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const name = rawName || 'اتصال MCP جدید';
+
+    const rawSecret = `msp_${crypto.randomBytes(24).toString('hex')}`;
+    const tokenPrefix = `${rawSecret.slice(0, 12)}...${rawSecret.slice(-4)}`;
+    const tokenHash = hashMcpToken(rawSecret);
+    const id = `tok-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+
+    const tokenRecord = await storage.createMcpToken({
+      id,
+      userId: authUser.id,
+      name,
+      tokenPrefix,
+      tokenHash,
+    });
+
+    res.status(201).json({
+      success: true,
+      token: rawSecret,
+      record: tokenRecord,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در ساخت توکن MCP', details: error.message });
+  }
+});
+
+app.delete('/api/mcp/tokens/:id', async (req: Request, res: Response) => {
+  try {
+    const authUser = getAuthUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'لطفاً وارد حساب کاربری شوید.' });
+    }
+    const deleted = await storage.deleteMcpToken(req.params.id, authUser.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'توکن مورد نظر یافت نشد.' });
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: 'خطا در لغو توکن', details: error.message });
+  }
+});
+
+app.get('/api/mcp/bridge-script', (req: Request, res: Response) => {
+  const proto = isSecureRequest(req) ? 'https' : 'http';
+  const host = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0].trim() || req.headers.host || 'localhost:3000';
+  const baseUrl = `${proto}://${host}`;
+  const script = generateLocalBridgeScript(baseUrl);
+  res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="markdown-studio-bridge.mjs"');
+  res.send(script);
+});
+
+// =============================================================
+// UNIVERSAL MCP STREAMABLE HTTP ENDPOINT (/api/mcp)
+// =============================================================
+
+app.use('/api/mcp', (req: Request, res: Response, next) => {
+  if (req.path !== '/' && req.path !== '') {
+    next();
+    return;
+  }
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, Mcp-Session-Id, MCP-Protocol-Version, Accept');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
+app.post('/api/mcp', async (req: Request, res: Response) => {
+  try {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({
+        jsonrpc: '2.0',
+        id: req.body?.id ?? null,
+        error: {
+          code: -32001,
+          message: 'Unauthorized: provide Authorization: Bearer msp_... token from Markdown Studio Pro.',
+        },
+      });
+    }
+    await handleMcpPost(req, res, authUser);
+  } catch (error: any) {
+    res.status(500).json({
+      jsonrpc: '2.0',
+      id: req.body?.id ?? null,
+      error: { code: -32603, message: error?.message || 'MCP server error' },
+    });
+  }
+});
+
+app.get('/api/mcp', async (req: Request, res: Response) => {
+  const accept = String(req.headers.accept || '');
+  if (accept.includes('text/event-stream')) {
+    const authUser = await resolveSessionOrMcpUser(req);
+    if (!authUser) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.write(': connected\n\n');
+    const keepAlive = setInterval(() => {
+      res.write(': ping\n\n');
+    }, 25000);
+    req.on('close', () => {
+      clearInterval(keepAlive);
+    });
+    return;
+  }
+
+  res.json({
+    name: 'markdown-studio-memory',
+    protocol: 'MCP Streamable HTTP (JSON-RPC 2.0)',
+    version: '1.0.0',
+    endpoint: '/api/mcp',
+    authentication: 'Bearer msp_... token (Authorization header or X-API-Key)',
+    toolsCount: MCP_TOOLS.length,
+  });
+});
+
+app.delete('/api/mcp', (_req: Request, res: Response) => {
+  res.status(200).json({ success: true });
 });
 
 // -------------------------------------------------------------

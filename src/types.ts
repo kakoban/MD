@@ -1,10 +1,33 @@
 export type DocVisibility = 'private' | 'unlisted' | 'public';
 
+export interface FolderItem {
+  id: string;
+  parentId: string | null;
+  name: string;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface McpTokenItem {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+}
+
 export interface MarkdownDoc {
   id: string;
   title: string;
   content: string;
   description?: string;
+  folderId?: string | null;
   createdAt: number;
   updatedAt: number;
   isFavorite?: boolean;
