@@ -7,12 +7,14 @@ export type DocVisibility = 'private' | 'unlisted' | 'public';
 
 export interface UserRow {
   id: string;
+  google_id?: string | null;
   email: string;
   username: string;
   display_name: string;
   password_hash?: string;
   avatar_url: string;
   bio: string;
+  is_verified?: boolean;
   created_at: string;
   updated_at?: string;
 }
@@ -94,12 +96,14 @@ function initSqlite() {
     PRAGMA busy_timeout = 5000;
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
+      google_id TEXT,
       email TEXT UNIQUE,
       username TEXT UNIQUE NOT NULL,
       display_name TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       avatar_url TEXT DEFAULT '',
       bio TEXT DEFAULT '',
+      is_verified INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -129,6 +133,17 @@ function initSqlite() {
     WHERE user_id IS NULL
       AND id IN ('ai-llm-guide-2025', 'react-clean-architecture', 'deep-work-summary-book');
   `);
+
+  // Safe migration for existing SQLite databases missing google_id / is_verified
+  const userCols = sqliteDb.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+  const colNames = new Set(userCols.map((c) => c.name));
+  if (!colNames.has('google_id')) {
+    sqliteDb.exec('ALTER TABLE users ADD COLUMN google_id TEXT');
+  }
+  if (!colNames.has('is_verified')) {
+    sqliteDb.exec('ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0');
+  }
+
   activeBackend = 'sqlite';
   console.log(`Storage initialized with persistent SQLite (${dbPath}).`);
 }
@@ -155,17 +170,21 @@ export async function initStorage(): Promise<void> {
         await client.query(`
           CREATE TABLE IF NOT EXISTS users (
             id VARCHAR(100) PRIMARY KEY,
+            google_id VARCHAR(255),
             email VARCHAR(255) UNIQUE,
             username VARCHAR(100) UNIQUE NOT NULL,
             display_name VARCHAR(150) NOT NULL,
             password_hash VARCHAR(255) NOT NULL,
             avatar_url VARCHAR(500) DEFAULT '',
             bio TEXT DEFAULT '',
+            is_verified BOOLEAN DEFAULT false,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
           );
 
           ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false;
 
           CREATE TABLE IF NOT EXISTS shared_markdown_files (
             id VARCHAR(100) PRIMARY KEY,
@@ -376,6 +395,89 @@ export const storage = {
          VALUES (?, ?, ?, ?, ?, '', ?, ?, ?)`
       )
       .run(params.id, params.email, params.username, params.displayName, params.avatarUrl || '', params.passwordHash, now, now);
+
+    return (await this.findUserById(params.id))!;
+  },
+
+  async upsertGoogleUser(params: {
+    id: string;
+    googleId: string;
+    email: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string;
+    passwordHash: string;
+  }): Promise<UserRow> {
+    const cleanEmail = params.email.trim().toLowerCase();
+
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `
+        INSERT INTO users (id, google_id, email, username, display_name, avatar_url, password_hash, is_verified, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())
+        ON CONFLICT (email) DO UPDATE
+        SET
+          google_id = COALESCE(EXCLUDED.google_id, users.google_id),
+          display_name = CASE
+            WHEN users.display_name IS NOT NULL AND users.display_name != '' THEN users.display_name
+            ELSE EXCLUDED.display_name
+          END,
+          avatar_url = CASE
+            WHEN EXCLUDED.avatar_url IS NOT NULL AND EXCLUDED.avatar_url != '' THEN EXCLUDED.avatar_url
+            ELSE users.avatar_url
+          END,
+          is_verified = true,
+          updated_at = NOW()
+        RETURNING id, google_id, email, username, display_name, avatar_url, bio, is_verified, created_at
+        `,
+        [
+          params.id,
+          params.googleId,
+          cleanEmail,
+          params.username,
+          params.displayName,
+          params.avatarUrl,
+          params.passwordHash,
+        ]
+      );
+      return res.rows[0];
+    }
+
+    const now = new Date().toISOString();
+    const existing = await this.findUserByEmail(cleanEmail);
+    if (existing) {
+      const nextDisplayName = existing.display_name?.trim() ? existing.display_name : params.displayName;
+      const nextAvatar = params.avatarUrl || existing.avatar_url || '';
+      sqliteDb!
+        .prepare(
+          `UPDATE users
+           SET google_id = COALESCE(?, google_id),
+               display_name = ?,
+               avatar_url = ?,
+               is_verified = 1,
+               updated_at = ?
+           WHERE id = ?`
+        )
+        .run(params.googleId, nextDisplayName, nextAvatar, now, existing.id);
+      return (await this.findUserById(existing.id))!;
+    }
+
+    sqliteDb!
+      .prepare(
+        `INSERT INTO users (id, google_id, email, username, display_name, avatar_url, bio, password_hash, is_verified, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, '', ?, 1, ?, ?)`
+      )
+      .run(
+        params.id,
+        params.googleId,
+        cleanEmail,
+        params.username,
+        params.displayName,
+        params.avatarUrl,
+        params.passwordHash,
+        now,
+        now
+      );
 
     return (await this.findUserById(params.id))!;
   },

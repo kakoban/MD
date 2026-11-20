@@ -72,11 +72,11 @@ export const cloudApi = {
     return res.json();
   },
 
-  // Fetch single file by ID (sends auth header if logged in so owner can open private docs)
+  // Fetch single file by ID (sends session cookie / auth header so owner can open private docs)
   async getFileById(id: string): Promise<SharedMarkdownFile> {
-    const token = authApi.getToken();
     const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      credentials: 'same-origin',
+      headers: authApi.getAuthHeaders(),
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => null);
@@ -95,6 +95,7 @@ export const cloudApi = {
   }> {
     const res = await fetch('/api/files', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: authApi.getAuthHeaders(),
       body: JSON.stringify(payload),
     });
@@ -110,6 +111,7 @@ export const cloudApi = {
   async updateFile(id: string, payload: Partial<PublishPayload>) {
     const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
       method: 'PUT',
+      credentials: 'same-origin',
       headers: authApi.getAuthHeaders(),
       body: JSON.stringify(payload),
     });
@@ -125,6 +127,7 @@ export const cloudApi = {
   async deleteFile(id: string) {
     const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      credentials: 'same-origin',
       headers: authApi.getAuthHeaders(),
     });
     if (!res.ok) {
@@ -138,6 +141,8 @@ export const cloudApi = {
   async starFile(id: string): Promise<{ stars: number }> {
     const res = await fetch(`/api/files/${encodeURIComponent(id)}/star`, {
       method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
     });
     if (!res.ok) throw new Error('خطا در ثبت امتیاز');
     return res.json();

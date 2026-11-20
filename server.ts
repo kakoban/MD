@@ -1,10 +1,10 @@
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
+import crypto from 'node:crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import nodemailer from 'nodemailer';
 import { initStorage, storage, type DocVisibility } from './server/storage.ts';
 
 dotenv.config();
@@ -46,9 +46,13 @@ function resolveHost(): string {
 }
 
 const app = express();
+app.set('trust proxy', 1);
+
 const PORT = resolvePort();
 const HOST = resolveHost();
-const JWT_SECRET = process.env.JWT_SECRET || 'markdown-studio-secret-jwt-key-2025';
+const JWT_SECRET = process.env.JWT_SECRET?.trim() || crypto.randomBytes(32).toString('hex');
+const SESSION_COOKIE_NAME = 'ms_session';
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 interface JwtPayload {
   id: string;
@@ -57,14 +61,94 @@ interface JwtPayload {
   displayName: string;
 }
 
+function getConfiguredGoogleClientId(): string {
+  return (process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '').trim();
+}
+
+function parseCookie(req: Request, name: string): string | null {
+  const header = req.headers.cookie;
+  if (!header) return null;
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    if (key === name) {
+      try {
+        return decodeURIComponent(part.slice(idx + 1).trim());
+      } catch {
+        return part.slice(idx + 1).trim();
+      }
+    }
+  }
+  return null;
+}
+
+function isSecureRequest(req: Request): boolean {
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  if (typeof forwardedProto === 'string') {
+    return forwardedProto.split(',')[0].trim() === 'https';
+  }
+  return req.secure;
+}
+
+function setSessionCookie(req: Request, res: Response, token: string): void {
+  const parts = [
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    `Max-Age=${SESSION_MAX_AGE_SECONDS}`,
+  ];
+  if (isSecureRequest(req)) {
+    parts.push('Secure', 'SameSite=None', 'Partitioned');
+  } else {
+    parts.push('SameSite=Lax');
+  }
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function clearSessionCookie(req: Request, res: Response): void {
+  const parts = [`${SESSION_COOKIE_NAME}=`, 'Path=/', 'HttpOnly', 'Max-Age=0'];
+  if (isSecureRequest(req)) {
+    parts.push('Secure', 'SameSite=None', 'Partitioned');
+  } else {
+    parts.push('SameSite=Lax');
+  }
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function isSameOriginOrCustomHeader(req: Request): boolean {
+  if (req.headers['x-requested-with'] === 'XMLHttpRequest') return true;
+  const origin = req.headers.origin;
+  const host = (req.headers['x-forwarded-host'] as string | undefined) || req.headers.host;
+  if (!origin || !host) return false;
+  try {
+    return new URL(origin).host === host.split(',')[0].trim();
+  } catch {
+    return false;
+  }
+}
+
 function getAuthUser(req: Request): JwtPayload | null {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      return jwt.verify(token, JWT_SECRET) as JwtPayload;
+    } catch {
+      return null;
+    }
+  }
+
+  const cookieToken = parseCookie(req, SESSION_COOKIE_NAME);
+  if (!cookieToken) return null;
+
+  const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
+  if (isMutation && !isSameOriginOrCustomHeader(req)) {
     return null;
   }
-  const token = authHeader.split(' ')[1];
+
   try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+    return jwt.verify(cookieToken, JWT_SECRET) as JwtPayload;
   } catch {
     return null;
   }
@@ -144,189 +228,153 @@ app.get('/api/health', async (_req: Request, res: Response) => {
 // AUTHENTICATION & USER ACCOUNTS (/api/auth/*)
 // =============================================================
 
-const emailVerificationCodes = new Map<string, { code: string; expiresAt: number }>();
-
-const getMailTransporter = () => {
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: Number(process.env.SMTP_PORT) === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
-  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    return nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-    });
-  }
-  return null;
-};
-
-// 1. Send Email Verification Code (OTP)
-app.post('/api/auth/send-email-code', async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'لطفاً یک آدرس ایمیل معتبر وارد کنید.' });
-    }
-    const cleanEmail = email.trim().toLowerCase();
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000;
-
-    emailVerificationCodes.set(cleanEmail, { code, expiresAt });
-    console.log(`[AUTH] Verification code for ${cleanEmail}: ${code}`);
-
-    const transporter = getMailTransporter();
-    let emailSentToInbox = false;
-
-    if (transporter) {
-      try {
-        await transporter.sendMail({
-          from: `"استودیو مارک‌دان" <${process.env.SMTP_USER || process.env.GMAIL_USER || 'no-reply@markdown-studio.app'}>`,
-          to: cleanEmail,
-          subject: `کد ۶ رقمی تأیید ورود: ${code}`,
-          html: `
-            <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; background-color: #f3f4f6; padding: 32px 16px; color: #1f2937;">
-              <div style="max-width: 480px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e5e7eb;">
-                <h2 style="color: #d97706; margin-top: 0; font-size: 20px;">احراز هویت و ورود به حساب</h2>
-                <p style="font-size: 14px; line-height: 1.7; color: #374151;">
-                  سلام،<br/>
-                  کد یک‌بار مصرف زیر جهت ورود به حساب کاربری شما ایجاد شده است:
-                </p>
-                <div style="background: #fffbeb; border: 2px dashed #f59e0b; border-radius: 12px; padding: 16px; text-align: center; margin: 24px 0;">
-                  <span style="font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #b45309;">${code}</span>
-                </div>
-                <p style="font-size: 12px; color: #6b7280; line-height: 1.6; margin-bottom: 0;">
-                  این کد به مدت ۱۰ دقیقه معتبر است.
-                </p>
-              </div>
-            </div>
-          `,
-        });
-        emailSentToInbox = true;
-      } catch (mailErr: any) {
-        console.error('[AUTH] SMTP dispatch failed:', mailErr.message);
-      }
-    }
-
-    res.json({
-      success: true,
-      emailSentToInbox,
-      message: emailSentToInbox
-        ? `کد تأیید ۶ رقمی به صندوق ورودی ایمیل ${cleanEmail} ارسال گردید.`
-        : 'کد تأیید ۶ رقمی صادر شد. (به دلیل تنظیم نشدن سرور ایمیل SMTP، کد موقت در پایین نمایش داده شد)',
-      devCode: !emailSentToInbox ? code : undefined,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: 'خطا در صدور کد تأیید', details: error.message });
-  }
+// 1. Public Auth Configuration (returns non-secret Google OAuth Client ID for GIS)
+app.get('/api/auth/config', (_req: Request, res: Response) => {
+  res.json({
+    googleClientId: getConfiguredGoogleClientId(),
+  });
 });
 
-// 2. Verify Email Code
-app.post('/api/auth/verify-email-code', async (req: Request, res: Response) => {
+// 2. Google Identity Services (GIS) Sign-In (Server-verified via Google API)
+app.post('/api/auth/google', async (req: Request, res: Response) => {
   try {
-    const { email, code, displayName } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'لطفاً یک آدرس ایمیل معتبر وارد کنید.' });
-    }
-    if (!code || code.trim().length !== 6) {
-      return res.status(400).json({ error: 'لطفاً کد ۶ رقمی را به درستی وارد کنید.' });
-    }
+    const { accessToken, credential } = req.body as {
+      accessToken?: unknown;
+      credential?: unknown;
+    };
 
-    const cleanEmail = email.trim().toLowerCase();
-    const stored = emailVerificationCodes.get(cleanEmail);
-
-    if (!stored || stored.code !== code.trim()) {
-      return res.status(400).json({ error: 'کد واردشده نادرست است.' });
-    }
-    if (Date.now() > stored.expiresAt) {
-      emailVerificationCodes.delete(cleanEmail);
-      return res.status(400).json({ error: 'کد منقضی شده است. لطفاً مجدداً درخواست کد کنید.' });
+    const expectedClientId = getConfiguredGoogleClientId();
+    if (!expectedClientId) {
+      return res.status(503).json({
+        error: 'شناسه گوگل (VITE_GOOGLE_CLIENT_ID) روی سرور پیکربندی نشده است.',
+      });
     }
 
-    emailVerificationCodes.delete(cleanEmail);
+    let googleId = '';
+    let email = '';
+    let displayName = '';
+    let avatarUrl = '';
 
-    let user = await storage.findUserByEmail(cleanEmail);
-    if (user) {
-      const newName = displayName && displayName.trim();
-      if (newName) {
-        user = await storage.updateUser(user.id, { displayName: newName });
+    if (typeof accessToken === 'string' && accessToken.trim()) {
+      const cleanToken = accessToken.trim();
+
+      const tokenInfoRes = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(cleanToken)}`
+      );
+      if (!tokenInfoRes.ok) {
+        return res.status(401).json({ error: 'توکن گوگل نامعتبر یا منقضی شده است.' });
       }
+      const tokenInfo = (await tokenInfoRes.json()) as { aud?: string; azp?: string };
+      const tokenAudience = tokenInfo.aud || tokenInfo.azp || '';
+      if (!tokenAudience || tokenAudience !== expectedClientId) {
+        return res.status(401).json({ error: 'شناسه کلاینت گوگل مطابقت ندارد.' });
+      }
+
+      const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${cleanToken}` },
+      });
+      if (!userinfoRes.ok) {
+        return res.status(401).json({ error: 'تأیید حساب گوگل ناموفق بود. لطفاً مجدداً تلاش کنید.' });
+      }
+      const profile = (await userinfoRes.json()) as {
+        sub?: string;
+        email?: string;
+        email_verified?: boolean;
+        name?: string;
+        given_name?: string;
+        picture?: string;
+      };
+
+      if (!profile.email || profile.email_verified === false) {
+        return res.status(401).json({ error: 'ایمیل تأییدشده‌ای از حساب گوگل دریافت نشد.' });
+      }
+
+      googleId = String(profile.sub || '');
+      email = profile.email.trim().toLowerCase();
+      displayName = (profile.name || profile.given_name || email.split('@')[0]).trim();
+      avatarUrl =
+        typeof profile.picture === 'string' && profile.picture.startsWith('https://')
+          ? profile.picture
+          : '';
+    } else if (typeof credential === 'string' && credential.trim()) {
+      const tokenInfoRes = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential.trim())}`
+      );
+      if (!tokenInfoRes.ok) {
+        return res.status(401).json({ error: 'اعتبارنامه گوگل نامعتبر است.' });
+      }
+      const payload = (await tokenInfoRes.json()) as {
+        aud?: string;
+        sub?: string;
+        email?: string;
+        email_verified?: string | boolean;
+        name?: string;
+        given_name?: string;
+        picture?: string;
+      };
+
+      if (expectedClientId && payload.aud !== expectedClientId) {
+        return res.status(401).json({ error: 'شناسه کلاینت گوگل مطابقت ندارد.' });
+      }
+      if (!payload.email || payload.email_verified === false || payload.email_verified === 'false') {
+        return res.status(401).json({ error: 'ایمیل حساب گوگل تأیید نشده است.' });
+      }
+
+      googleId = String(payload.sub || '');
+      email = payload.email.trim().toLowerCase();
+      displayName = (payload.name || payload.given_name || email.split('@')[0]).trim();
+      avatarUrl =
+        typeof payload.picture === 'string' && payload.picture.startsWith('https://')
+          ? payload.picture
+          : '';
     } else {
-      let cleanUsername = cleanEmail.split('@')[0].replace(/[^\w]/g, '').toLowerCase() || 'user';
-      if (await storage.isUsernameTaken(cleanUsername)) {
-        cleanUsername = `${cleanUsername}${Math.floor(10 + Math.random() * 89)}`;
-      }
-      const name = displayName && displayName.trim() ? displayName.trim() : cleanEmail.split('@')[0];
-      const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-      const dummyPasswordHash = await bcrypt.hash(Math.random().toString(36), 10);
-      user = await storage.createUser({
-        id: userId,
-        email: cleanEmail,
-        username: cleanUsername,
-        displayName: name,
-        passwordHash: dummyPasswordHash,
-      });
+      return res.status(400).json({ error: 'توکن احراز هویت گوگل ارسال نشده است.' });
     }
 
+    let cleanUsername = email.split('@')[0].replace(/[^\w-]/g, '').toLowerCase().slice(0, 20) || 'user';
+    if (cleanUsername.length < 3) {
+      cleanUsername = `${cleanUsername}usr`;
+    }
+    const existingByEmail = await storage.findUserByEmail(email);
+    if (!existingByEmail && (await storage.isUsernameTaken(cleanUsername))) {
+      cleanUsername = `${cleanUsername}${Math.floor(10 + Math.random() * 89)}`;
+    }
+
+    const userId = `usr-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    const randomPasswordHash = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10);
+
+    const user = await storage.upsertGoogleUser({
+      id: userId,
+      googleId,
+      email,
+      username: cleanUsername,
+      displayName,
+      avatarUrl,
+      passwordHash: randomPasswordHash,
+    });
+
     const token = signUserToken(user);
+    setSessionCookie(req, res, token);
+
     res.json({
       success: true,
       token,
       user: formatUserResponse(user),
-      message: `ورود موفقیت‌آمیز با ایمیل ${cleanEmail}`,
+      message: `ورود موفق با حساب گوگل (${email})`,
     });
   } catch (error: any) {
-    res.status(500).json({ error: 'خطا در بررسی کد تأیید', details: error.message });
+    console.error('Google auth error:', error);
+    res.status(500).json({ error: 'خطا در ورود با حساب گوگل' });
   }
 });
 
-// 3. Google Account Authorization
-app.post('/api/auth/google-authorize', async (req: Request, res: Response) => {
-  try {
-    const { email, displayName, avatarUrl } = req.body;
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'آدرس ایمیل گوگل نامعتبر است.' });
-    }
-    const cleanEmail = email.trim().toLowerCase();
-    let user = await storage.findUserByEmail(cleanEmail);
-
-    if (!user) {
-      let cleanUsername = cleanEmail.split('@')[0].replace(/[^\w-]/g, '').slice(0, 20) || 'user';
-      if (await storage.isUsernameTaken(cleanUsername)) {
-        cleanUsername = `${cleanUsername}${Math.floor(10 + Math.random() * 89)}`;
-      }
-      const name = displayName?.trim() || cleanEmail.split('@')[0];
-      const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-      const dummyPasswordHash = await bcrypt.hash(Math.random().toString(36), 10);
-      user = await storage.createUser({
-        id: userId,
-        email: cleanEmail,
-        username: cleanUsername,
-        displayName: name,
-        passwordHash: dummyPasswordHash,
-        avatarUrl: avatarUrl || '',
-      });
-    }
-
-    const token = signUserToken(user);
-    res.json({
-      success: true,
-      token,
-      user: formatUserResponse(user),
-      message: `ورود موفق با حساب گوگل (${cleanEmail})`,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: 'خطا در ورود با حساب گوگل', details: error.message });
+// Logout endpoint (clears HttpOnly session cookie)
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  if (!isSameOriginOrCustomHeader(req)) {
+    return res.status(403).json({ error: 'درخواست نامعتبر است.' });
   }
+  clearSessionCookie(req, res);
+  res.json({ success: true });
 });
 
 // Register new user account
@@ -355,7 +403,7 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const userId = `usr-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
     const user = await storage.createUser({
       id: userId,
@@ -366,6 +414,7 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
     });
 
     const token = signUserToken(user);
+    setSessionCookie(req, res, token);
     res.status(201).json({
       success: true,
       token,
@@ -397,6 +446,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     }
 
     const token = signUserToken(user);
+    setSessionCookie(req, res, token);
     res.json({
       success: true,
       token,

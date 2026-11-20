@@ -1,36 +1,78 @@
 import { UserProfile, AuthResponse } from '../types';
 
-const TOKEN_KEY = 'markdown_studio_auth_token_v1';
+const LEGACY_TOKEN_KEY = 'markdown_studio_auth_token_v1';
+
+// Keep Bearer token strictly in JS memory; persistent session lives in HttpOnly cookie (`ms_session`).
+let memoryToken: string | null = null;
+
+function clearLegacyTokenStorage() {
+  try {
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  } catch {
+    // Ignore storage access errors in restricted contexts
+  }
+}
+
+clearLegacyTokenStorage();
 
 export const authApi = {
   getToken(): string | null {
-    try {
-      return localStorage.getItem(TOKEN_KEY);
-    } catch {
-      return null;
-    }
+    return memoryToken;
   },
 
   setToken(token: string) {
-    try {
-      localStorage.setItem(TOKEN_KEY, token);
-    } catch (e) {
-      console.error('Failed to save auth token', e);
-    }
+    memoryToken = token || null;
+    clearLegacyTokenStorage();
   },
 
   removeToken() {
-    try {
-      localStorage.removeItem(TOKEN_KEY);
-    } catch {}
+    memoryToken = null;
+    clearLegacyTokenStorage();
   },
 
-  getAuthHeaders(): HeadersInit {
-    const token = this.getToken();
+  getAuthHeaders(): Record<string, string> {
     return {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-Requested-With': 'XMLHttpRequest',
+      ...(memoryToken ? { Authorization: `Bearer ${memoryToken}` } : {}),
     };
+  },
+
+  async getAuthConfig(): Promise<{ googleClientId: string }> {
+    const res = await fetch('/api/auth/config', {
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    if (!res.ok) {
+      return { googleClientId: '' };
+    }
+    const data = await res.json().catch(() => ({}));
+    return {
+      googleClientId: typeof data.googleClientId === 'string' ? data.googleClientId.trim() : '',
+    };
+  },
+
+  async loginWithGoogle(params: {
+    accessToken?: string;
+    credential?: string;
+  }): Promise<AuthResponse> {
+    const res = await fetch('/api/auth/google', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'خطا در احراز هویت با حساب گوگل');
+    }
+    if (data.token) {
+      this.setToken(data.token);
+    }
+    return data;
   },
 
   async register(params: {
@@ -41,10 +83,14 @@ export const authApi = {
   }): Promise<AuthResponse> {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
       body: JSON.stringify(params),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'خطا در ثبت‌نام کاربر');
     }
@@ -60,10 +106,14 @@ export const authApi = {
   }): Promise<AuthResponse> {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
       body: JSON.stringify(params),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'خطا در ورود به حساب');
     }
@@ -73,69 +123,10 @@ export const authApi = {
     return data;
   },
 
-  async sendEmailCode(email: string): Promise<{
-    success: boolean;
-    message: string;
-    devCode?: string;
-    emailSentToInbox?: boolean;
-  }> {
-    const res = await fetch('/api/auth/send-email-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در ارسال کد تأیید');
-    }
-    return data;
-  },
-
-  async verifyEmailCode(params: {
-    email: string;
-    code: string;
-    displayName?: string;
-  }): Promise<AuthResponse> {
-    const res = await fetch('/api/auth/verify-email-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در بررسی کد تأیید');
-    }
-    if (data.token) {
-      this.setToken(data.token);
-    }
-    return data;
-  },
-
-  async googleAuthorize(params: {
-    email: string;
-    displayName?: string;
-    avatarUrl?: string;
-  }): Promise<AuthResponse> {
-    const res = await fetch('/api/auth/google-authorize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'خطا در اتورایز با حساب گوگل');
-    }
-    if (data.token) {
-      this.setToken(data.token);
-    }
-    return data;
-  },
-
   async getMe(): Promise<UserProfile | null> {
-    const token = this.getToken();
-    if (!token) return null;
     try {
       const res = await fetch('/api/auth/me', {
+        credentials: 'same-origin',
         headers: this.getAuthHeaders(),
       });
       if (!res.ok) {
@@ -144,7 +135,7 @@ export const authApi = {
         }
         return null;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       return data.user || null;
     } catch {
       return null;
@@ -159,10 +150,11 @@ export const authApi = {
   }): Promise<UserProfile> {
     const res = await fetch('/api/auth/profile', {
       method: 'PUT',
+      credentials: 'same-origin',
       headers: this.getAuthHeaders(),
       body: JSON.stringify(params),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'خطا در بروزرسانی پروفایل');
     }
@@ -171,16 +163,26 @@ export const authApi = {
 
   async getMyDocuments(): Promise<any[]> {
     const res = await fetch('/api/auth/my-documents', {
+      credentials: 'same-origin',
       headers: this.getAuthHeaders(),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'خطا در دریافت اسناد');
     }
     return data.files || [];
   },
 
-  logout() {
+  async logout(): Promise<void> {
     this.removeToken();
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+    } catch {
+      // Best-effort server cookie clear
+    }
   },
 };

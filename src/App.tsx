@@ -84,7 +84,7 @@ function mapServerFileToDoc(file: SharedMarkdownFile, currentUserId?: string): M
 export default function App() {
   // User & Session state
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(() => Boolean(authApi.getToken()));
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [workspaceView, setWorkspaceView] = useState<'dashboard' | 'editor'>('dashboard');
 
   // Authenticated user's personal documents (strictly isolated per user)
@@ -202,27 +202,22 @@ export default function App() {
     }
   }, []);
 
-  // Authenticate user session and fetch public explore count on mount
+  // Authenticate user session (via HttpOnly cookie or in-memory token) and fetch public explore count on mount
   useEffect(() => {
     let mounted = true;
-    const token = authApi.getToken();
-    if (token) {
-      authApi
-        .getMe()
-        .then(async (user) => {
-          if (!mounted) return;
-          if (user) {
-            setCurrentUser(user);
-            await loadUserDocuments(user);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (mounted) setIsAuthChecking(false);
-        });
-    } else {
-      setIsAuthChecking(false);
-    }
+    authApi
+      .getMe()
+      .then(async (user) => {
+        if (!mounted) return;
+        if (user) {
+          setCurrentUser(user);
+          await loadUserDocuments(user);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setIsAuthChecking(false);
+      });
 
     cloudApi
       .getHealth()
