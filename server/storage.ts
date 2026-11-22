@@ -38,6 +38,38 @@ export interface McpTokenRow {
   created_at: string;
 }
 
+export interface OAuthClientRow {
+  client_id: string;
+  client_secret_hash: string | null;
+  client_name: string;
+  redirect_uris: string[];
+  token_endpoint_auth_method: string;
+  created_at: string;
+}
+
+export interface OAuthCodeRow {
+  code_hash: string;
+  client_id: string;
+  user_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  code_challenge_method: string;
+  scope: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
+}
+
+export interface OAuthRefreshTokenRow {
+  token_hash: string;
+  client_id: string;
+  user_id: string;
+  scope: string;
+  expires_at: string;
+  revoked_at: string | null;
+  created_at: string;
+}
+
 export interface FileRow {
   id: string;
   title: string;
@@ -184,6 +216,38 @@ function initSqlite() {
     CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id);
     CREATE INDEX IF NOT EXISTS idx_mcp_tokens_hash ON mcp_tokens(token_hash);
 
+    CREATE TABLE IF NOT EXISTS oauth_clients (
+      client_id TEXT PRIMARY KEY,
+      client_secret_hash TEXT,
+      client_name TEXT NOT NULL,
+      redirect_uris TEXT NOT NULL,
+      token_endpoint_auth_method TEXT DEFAULT 'none',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_codes (
+      code_hash TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      redirect_uri TEXT NOT NULL,
+      code_challenge TEXT DEFAULT '',
+      code_challenge_method TEXT DEFAULT 'S256',
+      scope TEXT DEFAULT 'mcp:tools',
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+      token_hash TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      scope TEXT DEFAULT 'mcp:tools',
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS shared_markdown_files (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -295,6 +359,38 @@ export async function initStorage(): Promise<void> {
 
           CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id);
           CREATE INDEX IF NOT EXISTS idx_mcp_tokens_hash ON mcp_tokens(token_hash);
+
+          CREATE TABLE IF NOT EXISTS oauth_clients (
+            client_id VARCHAR(120) PRIMARY KEY,
+            client_secret_hash VARCHAR(128),
+            client_name VARCHAR(200) NOT NULL,
+            redirect_uris TEXT NOT NULL,
+            token_endpoint_auth_method VARCHAR(50) DEFAULT 'none',
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS oauth_codes (
+            code_hash VARCHAR(128) PRIMARY KEY,
+            client_id VARCHAR(120) NOT NULL,
+            user_id VARCHAR(100) NOT NULL,
+            redirect_uri TEXT NOT NULL,
+            code_challenge VARCHAR(255) DEFAULT '',
+            code_challenge_method VARCHAR(20) DEFAULT 'S256',
+            scope VARCHAR(255) DEFAULT 'mcp:tools',
+            expires_at TIMESTAMPTZ NOT NULL,
+            used_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+            token_hash VARCHAR(128) PRIMARY KEY,
+            client_id VARCHAR(120) NOT NULL,
+            user_id VARCHAR(100) NOT NULL,
+            scope VARCHAR(255) DEFAULT 'mcp:tools',
+            expires_at TIMESTAMPTZ NOT NULL,
+            revoked_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
 
           CREATE TABLE IF NOT EXISTS shared_markdown_files (
             id VARCHAR(100) PRIMARY KEY,
@@ -1488,5 +1584,265 @@ export const storage = {
     }
     const res = sqliteDb!.prepare('DELETE FROM mcp_tokens WHERE id = ? AND user_id = ?').run(id, userId);
     return Number(res.changes || 0) > 0;
+  },
+
+  // =============================================================
+  // OAUTH 2.1 AUTHORIZATION SERVER (DCR, AUTH CODES, REFRESH TOKENS)
+  // =============================================================
+  async createOAuthClient(params: {
+    clientId: string;
+    clientSecretHash: string | null;
+    clientName: string;
+    redirectUris: string[];
+    tokenEndpointAuthMethod: string;
+  }): Promise<OAuthClientRow> {
+    const serializedUris = JSON.stringify(params.redirectUris);
+    const cleanName = params.clientName.trim().slice(0, 180) || 'MCP Client';
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `INSERT INTO oauth_clients (client_id, client_secret_hash, client_name, redirect_uris, token_endpoint_auth_method, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         RETURNING client_id, client_secret_hash, client_name, redirect_uris, token_endpoint_auth_method, created_at`,
+        [params.clientId, params.clientSecretHash, cleanName, serializedUris, params.tokenEndpointAuthMethod]
+      );
+      const row = res.rows[0];
+      return {
+        client_id: row.client_id,
+        client_secret_hash: row.client_secret_hash ?? null,
+        client_name: row.client_name,
+        redirect_uris: parseSqliteTags(row.redirect_uris),
+        token_endpoint_auth_method: row.token_endpoint_auth_method || 'none',
+        created_at: new Date(row.created_at).toISOString(),
+      };
+    }
+
+    const now = new Date().toISOString();
+    sqliteDb!
+      .prepare(
+        `INSERT INTO oauth_clients (client_id, client_secret_hash, client_name, redirect_uris, token_endpoint_auth_method, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(params.clientId, params.clientSecretHash, cleanName, serializedUris, params.tokenEndpointAuthMethod, now);
+
+    return {
+      client_id: params.clientId,
+      client_secret_hash: params.clientSecretHash,
+      client_name: cleanName,
+      redirect_uris: params.redirectUris,
+      token_endpoint_auth_method: params.tokenEndpointAuthMethod,
+      created_at: now,
+    };
+  },
+
+  async getOAuthClient(clientId: string): Promise<OAuthClientRow | null> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `SELECT client_id, client_secret_hash, client_name, redirect_uris, token_endpoint_auth_method, created_at
+         FROM oauth_clients WHERE client_id = $1 LIMIT 1`,
+        [clientId]
+      );
+      if (!res.rows[0]) return null;
+      const row = res.rows[0];
+      return {
+        client_id: row.client_id,
+        client_secret_hash: row.client_secret_hash ?? null,
+        client_name: row.client_name,
+        redirect_uris: parseSqliteTags(row.redirect_uris),
+        token_endpoint_auth_method: row.token_endpoint_auth_method || 'none',
+        created_at: new Date(row.created_at).toISOString(),
+      };
+    }
+
+    const row = sqliteDb!
+      .prepare(
+        `SELECT client_id, client_secret_hash, client_name, redirect_uris, token_endpoint_auth_method, created_at
+         FROM oauth_clients WHERE client_id = ? LIMIT 1`
+      )
+      .get(clientId) as any;
+    if (!row) return null;
+    return {
+      client_id: row.client_id,
+      client_secret_hash: row.client_secret_hash ?? null,
+      client_name: row.client_name,
+      redirect_uris: parseSqliteTags(row.redirect_uris),
+      token_endpoint_auth_method: row.token_endpoint_auth_method || 'none',
+      created_at: row.created_at,
+    };
+  },
+
+  async createOAuthCode(params: {
+    codeHash: string;
+    clientId: string;
+    userId: string;
+    redirectUri: string;
+    codeChallenge: string;
+    codeChallengeMethod: string;
+    scope: string;
+    expiresAt: string;
+  }): Promise<void> {
+    if (activeBackend === 'postgres' && pgPool) {
+      await pgPool.query(
+        `INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, code_challenge_method, scope, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        [
+          params.codeHash,
+          params.clientId,
+          params.userId,
+          params.redirectUri,
+          params.codeChallenge,
+          params.codeChallengeMethod,
+          params.scope,
+          params.expiresAt,
+        ]
+      );
+      return;
+    }
+
+    const now = new Date().toISOString();
+    sqliteDb!
+      .prepare(
+        `INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, code_challenge_method, scope, expires_at, used_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+      )
+      .run(
+        params.codeHash,
+        params.clientId,
+        params.userId,
+        params.redirectUri,
+        params.codeChallenge,
+        params.codeChallengeMethod,
+        params.scope,
+        params.expiresAt,
+        now
+      );
+  },
+
+  async getOAuthCode(codeHash: string): Promise<OAuthCodeRow | null> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `SELECT code_hash, client_id, user_id, redirect_uri, code_challenge, code_challenge_method, scope, expires_at, used_at, created_at
+         FROM oauth_codes WHERE code_hash = $1 LIMIT 1`,
+        [codeHash]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        code_hash: r.code_hash,
+        client_id: r.client_id,
+        user_id: r.user_id,
+        redirect_uri: r.redirect_uri,
+        code_challenge: r.code_challenge || '',
+        code_challenge_method: r.code_challenge_method || 'S256',
+        scope: r.scope || 'mcp:tools',
+        expires_at: new Date(r.expires_at).toISOString(),
+        used_at: r.used_at ? new Date(r.used_at).toISOString() : null,
+        created_at: new Date(r.created_at).toISOString(),
+      };
+    }
+
+    const r = sqliteDb!
+      .prepare(
+        `SELECT code_hash, client_id, user_id, redirect_uri, code_challenge, code_challenge_method, scope, expires_at, used_at, created_at
+         FROM oauth_codes WHERE code_hash = ? LIMIT 1`
+      )
+      .get(codeHash) as any;
+    if (!r) return null;
+    return {
+      code_hash: r.code_hash,
+      client_id: r.client_id,
+      user_id: r.user_id,
+      redirect_uri: r.redirect_uri,
+      code_challenge: r.code_challenge || '',
+      code_challenge_method: r.code_challenge_method || 'S256',
+      scope: r.scope || 'mcp:tools',
+      expires_at: r.expires_at,
+      used_at: r.used_at ?? null,
+      created_at: r.created_at,
+    };
+  },
+
+  async markOAuthCodeUsed(codeHash: string): Promise<boolean> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        'UPDATE oauth_codes SET used_at = NOW() WHERE code_hash = $1 AND used_at IS NULL',
+        [codeHash]
+      );
+      return (res.rowCount || 0) > 0;
+    }
+    const res = sqliteDb!
+      .prepare('UPDATE oauth_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL')
+      .run(new Date().toISOString(), codeHash);
+    return Number(res.changes || 0) > 0;
+  },
+
+  async createOAuthRefreshToken(params: {
+    tokenHash: string;
+    clientId: string;
+    userId: string;
+    scope: string;
+    expiresAt: string;
+  }): Promise<void> {
+    if (activeBackend === 'postgres' && pgPool) {
+      await pgPool.query(
+        `INSERT INTO oauth_refresh_tokens (token_hash, client_id, user_id, scope, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [params.tokenHash, params.clientId, params.userId, params.scope, params.expiresAt]
+      );
+      return;
+    }
+    sqliteDb!
+      .prepare(
+        `INSERT INTO oauth_refresh_tokens (token_hash, client_id, user_id, scope, expires_at, revoked_at, created_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?)`
+      )
+      .run(params.tokenHash, params.clientId, params.userId, params.scope, params.expiresAt, new Date().toISOString());
+  },
+
+  async getOAuthRefreshToken(tokenHash: string): Promise<OAuthRefreshTokenRow | null> {
+    if (activeBackend === 'postgres' && pgPool) {
+      const res = await pgPool.query(
+        `SELECT token_hash, client_id, user_id, scope, expires_at, revoked_at, created_at
+         FROM oauth_refresh_tokens WHERE token_hash = $1 LIMIT 1`,
+        [tokenHash]
+      );
+      if (!res.rows[0]) return null;
+      const r = res.rows[0];
+      return {
+        token_hash: r.token_hash,
+        client_id: r.client_id,
+        user_id: r.user_id,
+        scope: r.scope || 'mcp:tools',
+        expires_at: new Date(r.expires_at).toISOString(),
+        revoked_at: r.revoked_at ? new Date(r.revoked_at).toISOString() : null,
+        created_at: new Date(r.created_at).toISOString(),
+      };
+    }
+
+    const r = sqliteDb!
+      .prepare(
+        `SELECT token_hash, client_id, user_id, scope, expires_at, revoked_at, created_at
+         FROM oauth_refresh_tokens WHERE token_hash = ? LIMIT 1`
+      )
+      .get(tokenHash) as any;
+    if (!r) return null;
+    return {
+      token_hash: r.token_hash,
+      client_id: r.client_id,
+      user_id: r.user_id,
+      scope: r.scope || 'mcp:tools',
+      expires_at: r.expires_at,
+      revoked_at: r.revoked_at ?? null,
+      created_at: r.created_at,
+    };
+  },
+
+  async revokeOAuthRefreshToken(tokenHash: string): Promise<void> {
+    if (activeBackend === 'postgres' && pgPool) {
+      await pgPool.query('UPDATE oauth_refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1', [tokenHash]);
+      return;
+    }
+    sqliteDb!
+      .prepare('UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE token_hash = ?')
+      .run(new Date().toISOString(), tokenHash);
   },
 };

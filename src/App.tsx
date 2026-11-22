@@ -41,6 +41,7 @@ import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
 import { MyDocumentsModal } from './components/MyDocumentsModal';
 import { McpBridgeModal } from './components/McpBridgeModal';
+import { OAuthConsentView } from './components/OAuthConsentView';
 import { FolderSelection } from './components/FolderTree';
 import { authApi } from './services/authApi';
 import { memoryApi, buildFolderPathMap } from './services/memoryApi';
@@ -1234,6 +1235,8 @@ export default function App() {
   }, []);
 
   // Determine top-level render mode
+  const isOAuthConsentRoute =
+    typeof window !== 'undefined' && window.location.pathname === '/oauth/authorize';
   const isGuestMode = !currentUser && !sharedViewDoc && !sharedLinkError;
   const isReadOnlyShared = Boolean(sharedViewDoc);
 
@@ -1242,6 +1245,19 @@ export default function App() {
       <div className={`theme-${theme} flex flex-col items-center justify-center h-screen w-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans gap-3`} dir="rtl">
         <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
         <p className="text-xs text-[var(--text-muted)]">در حال بارگذاری فضای کار...</p>
+      </div>
+    );
+  }
+
+  if (isOAuthConsentRoute) {
+    return (
+      <div className={`theme-${theme} min-h-screen w-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans`}>
+        <OAuthConsentView
+          currentUser={currentUser}
+          onAuthenticated={(user) => {
+            setCurrentUser(user);
+          }}
+        />
       </div>
     );
   }

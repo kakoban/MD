@@ -647,7 +647,7 @@ export const McpBridgeModal: React.FC<McpBridgeModalProps> = ({
                   { id: 'claude-desktop' as ClientTarget, label: 'Claude Desktop' },
                   { id: 'claude-code' as ClientTarget, label: 'Claude Code' },
                   { id: 'cursor-vscode' as ClientTarget, label: 'Cursor / VS Code' },
-                  { id: 'web-mcp' as ClientTarget, label: 'ChatGPT و کلاینت‌های وب' },
+                  { id: 'web-mcp' as ClientTarget, label: 'Claude.ai / ChatGPT (وب)' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -762,22 +762,35 @@ export const McpBridgeModal: React.FC<McpBridgeModalProps> = ({
 
               {clientTarget === 'web-mcp' && (
                 <div className="space-y-3 text-xs text-[var(--text-secondary)]">
-                  <p className="leading-relaxed">
-                    در ChatGPT (بخش Connectors / Developer Mode) و هر کلاینت MCP سازگار با Streamable HTTP، اطلاعات زیر را وارد کنید:
-                  </p>
+                  <div className="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/30 space-y-1.5">
+                    <div className="font-bold text-[var(--text-primary)]">
+                      اتصال مستقیم با OAuth 2.1 (بدون نیاز به Client Secret)
+                    </div>
+                    <p className="leading-relaxed text-[11px] text-[var(--text-secondary)]">
+                      در <strong>Claude.ai</strong> (بخش Settings → Connectors → Add custom connector) یا <strong>ChatGPT</strong> (بخش Connectors)، فقط آدرس زیر را وارد کنید و فیلدهای OAuth Client ID / Secret را <strong>خالی</strong> بگذارید. پس از کلیک روی Connect، صفحه تأیید همین سامانه باز می‌شود و با یک کلیک متصل می‌شوید.
+                    </p>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="p-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] space-y-1">
-                      <div className="text-[11px] text-[var(--text-muted)]">MCP Server URL</div>
+                      <div className="text-[11px] text-[var(--text-muted)]">Remote MCP Server URL</div>
                       <code dir="ltr" className="block font-mono text-[11px] text-[var(--text-primary)] break-all select-all">
                         {mcpUrl}
                       </code>
                     </div>
                     <div className="p-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] space-y-1">
-                      <div className="text-[11px] text-[var(--text-muted)]">Authentication Header</div>
+                      <div className="text-[11px] text-[var(--text-muted)]">OAuth Client ID اختیاری (در صورت نیاز کلاینت)</div>
                       <code dir="ltr" className="block font-mono text-[11px] text-[var(--text-primary)] break-all select-all">
-                        Authorization: Bearer {displayToken}
+                        markdown-studio-mcp
                       </code>
                     </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] space-y-1">
+                    <div className="text-[11px] text-[var(--text-muted)]">
+                      برای ابزارهایی که هدر مستقیم می‌پذیرند (Bearer Token):
+                    </div>
+                    <code dir="ltr" className="block font-mono text-[11px] text-[var(--text-primary)] break-all select-all">
+                      Authorization: Bearer {displayToken}
+                    </code>
                   </div>
                 </div>
               )}

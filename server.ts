@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { initStorage, storage, sanitizePathSegments, type DocVisibility } from './server/storage.ts';
 import { handleMcpPost, generateLocalBridgeScript, MCP_TOOLS } from './server/mcp.ts';
+import { registerOAuthRoutes, buildWwwAuthenticateHeader } from './server/oauth.ts';
 
 dotenv.config();
 
@@ -1103,6 +1104,14 @@ app.get('/api/mcp/bridge-script', (req: Request, res: Response) => {
 });
 
 // =============================================================
+// OAUTH 2.1 + DYNAMIC CLIENT REGISTRATION (FOR CLAUDE / CHATGPT MCP)
+// =============================================================
+registerOAuthRoutes(app, {
+  getSessionUser: getAuthUser,
+  hashSecret: hashMcpToken,
+});
+
+// =============================================================
 // UNIVERSAL MCP STREAMABLE HTTP ENDPOINT (/api/mcp)
 // =============================================================
 
@@ -1114,6 +1123,7 @@ app.use('/api/mcp', (req: Request, res: Response, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, Mcp-Session-Id, MCP-Protocol-Version, Accept');
+  res.setHeader('Access-Control-Expose-Headers', 'WWW-Authenticate, Mcp-Session-Id');
   if (req.method === 'OPTIONS') {
     res.status(204).end();
     return;
@@ -1125,12 +1135,13 @@ app.post('/api/mcp', async (req: Request, res: Response) => {
   try {
     const authUser = await resolveSessionOrMcpUser(req);
     if (!authUser) {
+      res.setHeader('WWW-Authenticate', buildWwwAuthenticateHeader(req));
       return res.status(401).json({
         jsonrpc: '2.0',
         id: req.body?.id ?? null,
         error: {
           code: -32001,
-          message: 'Unauthorized: provide Authorization: Bearer msp_... token from Markdown Studio Pro.',
+          message: 'Unauthorized: authenticate via OAuth 2.1 or provide Authorization: Bearer msp_... token.',
         },
       });
     }
@@ -1149,6 +1160,7 @@ app.get('/api/mcp', async (req: Request, res: Response) => {
   if (accept.includes('text/event-stream')) {
     const authUser = await resolveSessionOrMcpUser(req);
     if (!authUser) {
+      res.setHeader('WWW-Authenticate', buildWwwAuthenticateHeader(req));
       return res.status(401).json({ error: 'Unauthorized' });
     }
     res.setHeader('Content-Type', 'text/event-stream');
@@ -1169,7 +1181,8 @@ app.get('/api/mcp', async (req: Request, res: Response) => {
     protocol: 'MCP Streamable HTTP (JSON-RPC 2.0)',
     version: '1.0.0',
     endpoint: '/api/mcp',
-    authentication: 'Bearer msp_... token (Authorization header or X-API-Key)',
+    authentication: 'OAuth 2.1 (Dynamic Client Registration + PKCE) or Bearer msp_... token',
+    oauthMetadata: '/.well-known/oauth-protected-resource',
     toolsCount: MCP_TOOLS.length,
   });
 });
