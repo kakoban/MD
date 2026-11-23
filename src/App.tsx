@@ -21,6 +21,7 @@ import {
   detectDirection,
   toggleTaskInMarkdown,
 } from './utils/markdownParser';
+import { buildShareUrl, copyTextToClipboard } from './utils/shareLink';
 import { Navbar } from './components/Navbar';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
@@ -900,11 +901,22 @@ export default function App() {
     [currentUser]
   );
 
-  const handleCopyShareLink = () => {
+  const handleCopyShareLink = async () => {
     if (!activeDoc) return;
-    const url = `${window.location.origin}/?share=${activeDoc.id}`;
-    navigator.clipboard.writeText(url);
-    showNotice('لینک مستقیم اشتراک سند کپی شد.');
+    if (activeDoc.visibility === 'private') {
+      setShareTargetDocId(activeDoc.id);
+      setIsShareModalOpen(true);
+      showNotice('این سند خصوصی است؛ برای دریافت لینک، سطح دسترسی را روی «لینک مستقیم» یا «عمومی» قرار دهید.');
+      return;
+    }
+    const url = buildShareUrl(activeDoc.id);
+    const ok = await copyTextToClipboard(url);
+    if (ok) {
+      showNotice('لینک مستقیم اشتراک سند کپی شد.');
+    } else {
+      setShareTargetDocId(activeDoc.id);
+      setIsShareModalOpen(true);
+    }
   };
 
   const handleUpdateWordGoal = (newGoal: number | undefined) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Share2,
   X,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { cloudApi } from '../services/cloudApi';
 import { DocVisibility } from '../types';
+import { buildShareUrl, copyTextToClipboard } from '../utils/shareLink';
 
 interface SharePublishModalProps {
   isOpen: boolean;
@@ -68,21 +69,38 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [savedVisibility, setSavedVisibility] = useState<DocVisibility>('private');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedExistingLink, setCopiedExistingLink] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const wasOpenRef = useRef(false);
+  const lastDocIdRef = useRef<string | undefined>(documentId);
+
   useEffect(() => {
-    if (isOpen) {
+    const justOpened = isOpen && !wasOpenRef.current;
+    const switchedDocWhileOpen = isOpen && documentId !== lastDocIdRef.current && !publishedUrl;
+
+    if (justOpened || switchedDocWhileOpen) {
       setTitle(documentTitle || 'سند جدید');
       setDescription(initialDescription || '');
-      setTags(initialTags && initialTags.length > 0 ? initialTags : []);
+      setTags(initialTags && initialTags.length > 0 ? [...initialTags] : []);
       setVisibility(initialVisibility || 'private');
       setCustomId('');
       setPublishedUrl(null);
+      setCopiedLink(false);
+      setCopiedExistingLink(false);
       setErrorMsg(null);
     }
-  }, [isOpen, documentTitle, initialDescription, initialTags, initialVisibility]);
+
+    wasOpenRef.current = isOpen;
+    lastDocIdRef.current = documentId;
+  }, [isOpen, documentId, documentTitle, initialDescription, initialTags, initialVisibility, publishedUrl]);
 
   if (!isOpen) return null;
+
+  const existingShareUrl =
+    isExistingCloudDoc && documentId && (initialVisibility === 'unlisted' || initialVisibility === 'public')
+      ? buildShareUrl(documentId)
+      : null;
 
   const authorDisplay = defaultAuthor?.trim() || 'شما';
 
@@ -135,7 +153,7 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
         resolvedId = res.file.id;
       }
 
-      const fullShareUrl = `${window.location.origin}/?share=${resolvedId}`;
+      const fullShareUrl = buildShareUrl(resolvedId);
       setSavedVisibility(visibility);
       setPublishedUrl(fullShareUrl);
       onPublishedSuccess?.(resolvedId, {
@@ -151,11 +169,21 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
     }
   };
 
-  const handleCopyLink = () => {
-    if (publishedUrl) {
-      navigator.clipboard.writeText(publishedUrl);
+  const handleCopyLink = async () => {
+    if (!publishedUrl) return;
+    const ok = await copyTextToClipboard(publishedUrl);
+    if (ok) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
+    }
+  };
+
+  const handleCopyExistingLink = async () => {
+    if (!existingShareUrl) return;
+    const ok = await copyTextToClipboard(existingShareUrl);
+    if (ok) {
+      setCopiedExistingLink(true);
+      setTimeout(() => setCopiedExistingLink(false), 2500);
     }
   };
 
@@ -229,7 +257,8 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
                     readOnly
                     dir="ltr"
                     value={publishedUrl}
-                    className="bg-transparent text-xs text-[var(--text-primary)] font-mono flex-1 outline-none px-1"
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="bg-transparent text-xs text-[var(--text-primary)] font-mono flex-1 outline-none px-1 select-all"
                   />
                   <button
                     type="button"
@@ -239,6 +268,15 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
                     {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     <span>{copiedLink ? 'کپی شد' : 'کپی لینک'}</span>
                   </button>
+                  <a
+                    href={publishedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-amber-500 transition-colors shrink-0"
+                    title="باز کردن لینک در تب جدید"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
                 </div>
               </div>
             )}
@@ -269,6 +307,44 @@ export const SharePublishModal: React.FC<SharePublishModalProps> = ({
         ) : (
           /* Form View */
           <form onSubmit={handlePublish} className="space-y-4 text-xs">
+            {existingShareUrl && (
+              <div className="p-3 rounded-2xl bg-sky-500/10 border border-sky-500/30 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 flex items-center gap-1.5">
+                    <Link2 className="w-3.5 h-3.5" />
+                    <span>لینک مستقیم فعلی این سند:</span>
+                  </span>
+                  <a
+                    href={existingShareUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-sky-600 dark:text-sky-400 hover:underline"
+                  >
+                    <span>باز کردن</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="flex items-center gap-2 p-1.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]">
+                  <input
+                    type="text"
+                    readOnly
+                    dir="ltr"
+                    value={existingShareUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="bg-transparent text-[11px] text-[var(--text-primary)] font-mono flex-1 outline-none px-1.5 select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyExistingLink}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white font-bold text-[11px] transition-colors shrink-0 cursor-pointer"
+                  >
+                    {copiedExistingLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedExistingLink ? 'کپی شد' : 'کپی لینک'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {errorMsg && (
               <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs">
                 {errorMsg}

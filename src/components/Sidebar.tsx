@@ -25,6 +25,7 @@ import { MarkdownDoc, FolderItem } from '../types';
 import { cloudApi, SharedMarkdownFile } from '../services/cloudApi';
 import { FolderTree, FolderSelection } from './FolderTree';
 import { buildFolderPathMap, getDescendantFolderIds } from '../services/memoryApi';
+import { buildShareUrl, copyTextToClipboard } from '../utils/shareLink';
 
 interface SidebarProps {
   documents: MarkdownDoc[];
@@ -153,12 +154,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleCopyShareLink = (e: React.MouseEvent, fileId: string) => {
+  const handleCopyShareLink = async (e: React.MouseEvent, fileId: string) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/?share=${fileId}`;
-    navigator.clipboard.writeText(url);
-    setCopiedShareId(fileId);
-    setTimeout(() => setCopiedShareId(null), 2000);
+    const url = buildShareUrl(fileId);
+    const ok = await copyTextToClipboard(url);
+    if (ok) {
+      setCopiedShareId(fileId);
+      setTimeout(() => setCopiedShareId(null), 2000);
+    }
   };
 
   const handleOpenExploreDoc = async (file: SharedMarkdownFile) => {
@@ -479,27 +482,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div className="flex items-center gap-1.5 tabular-nums">
                           <span>{updatedDate}</span>
                           <span>·</span>
-                          <span className="inline-flex items-center gap-0.5">
-                            {doc.visibility === 'public' ? (
-                              <>
-                                <Globe className="w-2.5 h-2.5 text-emerald-500" />
-                                <span>عمومی</span>
-                              </>
-                            ) : doc.visibility === 'unlisted' ? (
-                              <>
-                                <Link2 className="w-2.5 h-2.5 text-sky-500" />
-                                <span>لینک‌دار</span>
-                              </>
-                            ) : (
-                              <>
-                                <Lock className="w-2.5 h-2.5" />
-                                <span>خصوصی</span>
-                              </>
-                            )}
-                          </span>
+                          {doc.visibility === 'public' || doc.visibility === 'unlisted' ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyShareLink(e, doc.id)}
+                              className="inline-flex items-center gap-0.5 hover:text-amber-500 transition-colors cursor-pointer"
+                              title="کلیک برای کپی لینک مستقیم اشتراک"
+                            >
+                              {copiedShareId === doc.id ? (
+                                <>
+                                  <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                  <span className="text-emerald-500 font-semibold">کپی شد</span>
+                                </>
+                              ) : doc.visibility === 'public' ? (
+                                <>
+                                  <Globe className="w-2.5 h-2.5 text-emerald-500" />
+                                  <span>عمومی</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Link2 className="w-2.5 h-2.5 text-sky-500" />
+                                  <span>لینک‌دار</span>
+                                </>
+                              )}
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>خصوصی</span>
+                            </span>
+                          )}
                         </div>
 
                         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                          {(doc.visibility === 'public' || doc.visibility === 'unlisted') && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyShareLink(e, doc.id)}
+                              className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-sky-500 cursor-pointer"
+                              title="کپی لینک مستقیم سند"
+                            >
+                              {copiedShareId === doc.id ? (
+                                <Check className="w-3 h-3 text-emerald-500" />
+                              ) : (
+                                <Link2 className="w-3 h-3" />
+                              )}
+                            </button>
+                          )}
                           {onMoveDocToFolder && folders.length > 0 && (
                             <button
                               type="button"

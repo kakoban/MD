@@ -32,6 +32,7 @@ import {
   getFolderBreadcrumbs,
   getDescendantFolderIds,
 } from '../services/memoryApi';
+import { buildShareUrl, copyTextToClipboard } from '../utils/shareLink';
 
 interface WorkspaceDashboardProps {
   currentUser: UserProfile;
@@ -210,12 +211,14 @@ export const WorkspaceDashboard: React.FC<WorkspaceDashboardProps> = ({
     });
   }, [documents, activeTab, selectedFolder, allowedFolderIds, searchQuery, selectedTag, personalSort]);
 
-  const handleCopyLink = (e: React.MouseEvent, id: string) => {
+  const handleCopyLink = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/?share=${id}`;
-    navigator.clipboard.writeText(url);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    const url = buildShareUrl(id);
+    const ok = await copyTextToClipboard(url);
+    if (ok) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
   };
 
   const handleStarExplore = async (e: React.MouseEvent, fileId: string) => {

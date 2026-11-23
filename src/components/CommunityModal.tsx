@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cloudApi, SharedMarkdownFile, CommunityTag } from '../services/cloudApi';
 import { MarkdownDoc } from '../types';
+import { buildShareUrl, copyTextToClipboard } from '../utils/shareLink';
 
 interface CommunityModalProps {
   isOpen: boolean;
@@ -124,12 +125,14 @@ export const CommunityModal: React.FC<CommunityModalProps> = ({
     } catch {}
   };
 
-  const handleCopyLink = (e: React.MouseEvent, fileId: string) => {
+  const handleCopyLink = async (e: React.MouseEvent, fileId: string) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/?share=${fileId}`;
-    navigator.clipboard.writeText(url);
-    setCopiedId(fileId);
-    setTimeout(() => setCopiedId(null), 2000);
+    const url = buildShareUrl(fileId);
+    const ok = await copyTextToClipboard(url);
+    if (ok) {
+      setCopiedId(fileId);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
   };
 
   const handleDownload = async (e: React.MouseEvent, file: SharedMarkdownFile) => {

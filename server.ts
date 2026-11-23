@@ -194,8 +194,11 @@ function generateFileId(title: string): string {
   const cleanTitle = title
     .trim()
     .toLowerCase()
-    .replace(/[^\w\u0600-\u06FF\s-]/g, '')
-    .replace(/\s+/g, '-')
+    .replace(/[\u060C\u061B\u061F\u0640\u200C\u200D]/g, ' ')
+    .replace(/[^\w\u0621-\u065F\u0670-\u06D3\u06F0-\u06F9\s-]/g, '')
+    .trim()
+    .replace(/[\s-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
     .slice(0, 30);
   const randomSuffix = Math.random().toString(36).substring(2, 8);
   return cleanTitle ? `${cleanTitle}-${randomSuffix}` : `doc-${randomSuffix}`;
